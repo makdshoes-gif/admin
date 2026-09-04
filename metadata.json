@@ -1,6 +1,6 @@
 {
   "name": "MAKD SHOP - Administración de Zapatería",
-  "description": "Panel de administración y gestión integral para tienda de calzado con inventario en tiempo real, punto de venta multimoneda, arqueo de caja y reportes automáticos de ventas.",
-  "requestFramePermissions": [],
+  "description": "Panel de administración y gestión integral para tienda de calzado con inventario en tiempo real, punto de venta multimoneda, control de gastos, conciliación bancaria BDV y balance de fin de mes.",
+  "requestFramePermissions": ["camera"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

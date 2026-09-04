@@ -157,3 +157,61 @@ export interface SalesReportFilter {
   marca?: string;
   tipo?: string;
 }
+
+export type ExpenseCategory =
+  | 'Alquiler de Local'
+  | 'Nómina y Sueldos'
+  | 'Servicios Públicos (Luz/Agua/Internet)'
+  | 'Fletes y Transporte'
+  | 'Compra de Mercancía / Proveedores'
+  | 'Empaques, Bolsas y Cajas'
+  | 'Publicidad y Redes Sociales'
+  | 'Mantenimiento y Reparaciones'
+  | 'Impuestos y Tasas Municipales'
+  | 'Comisiones y Gastos Bancarios'
+  | 'Otros Gastos Operativos';
+
+export interface Expense {
+  id: string;
+  fecha: string; // YYYY-MM-DD
+  categoria: ExpenseCategory;
+  descripcion: string;
+  beneficiario?: string;
+  cuenta_origen: string; // 'Efectivo USD', 'Efectivo Bs', 'Pago Móvil BDV', etc.
+  moneda: Currency;
+  monto: number;
+  tasa_cambio: number;
+  monto_usd: number;
+  monto_bs: number;
+  comprobante_ref?: string;
+  registrado_por: string;
+  notas?: string;
+  created_at: string;
+}
+
+export interface BankMovement {
+  id: string;
+  fecha: string;
+  banco: string; // 'Banco de Venezuela (0102)', 'Banesco (0134)', 'Mercantil (0105)', etc.
+  tipo: 'credito_ingreso' | 'debito_egreso';
+  referencia: string;
+  descripcion: string;
+  monto_bs: number;
+  monto_usd?: number;
+  estado_conciliacion: 'conciliado' | 'pendiente' | 'discrepancia';
+  vinculado_tipo?: 'venta' | 'gasto' | 'transferencia' | 'otro';
+  vinculado_id?: string;
+  notas?: string;
+  created_at: string;
+}
+
+export interface NeonTableColumn {
+  column_name: string;
+  data_type: string;
+}
+
+export interface NeonTableInfo {
+  table_name: string;
+  row_count?: number;
+}
+

@@ -17,21 +17,28 @@ import {
   Menu,
   Cloud,
   Database,
-  Landmark
+  Landmark,
+  TrendingDown,
+  Receipt,
+  User
 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { CloudIntegrationModal } from './common/CloudIntegrationModal';
+import { MakdLogo } from './common/MakdLogo';
+import { UserWindowModal } from './common/UserWindowModal';
+
+export type NavigationTab = 'pos' | 'inventory' | 'reports' | 'cash' | 'expenses' | 'conciliacion';
 
 interface NavbarProps {
-  activeTab: 'pos' | 'inventory' | 'reports' | 'cash';
-  setActiveTab: (tab: 'pos' | 'inventory' | 'reports' | 'cash') => void;
+  activeTab: NavigationTab;
+  setActiveTab: (tab: NavigationTab) => void;
   mobileMenuOpen: boolean;
   setMobileMenuOpen: (open: boolean) => void;
 }
 
 export const Sidebar: React.FC<{
-  activeTab: 'pos' | 'inventory' | 'reports' | 'cash';
-  setActiveTab: (tab: 'pos' | 'inventory' | 'reports' | 'cash') => void;
+  activeTab: NavigationTab;
+  setActiveTab: (tab: NavigationTab) => void;
   mobileOpen: boolean;
   setMobileOpen: (open: boolean) => void;
 }> = ({ activeTab, setActiveTab, mobileOpen, setMobileOpen }) => {
@@ -44,6 +51,8 @@ export const Sidebar: React.FC<{
       ? [{ id: 'reports' as const, label: 'Reportes de Ventas', icon: TrendingUp, count: null }]
       : []),
     { id: 'cash' as const, label: 'Caja & Arqueo', icon: Wallet, count: null },
+    { id: 'expenses' as const, label: 'Gastos & Fin de Mes', icon: TrendingDown, count: null },
+    { id: 'conciliacion' as const, label: 'Conciliación Bancaria', icon: Landmark, count: null },
   ];
 
   return (
@@ -63,23 +72,23 @@ export const Sidebar: React.FC<{
         }`}
       >
         {/* Brand Header */}
-        <div className="p-5 flex items-center justify-between border-b border-slate-800/80">
+        <div className="p-4 flex items-center justify-between border-b border-slate-800/80">
           <div
-            className="flex items-center space-x-3 cursor-pointer"
+            className="flex items-center space-x-3 cursor-pointer group"
             onClick={() => {
               setActiveTab('pos');
               setMobileOpen(false);
             }}
           >
-            <div className="w-8 h-8 bg-indigo-500 rounded-lg flex items-center justify-center text-white font-bold text-sm shadow-md shadow-indigo-500/20">
-              M
+            <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center p-1 shadow-md shadow-black/30 overflow-hidden shrink-0 border border-slate-700">
+              <MakdLogo size={36} showSlogan={false} />
             </div>
             <div>
-              <span className="text-white font-semibold tracking-tight uppercase text-sm block">
+              <span className="text-white font-black tracking-tight uppercase text-sm block leading-none">
                 MAKD SHOP
               </span>
-              <span className="text-[10px] text-slate-400 font-medium block">
-                Calzado & Retail ERP
+              <span className="text-[10px] text-slate-400 font-medium italic block mt-1">
+                marcamos tu estilo
               </span>
             </div>
           </div>
@@ -149,7 +158,7 @@ export const Sidebar: React.FC<{
 };
 
 export const Header: React.FC<{
-  activeTab: 'pos' | 'inventory' | 'reports' | 'cash';
+  activeTab: NavigationTab;
   onToggleMobile: () => void;
 }> = ({ activeTab, onToggleMobile }) => {
   const {
@@ -176,6 +185,7 @@ export const Header: React.FC<{
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [manualMode, setManualMode] = useState(false);
   const [showCloudModal, setShowCloudModal] = useState(false);
+  const [showUserModal, setShowUserModal] = useState(false);
 
   const unreadCount = notifications.filter((n) => !n.read).length;
 
@@ -206,6 +216,10 @@ export const Header: React.FC<{
         return 'Reportes Automáticos de Ventas';
       case 'cash':
         return 'Arqueo y Cierre Diario de Caja';
+      case 'expenses':
+        return 'Control de Gastos & Balance de Fin de Mes';
+      case 'conciliacion':
+        return 'Conciliación Bancaria & Neon Database';
       default:
         return 'Administración de Zapatería';
     }
@@ -228,7 +242,7 @@ export const Header: React.FC<{
             {getTabTitle()}
           </h1>
           <p className="text-xs text-slate-500 hidden sm:block">
-            {new Date().toLocaleDateString('es-VE', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })} • Boutique Central
+            {new Date().toLocaleDateString('es-VE', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })} • Puerto Ordaz (Alta Vista II, Local 163)
           </p>
         </div>
       </div>
@@ -405,6 +419,26 @@ export const Header: React.FC<{
             <span>Cajera</span>
           </button>
         </div>
+
+        {/* Ventana de Usuario con Logo MAKD */}
+        <button
+          id="user-window-btn"
+          onClick={() => setShowUserModal(true)}
+          className="flex items-center space-x-2 px-2 py-1 rounded-lg bg-white border border-slate-200 hover:border-slate-300 hover:bg-slate-50 transition cursor-pointer shadow-2xs group"
+          title="Abrir Ventana de Usuario (MAKD SHOP)"
+        >
+          <div className="w-6 h-6 bg-white rounded border border-slate-300 flex items-center justify-center p-0.5 overflow-hidden shadow-2xs group-hover:scale-105 transition-transform">
+            <MakdLogo size={20} showSlogan={false} />
+          </div>
+          <div className="text-left hidden md:block">
+            <span className="text-[11px] font-bold text-slate-800 leading-none block">
+              {userRole === 'admin' ? 'Alejandra R.' : 'Cajera Turno'}
+            </span>
+            <span className="text-[9px] text-indigo-600 font-semibold uppercase leading-none block mt-0.5">
+              {userRole === 'admin' ? 'Gerente General' : 'Ventas POS'}
+            </span>
+          </div>
+        </button>
 
         {/* Reset Demo Data Button */}
         <button
@@ -614,6 +648,12 @@ export const Header: React.FC<{
       <CloudIntegrationModal
         isOpen={showCloudModal}
         onClose={() => setShowCloudModal(false)}
+      />
+
+      {/* Ventana de Usuario Modal con Logo MAKD */}
+      <UserWindowModal
+        isOpen={showUserModal}
+        onClose={() => setShowUserModal(false)}
       />
     </header>
   );

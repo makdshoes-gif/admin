@@ -20,13 +20,22 @@ import {
   Sparkles,
   RotateCcw,
   Landmark,
-  ShieldCheck
+  ShieldCheck,
+  Edit3,
+  Tag
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { useStore } from '../../context/StoreContext';
 import { ShoeProduct, SaleItem, SalePayment, Sale } from '../../types';
 import { ReceiptModal } from '../common/ReceiptModal';
 import { BdvVerificationModal } from '../common/BdvVerificationModal';
+
+export interface CartItem {
+  product: ShoeProduct;
+  quantity: number;
+  customPrice?: number; // Precio de venta modificado en facturación
+  customCost?: number;  // Costo de producto modificado en facturación
+}
 
 export const PointOfSale: React.FC = () => {
   const {
@@ -44,7 +53,8 @@ export const PointOfSale: React.FC = () => {
   const [selectedSize, setSelectedSize] = useState('Todas');
 
   // Cart State
-  const [cart, setCart] = useState<{ product: ShoeProduct; quantity: number }[]>([]);
+  const [cart, setCart] = useState<CartItem[]>([]);
+  const [editingPricingId, setEditingPricingId] = useState<string | null>(null);
   const [discountType, setDiscountType] = useState<'none' | 'percent' | 'fixed'>('none');
   const [discountValue, setDiscountValue] = useState<number>(0);
   const [applyIva, setApplyIva] = useState(false);
@@ -102,7 +112,10 @@ export const PointOfSale: React.FC = () => {
 
   // Cart Calculations
   const subtotalUsd = useMemo(() => {
-    return cart.reduce((sum, item) => sum + item.product.precio * item.quantity, 0);
+    return cart.reduce((sum, item) => {
+      const unitPrice = item.customPrice !== undefined ? item.customPrice : item.product.precio;
+      return sum + unitPrice * item.quantity;
+    }, 0);
   }, [cart]);
 
   const discountUsd = useMemo(() => {
@@ -139,7 +152,15 @@ export const PointOfSale: React.FC = () => {
             : item
         );
       }
-      return [...prev, { product, quantity: 1 }];
+      return [
+        ...prev,
+        {
+          product,
+          quantity: 1,
+          customPrice: product.precio,
+          customCost: product.costo,
+        },
+      ];
     });
   };
 
@@ -155,8 +176,38 @@ export const PointOfSale: React.FC = () => {
           }
           return item;
         })
-        .filter(Boolean) as { product: ShoeProduct; quantity: number }[];
+        .filter(Boolean) as CartItem[];
     });
+  };
+
+  const handleUpdateItemPrice = (productId: string, newPrice: number) => {
+    setCart((prev) =>
+      prev.map((item) =>
+        item.product.id === productId
+          ? { ...item, customPrice: Math.max(0, newPrice) }
+          : item
+      )
+    );
+  };
+
+  const handleUpdateItemCost = (productId: string, newCost: number) => {
+    setCart((prev) =>
+      prev.map((item) =>
+        item.product.id === productId
+          ? { ...item, customCost: Math.max(0, newCost) }
+          : item
+      )
+    );
+  };
+
+  const handleResetItemPricing = (productId: string) => {
+    setCart((prev) =>
+      prev.map((item) =>
+        item.product.id === productId
+          ? { ...item, customPrice: item.product.precio, customCost: item.product.costo }
+          : item
+      )
+    );
   };
 
   const handleRemoveFromCart = (productId: string) => {
@@ -173,6 +224,7 @@ export const PointOfSale: React.FC = () => {
     setDiscountValue(0);
     setMixedPayments([]);
     setBdvVerifiedData(null);
+    setEditingPricingId(null);
   };
 
   // Mixed Payment Helper
@@ -239,17 +291,21 @@ export const PointOfSale: React.FC = () => {
       ];
     }
 
-    const saleItems: SaleItem[] = cart.map((item) => ({
-      producto_id: item.product.id,
-      nombre_producto: item.product.nombre,
-      sku: item.product.sku,
-      talla: item.product.talla,
-      marca: item.product.marca,
-      cantidad: item.quantity,
-      precio_unitario: item.product.precio,
-      costo_unitario: item.product.costo,
-      subtotal: item.product.precio * item.quantity,
-    }));
+    const saleItems: SaleItem[] = cart.map((item) => {
+      const unitPrice = item.customPrice !== undefined ? item.customPrice : item.product.precio;
+      const unitCost = item.customCost !== undefined ? item.customCost : item.product.costo;
+      return {
+        producto_id: item.product.id,
+        nombre_producto: item.product.nombre,
+        sku: item.product.sku,
+        talla: item.product.talla,
+        marca: item.product.marca,
+        cantidad: item.quantity,
+        precio_unitario: unitPrice,
+        costo_unitario: unitCost,
+        subtotal: unitPrice * item.quantity,
+      };
+    });
 
     const invoiceNumber = `MK-${Math.floor(1000 + Math.random() * 9000)}`;
 
@@ -530,58 +586,196 @@ export const PointOfSale: React.FC = () => {
             </div>
 
             {/* Cart Items List */}
-            <div className="max-h-60 overflow-y-auto divide-y divide-slate-100 my-2">
+            <div className="max-h-72 overflow-y-auto divide-y divide-slate-100 my-2">
               {cart.length === 0 ? (
                 <div className="py-8 text-center text-slate-400 text-xs">
                   El carrito está vacío. Haz clic en un zapato del catálogo para agregarlo.
                 </div>
               ) : (
-                cart.map((item) => (
-                  <div key={item.product.id} className="py-2.5 flex items-center justify-between gap-2">
-                    <div className="flex-1 min-w-0">
-                      <div className="text-xs font-bold text-slate-900 truncate">
-                        {item.product.nombre}
-                      </div>
-                      <div className="text-[10px] text-slate-500 flex items-center gap-2">
-                        <span className="font-bold text-indigo-600">Talla: {item.product.talla}</span>
-                        <span>•</span>
-                        <span>${item.product.precio.toFixed(2)} c/u</span>
-                      </div>
-                    </div>
+                cart.map((item) => {
+                  const unitPrice = item.customPrice !== undefined ? item.customPrice : item.product.precio;
+                  const unitCost = item.customCost !== undefined ? item.customCost : item.product.costo;
+                  const isPriceModified = item.customPrice !== undefined && Math.abs(item.customPrice - item.product.precio) > 0.001;
+                  const isCostModified = item.customCost !== undefined && Math.abs(item.customCost - item.product.costo) > 0.001;
+                  const isEditing = editingPricingId === item.product.id;
+                  const marginPercent = unitPrice > 0 ? ((unitPrice - unitCost) / unitPrice) * 100 : 0;
 
-                    {/* Quantity controls */}
-                    <div className="flex items-center gap-1 bg-slate-50 px-2 py-1 rounded-lg border border-slate-200">
-                      <button
-                        onClick={() => handleUpdateQuantity(item.product.id, -1)}
-                        className="text-slate-500 hover:text-slate-900 p-0.5 cursor-pointer"
-                      >
-                        <Minus className="w-3 h-3" />
-                      </button>
-                      <span className="font-mono text-xs font-bold text-slate-900 w-5 text-center">
-                        {item.quantity}
-                      </span>
-                      <button
-                        onClick={() => handleUpdateQuantity(item.product.id, 1)}
-                        disabled={item.quantity >= item.product.stock}
-                        className="text-slate-500 hover:text-slate-900 p-0.5 disabled:opacity-30 cursor-pointer"
-                      >
-                        <Plus className="w-3 h-3" />
-                      </button>
-                    </div>
+                  return (
+                    <div key={item.product.id} className="py-2.5 space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex-1 min-w-0">
+                          <div className="text-xs font-bold text-slate-900 truncate flex items-center gap-1.5">
+                            <span>{item.product.nombre}</span>
+                            {(isPriceModified || isCostModified) && (
+                              <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-amber-100 text-amber-800 border border-amber-300 shrink-0">
+                                {isPriceModified && isCostModified
+                                  ? 'Precio & Costo Editados'
+                                  : isPriceModified
+                                  ? 'Precio Editado'
+                                  : 'Costo Editado'}
+                              </span>
+                            )}
+                          </div>
+                          
+                          <div className="text-[10px] text-slate-500 flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-0.5">
+                            <span className="font-bold text-indigo-600">Talla: {item.product.talla}</span>
+                            <span>•</span>
+                            <span className={isPriceModified ? 'font-bold text-indigo-700 font-mono' : ''}>
+                              ${unitPrice.toFixed(2)} c/u
+                              {isPriceModified && (
+                                <span className="line-through text-slate-400 font-normal ml-1">
+                                  (${item.product.precio.toFixed(2)})
+                                </span>
+                              )}
+                            </span>
+                            <span>•</span>
+                            <span className="text-slate-400">
+                              Costo: ${unitCost.toFixed(2)}
+                              {isCostModified && (
+                                <span className="line-through text-slate-300 ml-0.5">
+                                  (${item.product.costo.toFixed(2)})
+                                </span>
+                              )}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => setEditingPricingId(isEditing ? null : item.product.id)}
+                              className="text-[10px] text-indigo-600 hover:text-indigo-800 font-semibold underline flex items-center gap-0.5 ml-1 cursor-pointer"
+                            >
+                              <Edit3 className="w-2.5 h-2.5" />
+                              {isEditing ? 'Cerrar edición' : 'Cambiar precio/costo'}
+                            </button>
+                          </div>
+                        </div>
 
-                    <div className="text-right min-w-16">
-                      <div className="text-xs font-bold text-slate-900 font-mono">
-                        ${(item.product.precio * item.quantity).toFixed(2)}
+                        {/* Quantity controls */}
+                        <div className="flex items-center gap-1 bg-slate-50 px-2 py-1 rounded-lg border border-slate-200">
+                          <button
+                            onClick={() => handleUpdateQuantity(item.product.id, -1)}
+                            className="text-slate-500 hover:text-slate-900 p-0.5 cursor-pointer"
+                          >
+                            <Minus className="w-3 h-3" />
+                          </button>
+                          <span className="font-mono text-xs font-bold text-slate-900 w-5 text-center">
+                            {item.quantity}
+                          </span>
+                          <button
+                            onClick={() => handleUpdateQuantity(item.product.id, 1)}
+                            disabled={item.quantity >= item.product.stock}
+                            className="text-slate-500 hover:text-slate-900 p-0.5 disabled:opacity-30 cursor-pointer"
+                          >
+                            <Plus className="w-3 h-3" />
+                          </button>
+                        </div>
+
+                        {/* Line total */}
+                        <div className="text-right min-w-16">
+                          <div className="text-xs font-bold text-slate-900 font-mono">
+                            ${(unitPrice * item.quantity).toFixed(2)}
+                          </div>
+                          <button
+                            onClick={() => handleRemoveFromCart(item.product.id)}
+                            className="text-[10px] text-slate-400 hover:text-rose-600 cursor-pointer"
+                          >
+                            Quitar
+                          </button>
+                        </div>
                       </div>
-                      <button
-                        onClick={() => handleRemoveFromCart(item.product.id)}
-                        className="text-[10px] text-slate-400 hover:text-rose-600 cursor-pointer"
-                      >
-                        Quitar
-                      </button>
+
+                      {/* Expandable Price & Cost Editor for this product */}
+                      {isEditing && (
+                        <div className="p-2.5 bg-slate-50 border border-indigo-200 rounded-xl space-y-2 text-xs">
+                          <div className="flex items-center justify-between text-[11px] font-bold text-slate-800">
+                            <span className="flex items-center gap-1 text-indigo-700">
+                              <Edit3 className="w-3.5 h-3.5" /> Modificar Montos en Facturación
+                            </span>
+                            <span className="text-[10px] font-mono text-slate-500">
+                              Tasa BCV: {exchangeRate.toFixed(2)} Bs/$
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-2">
+                            {/* Precio de Venta Unitario */}
+                            <div>
+                              <label className="block text-[10px] font-bold text-slate-700 mb-0.5">
+                                Precio Venta Unitario ($ USD):
+                              </label>
+                              <div className="relative">
+                                <span className="absolute inset-y-0 left-2 flex items-center text-slate-400 text-xs font-bold">
+                                  $
+                                </span>
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  min="0"
+                                  value={unitPrice}
+                                  onChange={(e) => {
+                                    const val = parseFloat(e.target.value);
+                                    handleUpdateItemPrice(item.product.id, isNaN(val) ? 0 : val);
+                                  }}
+                                  className="w-full pl-6 pr-2 py-1 bg-white border border-slate-300 rounded text-xs font-mono font-bold text-slate-900 focus:outline-none focus:border-indigo-500"
+                                />
+                              </div>
+                              <span className="text-[9px] text-slate-500 block mt-0.5 font-mono">
+                                (~{(unitPrice * exchangeRate).toFixed(2)} Bs) • Catálogo: ${item.product.precio.toFixed(2)}
+                              </span>
+                            </div>
+
+                            {/* Costo del Producto Unitario */}
+                            <div>
+                              <label className="block text-[10px] font-bold text-slate-700 mb-0.5">
+                                Costo de Producto ($ USD):
+                              </label>
+                              <div className="relative">
+                                <span className="absolute inset-y-0 left-2 flex items-center text-slate-400 text-xs font-bold">
+                                  $
+                                </span>
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  min="0"
+                                  value={unitCost}
+                                  onChange={(e) => {
+                                    const val = parseFloat(e.target.value);
+                                    handleUpdateItemCost(item.product.id, isNaN(val) ? 0 : val);
+                                  }}
+                                  className="w-full pl-6 pr-2 py-1 bg-white border border-slate-300 rounded text-xs font-mono font-bold text-slate-900 focus:outline-none focus:border-indigo-500"
+                                />
+                              </div>
+                              <span className="text-[9px] text-slate-500 block mt-0.5 font-mono">
+                                Margen: {marginPercent >= 0 ? `+${marginPercent.toFixed(1)}%` : `${marginPercent.toFixed(1)}%`} • Catálogo: ${item.product.costo.toFixed(2)}
+                              </span>
+                            </div>
+                          </div>
+
+                          {unitPrice < unitCost && (
+                            <div className="text-[10px] text-rose-700 bg-rose-50 border border-rose-200 rounded p-1.5 flex items-center gap-1 font-semibold">
+                              <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                              <span>¡Atención! El precio de venta está por debajo del costo unitario.</span>
+                            </div>
+                          )}
+
+                          <div className="flex items-center justify-between pt-1 border-t border-slate-200 text-[10px]">
+                            <button
+                              type="button"
+                              onClick={() => handleResetItemPricing(item.product.id)}
+                              className="text-slate-500 hover:text-slate-800 font-semibold flex items-center gap-1 cursor-pointer"
+                            >
+                              <RotateCcw className="w-3 h-3" /> Restablecer a catálogo
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setEditingPricingId(null)}
+                              className="px-2 py-0.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded cursor-pointer"
+                            >
+                              Listo
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
 
@@ -793,29 +987,46 @@ export const PointOfSale: React.FC = () => {
                   </div>
 
                   {bdvVerifiedData ? (
-                    <div className="bg-white p-2 rounded-lg border border-emerald-300 text-emerald-900 text-xs flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                        <div>
-                          <span className="font-bold block text-[11px]">Pago BDV Verificado</span>
-                          <span className="text-[10px] text-slate-500 font-mono">
-                            Ref: {bdvVerifiedData.referencia} • {bdvVerifiedData.codigo_aprobacion}
-                          </span>
+                    <div className="bg-white p-2.5 rounded-lg border border-emerald-300 text-emerald-900 text-xs space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                          <div>
+                            <span className="font-bold block text-[11px]">Pago BDV Verificado</span>
+                            <span className="text-[10px] text-slate-500 font-mono">
+                              Ref: {bdvVerifiedData.referencia} • {bdvVerifiedData.codigo_aprobacion}
+                            </span>
+                          </div>
                         </div>
+                        <button
+                          type="button"
+                          onClick={() => setShowBdvModal(true)}
+                          className="text-[11px] text-indigo-600 font-bold hover:underline cursor-pointer"
+                        >
+                          Modificar / Re-verificar
+                        </button>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => setShowBdvModal(true)}
-                        className="text-[11px] text-indigo-600 font-bold hover:underline cursor-pointer"
-                      >
-                        Cambiar
-                      </button>
+
+                      <div className="pt-1 border-t border-emerald-100 flex items-center justify-between text-[11px] font-mono">
+                        <span className="text-slate-600">Monto Comprobado:</span>
+                        <span className="font-bold text-emerald-700">
+                          {bdvVerifiedData.monto_bs.toLocaleString('es-VE', { minimumFractionDigits: 2 })} Bs
+                          <span className="text-slate-400 font-normal ml-1">
+                            (~${(bdvVerifiedData.monto_bs / exchangeRate).toFixed(2)} USD)
+                          </span>
+                        </span>
+                      </div>
                     </div>
                   ) : (
                     <div className="flex items-center justify-between gap-2">
-                      <p className="text-[11px] text-slate-600">
-                        Verifica en segundos que los Bolívares ingresaron a la cuenta BDV.
-                      </p>
+                      <div>
+                        <p className="text-[11px] text-slate-600 font-medium">
+                          Comprueba en segundos que los Bolívares ingresaron a la cuenta BDV.
+                        </p>
+                        <p className="text-[10px] text-slate-400">
+                          Sugerencia: {((isMixedPaymentOpen && remainingToPayUsd > 0.01 ? remainingToPayUsd : totalUsd) * exchangeRate).toFixed(2)} Bs (modificable)
+                        </p>
+                      </div>
                       <button
                         type="button"
                         id="open-bdv-verify-btn"
@@ -823,7 +1034,7 @@ export const PointOfSale: React.FC = () => {
                         className="px-2.5 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs font-bold flex items-center gap-1.5 shrink-0 shadow-2xs cursor-pointer transition"
                       >
                         <ShieldCheck className="w-3.5 h-3.5" />
-                        <span>Verificar BDV</span>
+                        <span>Comprobar Pago Móvil</span>
                       </button>
                     </div>
                   )}
@@ -887,8 +1098,16 @@ export const PointOfSale: React.FC = () => {
       <BdvVerificationModal
         isOpen={showBdvModal}
         onClose={() => setShowBdvModal(false)}
-        expectedAmountBs={totalBs}
-        expectedAmountUsd={totalUsd}
+        expectedAmountBs={
+          isMixedPaymentOpen && remainingToPayUsd > 0.01
+            ? remainingToPayUsd * exchangeRate
+            : totalBs
+        }
+        expectedAmountUsd={
+          isMixedPaymentOpen && remainingToPayUsd > 0.01
+            ? remainingToPayUsd
+            : totalUsd
+        }
         initialCustomerPhone={customerPhone}
         initialCustomerRif={customerRif}
         onVerificationSuccess={(res) => {
@@ -898,6 +1117,18 @@ export const PointOfSale: React.FC = () => {
             monto_bs: res.monto_bs,
             fecha: res.fecha_transaccion,
           });
+
+          // If in mixed payment mode, auto-add payment
+          if (isMixedPaymentOpen) {
+            handleAddMixedPayment('Pago Móvil BDV', res.monto_bs, res.referencia);
+          } else {
+            const verifiedUsd = res.monto_bs / exchangeRate;
+            // If the verified amount is less than totalUsd, suggest splitting or switch to mixed payments
+            if (verifiedUsd < totalUsd - 0.5) {
+              setIsMixedPaymentOpen(true);
+              handleAddMixedPayment('Pago Móvil BDV', res.monto_bs, res.referencia);
+            }
+          }
           setShowBdvModal(false);
         }}
       />

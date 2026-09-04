@@ -1,7 +1,7 @@
 import express from 'express';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
-import { checkDatabaseConnection, getNeonSql, initDatabaseSchema } from './server/db.js';
+import { checkDatabaseConnection, getNeonSql, initDatabaseSchema, getNeonTables, getNeonTableData } from './server/db.js';
 import { verifyBdvPayment, getBdvApiConfig, getRecentVerifications } from './server/bdv.js';
 
 async function startServer() {
@@ -239,7 +239,161 @@ async function startServer() {
     res.json(getRecentVerifications());
   });
 
-  // 7. Vite Middleware for Development / Static serving for Production
+  // 7. Expenses API (Gastos Operativos & Finanzas de Fin de Mes)
+  app.get('/api/expenses', async (req, res) => {
+    const sql = getNeonSql();
+    if (!sql) {
+      return res.json({ source: 'local_fallback', data: [] });
+    }
+    try {
+      await initDatabaseSchema();
+      const rows = await sql`SELECT * FROM expenses ORDER BY fecha DESC, created_at DESC`;
+      res.json({ source: 'neon_postgres', data: rows });
+    } catch (err: unknown) {
+      console.error('Error al obtener gastos de Neon:', err);
+      res.json({ source: 'local_fallback', error: String(err), data: [] });
+    }
+  });
+
+  app.post('/api/expenses', async (req, res) => {
+    const sql = getNeonSql();
+    const exp = req.body;
+    if (!sql) {
+      return res.json({ saved: false, message: 'DATABASE_URL no configurada en Neon' });
+    }
+    try {
+      await initDatabaseSchema();
+      await sql`
+        INSERT INTO expenses (
+          id, fecha, categoria, descripcion, beneficiario,
+          cuenta_origen, moneda, monto, tasa_cambio, monto_usd, monto_bs,
+          comprobante_ref, registrado_por, notas
+        ) VALUES (
+          ${exp.id}, ${exp.fecha}, ${exp.categoria}, ${exp.descripcion}, ${exp.beneficiario || ''},
+          ${exp.cuenta_origen}, ${exp.moneda}, ${exp.monto}, ${exp.tasa_cambio}, ${exp.monto_usd}, ${exp.monto_bs},
+          ${exp.comprobante_ref || null}, ${exp.registrado_por || 'Admin'}, ${exp.notas || ''}
+        )
+        ON CONFLICT (id) DO UPDATE SET
+          fecha = EXCLUDED.fecha,
+          categoria = EXCLUDED.categoria,
+          descripcion = EXCLUDED.descripcion,
+          monto = EXCLUDED.monto,
+          monto_usd = EXCLUDED.monto_usd,
+          monto_bs = EXCLUDED.monto_bs;
+      `;
+      res.json({ saved: true, id: exp.id });
+    } catch (err: unknown) {
+      console.error('Error guardando gasto en Neon:', err);
+      res.status(500).json({ saved: false, error: String(err) });
+    }
+  });
+
+  app.delete('/api/expenses/:id', async (req, res) => {
+    const sql = getNeonSql();
+    const { id } = req.params;
+    if (!sql) {
+      return res.json({ deleted: false, message: 'DATABASE_URL no configurada' });
+    }
+    try {
+      await sql`DELETE FROM expenses WHERE id = ${id}`;
+      res.json({ deleted: true });
+    } catch (err: unknown) {
+      res.status(500).json({ deleted: false, error: String(err) });
+    }
+  });
+
+  // 8. Neon Database Explorer API (Para ver tablas e información previa de conciliación en Neon)
+  app.get('/api/db/tables', async (req, res) => {
+    try {
+      const tables = await getNeonTables();
+      res.json({ success: true, tables });
+    } catch (err: unknown) {
+      res.status(500).json({ success: false, error: String(err) });
+    }
+  });
+
+  app.get('/api/db/table-data', async (req, res) => {
+    const tableName = req.query.table as string;
+    const limit = Number(req.query.limit || 50);
+    if (!tableName) {
+      return res.status(400).json({ success: false, error: 'Parámetro table requerido' });
+    }
+    try {
+      const data = await getNeonTableData(tableName, limit);
+      res.json({ success: true, ...data });
+    } catch (err: unknown) {
+      res.status(500).json({ success: false, error: String(err) });
+    }
+  });
+
+  // 9. Bank Reconciliations API (Conciliación Bancaria con Neon)
+  app.get('/api/bank-reconciliations', async (req, res) => {
+    const sql = getNeonSql();
+    if (!sql) {
+      return res.json({ source: 'local_fallback', data: [] });
+    }
+    try {
+      await initDatabaseSchema();
+      const rows = await sql`SELECT * FROM bank_reconciliations ORDER BY fecha DESC, created_at DESC`;
+      res.json({ source: 'neon_postgres', data: rows });
+    } catch (err: unknown) {
+      res.json({ source: 'local_fallback', error: String(err), data: [] });
+    }
+  });
+
+  app.post('/api/bank-reconciliations', async (req, res) => {
+    const sql = getNeonSql();
+    const item = req.body;
+    if (!sql) {
+      return res.json({ saved: false, message: 'DATABASE_URL no configurada' });
+    }
+    try {
+      await initDatabaseSchema();
+      await sql`
+        INSERT INTO bank_reconciliations (
+          id, fecha, banco, tipo, referencia, descripcion,
+          monto_bs, monto_usd, estado_conciliacion, vinculado_tipo, vinculado_id, notas
+        ) VALUES (
+          ${item.id}, ${item.fecha}, ${item.banco}, ${item.tipo}, ${item.referencia}, ${item.descripcion},
+          ${item.monto_bs}, ${item.monto_usd || null}, ${item.estado_conciliacion || 'pendiente'},
+          ${item.vinculado_tipo || null}, ${item.vinculado_id || null}, ${item.notas || ''}
+        )
+        ON CONFLICT (id) DO UPDATE SET
+          estado_conciliacion = EXCLUDED.estado_conciliacion,
+          vinculado_tipo = EXCLUDED.vinculado_tipo,
+          vinculado_id = EXCLUDED.vinculado_id,
+          notas = EXCLUDED.notas;
+      `;
+      res.json({ saved: true, id: item.id });
+    } catch (err: unknown) {
+      res.status(500).json({ saved: false, error: String(err) });
+    }
+  });
+
+  app.put('/api/bank-reconciliations/:id', async (req, res) => {
+    const sql = getNeonSql();
+    const { id } = req.params;
+    const { estado_conciliacion, notas, vinculado_tipo, vinculado_id } = req.body;
+    if (!sql) {
+      return res.json({ updated: false, message: 'DATABASE_URL no configurada' });
+    }
+    try {
+      await sql`
+        UPDATE bank_reconciliations
+        SET 
+          estado_conciliacion = COALESCE(${estado_conciliacion}, estado_conciliacion),
+          notas = COALESCE(${notas}, notas),
+          vinculado_tipo = COALESCE(${vinculado_tipo}, vinculado_tipo),
+          vinculado_id = COALESCE(${vinculado_id}, vinculado_id)
+        WHERE id = ${id};
+      `;
+      res.json({ updated: true });
+    } catch (err: unknown) {
+      res.status(500).json({ updated: false, error: String(err) });
+    }
+  });
+
+  // 10. Vite Middleware for Development / Static serving for Production
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
       server: { middlewareMode: true },

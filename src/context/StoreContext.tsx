@@ -6,6 +6,8 @@ import {
   AccountBalance,
   DailyCashClosure,
   UserRole,
+  Expense,
+  BankMovement,
 } from '../types';
 import {
   INITIAL_PRODUCTS,
@@ -13,8 +15,18 @@ import {
   INITIAL_ACCOUNTS,
   INITIAL_SALES,
   INITIAL_EXCHANGE_RATE,
+  INITIAL_EXPENSES,
+  INITIAL_BANK_MOVEMENTS,
 } from '../data/initialData';
 import { fetchLiveBcvRate, BcvRateInfo } from '../services/bcvService';
+import { 
+  fetchExpensesApi, 
+  saveExpenseApi, 
+  deleteExpenseApi,
+  fetchBankReconciliationsApi,
+  saveBankReconciliationApi,
+  updateBankReconciliationApi
+} from '../services/api';
 
 export interface ToastNotification {
   id: string;
@@ -57,6 +69,13 @@ interface StoreContextType {
   recordCashClosure: (
     notas?: string
   ) => DailyCashClosure;
+  expenses: Expense[];
+  bankMovements: BankMovement[];
+  addExpense: (expense: Omit<Expense, 'id' | 'created_at'>) => void;
+  deleteExpense: (id: string) => void;
+  updateExpense: (id: string, updates: Partial<Expense>) => void;
+  addBankMovement: (movement: Omit<BankMovement, 'id' | 'created_at'>) => void;
+  updateBankMovement: (id: string, updates: Partial<BankMovement>) => void;
   markNotificationsAsRead: () => void;
   clearNotification: (id: string) => void;
   resetToDemoData: () => void;
@@ -85,6 +104,16 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [accounts, setAccounts] = useState<AccountBalance[]>(() => {
     const saved = localStorage.getItem(`${STORAGE_KEY}_accounts`);
     return saved ? JSON.parse(saved) : INITIAL_ACCOUNTS;
+  });
+
+  const [expenses, setExpenses] = useState<Expense[]>(() => {
+    const saved = localStorage.getItem(`${STORAGE_KEY}_expenses`);
+    return saved ? JSON.parse(saved) : INITIAL_EXPENSES;
+  });
+
+  const [bankMovements, setBankMovements] = useState<BankMovement[]>(() => {
+    const saved = localStorage.getItem(`${STORAGE_KEY}_bank_movements`);
+    return saved ? JSON.parse(saved) : INITIAL_BANK_MOVEMENTS;
   });
 
   const [exchangeRate, setExchangeRateState] = useState<number>(() => {
@@ -163,8 +192,40 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }, [cashClosures]);
 
   useEffect(() => {
+    localStorage.setItem(`${STORAGE_KEY}_expenses`, JSON.stringify(expenses));
+  }, [expenses]);
+
+  useEffect(() => {
+    localStorage.setItem(`${STORAGE_KEY}_bank_movements`, JSON.stringify(bankMovements));
+  }, [bankMovements]);
+
+  useEffect(() => {
     localStorage.setItem(`${STORAGE_KEY}_bcv_info`, JSON.stringify(bcvInfo));
   }, [bcvInfo]);
+
+  // Sync expenses and bank reconciliations from Neon backend if configured
+  useEffect(() => {
+    fetchExpensesApi().then((neonExpenses) => {
+      if (neonExpenses && neonExpenses.length > 0) {
+        setExpenses((prev) => {
+          // Merge remote with local to avoid losing new local items
+          const existingIds = new Set(prev.map(e => e.id));
+          const toAdd = neonExpenses.filter(e => !existingIds.has(e.id));
+          return [...toAdd, ...prev];
+        });
+      }
+    });
+
+    fetchBankReconciliationsApi().then((neonMovements) => {
+      if (neonMovements && neonMovements.length > 0) {
+        setBankMovements((prev) => {
+          const existingIds = new Set(prev.map(m => m.id));
+          const toAdd = neonMovements.filter(m => !existingIds.has(m.id));
+          return [...toAdd, ...prev];
+        });
+      }
+    });
+  }, []);
 
   const addNotification = useCallback((
     title: string,
@@ -411,7 +472,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           const prod = updated[prodIndex];
           const stockAnterior = prod.stock;
           const stockNuevo = Math.max(0, stockAnterior - item.cantidad);
-          totalCosto += prod.costo * item.cantidad;
+          const itemCosto = typeof item.costo_unitario === 'number' ? item.costo_unitario : prod.costo;
+          totalCosto += itemCosto * item.cantidad;
 
           updated[prodIndex] = {
             ...prod,
@@ -557,6 +619,112 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return closure;
   };
 
+  // Add Expense
+  const addExpense = (expenseData: Omit<Expense, 'id' | 'created_at'>) => {
+    const newExpense: Expense = {
+      ...expenseData,
+      id: `exp-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      created_at: new Date().toISOString(),
+    };
+
+    // Update expenses list
+    setExpenses((prev) => [newExpense, ...prev]);
+
+    // Deduct from account balance if account matches
+    setAccounts((prevAccounts) =>
+      prevAccounts.map((acc) => {
+        if (acc.nombre.toLowerCase().includes(expenseData.cuenta_origen.toLowerCase()) ||
+            expenseData.cuenta_origen.toLowerCase().includes(acc.nombre.toLowerCase())) {
+          const deduct = acc.moneda === 'USD' ? expenseData.monto_usd : expenseData.monto_bs;
+          return {
+            ...acc,
+            saldo: Math.max(0, acc.saldo - deduct),
+          };
+        }
+        return acc;
+      })
+    );
+
+    // Save to Neon API in background
+    saveExpenseApi(newExpense).catch((e) => console.warn('Could not sync expense to Neon:', e));
+
+    addNotification(
+      'Gasto Registrado',
+      `${expenseData.categoria}: $${expenseData.monto_usd.toFixed(2)} (${expenseData.descripcion})`,
+      'info'
+    );
+  };
+
+  const deleteExpense = (id: string) => {
+    const target = expenses.find((e) => e.id === id);
+    if (!target) return;
+
+    setExpenses((prev) => prev.filter((e) => e.id !== id));
+
+    // Revert account balance
+    setAccounts((prevAccounts) =>
+      prevAccounts.map((acc) => {
+        if (acc.nombre.toLowerCase().includes(target.cuenta_origen.toLowerCase()) ||
+            target.cuenta_origen.toLowerCase().includes(acc.nombre.toLowerCase())) {
+          const refund = acc.moneda === 'USD' ? target.monto_usd : target.monto_bs;
+          return {
+            ...acc,
+            saldo: acc.saldo + refund,
+          };
+        }
+        return acc;
+      })
+    );
+
+    deleteExpenseApi(id).catch((e) => console.warn('Could not delete expense on Neon:', e));
+
+    addNotification('Gasto Eliminado', `Se eliminó el gasto "${target.descripcion}".`, 'info');
+  };
+
+  const updateExpense = (id: string, updates: Partial<Expense>) => {
+    setExpenses((prev) =>
+      prev.map((e) => {
+        if (e.id === id) {
+          const updated = { ...e, ...updates };
+          saveExpenseApi(updated).catch((err) => console.warn('Could not update expense on Neon:', err));
+          return updated;
+        }
+        return e;
+      })
+    );
+  };
+
+  // Bank Movements & Conciliation
+  const addBankMovement = (movData: Omit<BankMovement, 'id' | 'created_at'>) => {
+    const newMovement: BankMovement = {
+      ...movData,
+      id: `bm-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      created_at: new Date().toISOString(),
+    };
+
+    setBankMovements((prev) => [newMovement, ...prev]);
+    saveBankReconciliationApi(newMovement).catch((e) => console.warn('Could not save bank movement:', e));
+
+    addNotification(
+      'Movimiento Bancario Agregado',
+      `${newMovement.banco} - Ref: ${newMovement.referencia} (${newMovement.tipo === 'credito_ingreso' ? '+' : '-'}${newMovement.monto_bs.toLocaleString('es-VE')} Bs)`,
+      'info'
+    );
+  };
+
+  const updateBankMovement = (id: string, updates: Partial<BankMovement>) => {
+    setBankMovements((prev) =>
+      prev.map((m) => {
+        if (m.id === id) {
+          const updated = { ...m, ...updates };
+          updateBankReconciliationApi(id, updates).catch((e) => console.warn('Could not update bank movement:', e));
+          return updated;
+        }
+        return m;
+      })
+    );
+  };
+
   const markNotificationsAsRead = () => {
     setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
   };
@@ -571,6 +739,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setSales(INITIAL_SALES);
     setAccounts(INITIAL_ACCOUNTS);
     setExchangeRateState(INITIAL_EXCHANGE_RATE);
+    setExpenses(INITIAL_EXPENSES);
+    setBankMovements(INITIAL_BANK_MOVEMENTS);
     setCashClosures([]);
     localStorage.removeItem(`${STORAGE_KEY}_products`);
     localStorage.removeItem(`${STORAGE_KEY}_movements`);
@@ -578,7 +748,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     localStorage.removeItem(`${STORAGE_KEY}_accounts`);
     localStorage.removeItem(`${STORAGE_KEY}_rate`);
     localStorage.removeItem(`${STORAGE_KEY}_closures`);
-    addNotification('Datos Restaurados', 'Catálogo e inventario restablecidos al demo inicial.', 'info');
+    localStorage.removeItem(`${STORAGE_KEY}_expenses`);
+    localStorage.removeItem(`${STORAGE_KEY}_bank_movements`);
+    addNotification('Datos Restaurados', 'Catálogo, gastos y conciliaciones restablecidos al demo inicial.', 'info');
   };
 
   return (
@@ -606,6 +778,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         deleteProduct,
         recordSale,
         recordCashClosure,
+        expenses,
+        bankMovements,
+        addExpense,
+        deleteExpense,
+        updateExpense,
+        addBankMovement,
+        updateBankMovement,
         markNotificationsAsRead,
         clearNotification,
         resetToDemoData,

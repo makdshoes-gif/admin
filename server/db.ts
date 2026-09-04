@@ -162,9 +162,114 @@ export async function initDatabaseSchema() {
       );
     `;
 
+    // 5. Table for Expenses (Gastos y Costos Operativos)
+    await sql`
+      CREATE TABLE IF NOT EXISTS expenses (
+        id VARCHAR(64) PRIMARY KEY,
+        fecha VARCHAR(20) NOT NULL,
+        categoria VARCHAR(100) NOT NULL,
+        descripcion TEXT NOT NULL,
+        beneficiario VARCHAR(150),
+        cuenta_origen VARCHAR(100) NOT NULL,
+        moneda VARCHAR(10) NOT NULL,
+        monto NUMERIC(14, 2) NOT NULL,
+        tasa_cambio NUMERIC(10, 2) NOT NULL,
+        monto_usd NUMERIC(12, 2) NOT NULL,
+        monto_bs NUMERIC(14, 2) NOT NULL,
+        comprobante_ref VARCHAR(80),
+        registrado_por VARCHAR(100),
+        notas TEXT,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      );
+    `;
+
+    // 6. Table for Bank Reconciliations (Conciliaciones Bancarias)
+    await sql`
+      CREATE TABLE IF NOT EXISTS bank_reconciliations (
+        id VARCHAR(64) PRIMARY KEY,
+        fecha VARCHAR(20) NOT NULL,
+        banco VARCHAR(100) NOT NULL,
+        tipo VARCHAR(30) NOT NULL,
+        referencia VARCHAR(60) NOT NULL,
+        descripcion TEXT NOT NULL,
+        monto_bs NUMERIC(14, 2) NOT NULL,
+        monto_usd NUMERIC(12, 2),
+        estado_conciliacion VARCHAR(30) DEFAULT 'pendiente',
+        vinculado_tipo VARCHAR(50),
+        vinculado_id VARCHAR(64),
+        notas TEXT,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      );
+    `;
+
     isInitialized = true;
     console.log('✅ Esquema Neon PostgreSQL verificado e inicializado correctamente.');
   } catch (error) {
     console.error('Error al inicializar tablas en Neon:', error);
   }
 }
+
+export async function getNeonTables(): Promise<{ table_name: string }[]> {
+  const sql = getNeonSql();
+  if (!sql) return [];
+  try {
+    const rows = await sql`
+      SELECT table_name 
+      FROM information_schema.tables 
+      WHERE table_schema = 'public' 
+      ORDER BY table_name ASC;
+    `;
+    return rows.map((r: any) => ({ table_name: String(r.table_name) }));
+  } catch (err) {
+    console.error('Error listando tablas en Neon:', err);
+    return [];
+  }
+}
+
+export async function getNeonTableData(tableName: string, limit = 50): Promise<{
+  tableName: string;
+  rowCount: number;
+  columns: string[];
+  rows: any[];
+}> {
+  const sql = getNeonSql();
+  if (!sql) {
+    throw new Error('Base de datos Neon no conectada');
+  }
+
+  // Sanitize table name (only letters, numbers, underscores)
+  const cleanName = tableName.replace(/[^a-zA-Z0-9_]/g, '');
+  if (!cleanName) {
+    throw new Error('Nombre de tabla inválido');
+  }
+
+  try {
+    // Fetch columns
+    const columnsMeta = await sql`
+      SELECT column_name, data_type 
+      FROM information_schema.columns 
+      WHERE table_schema = 'public' AND table_name = ${cleanName}
+      ORDER BY ordinal_position ASC;
+    `;
+    const columns = columnsMeta.map((c: any) => String(c.column_name));
+
+    // Fetch count (cleanName is strictly sanitized to [a-zA-Z0-9_])
+    const countRes = await (sql as any)(`SELECT COUNT(*) as total FROM "${cleanName}"`);
+    const rowCount = Number(countRes[0]?.total || 0);
+
+    // Fetch sample rows
+    const rows = await (sql as any)(`SELECT * FROM "${cleanName}" ORDER BY 1 DESC LIMIT ${limit}`);
+
+    return {
+      tableName: cleanName,
+      rowCount,
+      columns,
+      rows,
+    };
+  } catch (err: unknown) {
+    console.error(`Error consultando tabla ${cleanName} en Neon:`, err);
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new Error(msg);
+  }
+}
+

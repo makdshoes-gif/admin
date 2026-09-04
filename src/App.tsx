@@ -5,14 +5,16 @@
 
 import React, { useState } from 'react';
 import { StoreProvider, useStore } from './context/StoreContext';
-import { Sidebar, Header } from './components/Navbar';
+import { Sidebar, Header, NavigationTab } from './components/Navbar';
 import { PointOfSale } from './components/pos/PointOfSale';
 import { InventoryManager } from './components/inventory/InventoryManager';
 import { SalesReports } from './components/reports/SalesReports';
 import { CashClosure } from './components/cash/CashClosure';
+import { ExpensesManager } from './components/expenses/ExpensesManager';
+import { BankReconciliationView } from './components/banking/BankReconciliationView';
 
 function AppContent() {
-  const [activeTab, setActiveTab] = useState<'pos' | 'inventory' | 'reports' | 'cash'>('pos');
+  const [activeTab, setActiveTab] = useState<NavigationTab>('pos');
   const [mobileOpen, setMobileOpen] = useState(false);
   const { userRole, products, criticalStockProducts } = useStore();
 
@@ -42,6 +44,8 @@ function AppContent() {
           {activeTab === 'inventory' && <InventoryManager />}
           {activeTab === 'reports' && userRole === 'admin' && <SalesReports />}
           {activeTab === 'cash' && <CashClosure />}
+          {activeTab === 'expenses' && <ExpensesManager />}
+          {activeTab === 'conciliacion' && <BankReconciliationView />}
         </main>
 
         {/* High Density Sub-Footer (matching Design HTML) */}
@@ -49,7 +53,7 @@ function AppContent() {
           <div className="flex items-center space-x-3 sm:space-x-4">
             <span className="font-semibold text-slate-600">MAKD SHOP POS</span>
             <span className="hidden sm:inline">•</span>
-            <span className="hidden sm:inline">Servidor: pos-latam-caracas</span>
+            <span className="hidden sm:inline">Sede: Puerto Ordaz - Alta Vista II (Local 163)</span>
             <span className="hidden md:inline">•</span>
             <span>Latencia: 12ms</span>
             <span className="hidden sm:inline">•</span>
