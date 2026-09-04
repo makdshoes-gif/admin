@@ -18,9 +18,10 @@ import {
 interface UserWindowModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onRequestAdmin?: () => void;
 }
 
-export const UserWindowModal: React.FC<UserWindowModalProps> = ({ isOpen, onClose }) => {
+export const UserWindowModal: React.FC<UserWindowModalProps> = ({ isOpen, onClose, onRequestAdmin }) => {
   const { userRole, setUserRole, exchangeRate, bcvInfo } = useStore();
 
   if (!isOpen) return null;
@@ -99,10 +100,10 @@ export const UserWindowModal: React.FC<UserWindowModalProps> = ({ isOpen, onClos
 
             <div className="flex items-center justify-between py-1.5 border-b border-slate-100">
               <span className="flex items-center space-x-2 text-slate-500">
-                <Database className="w-3.5 h-3.5 text-slate-400" />
-                <span>Base de Datos:</span>
+                <ShieldCheck className="w-3.5 h-3.5 text-indigo-600" />
+                <span>Seguridad:</span>
               </span>
-              <span className="font-medium text-indigo-700">Neon PostgreSQL & Local Sync</span>
+              <span className="font-semibold text-slate-800">Protegido con PIN (4 dígitos)</span>
             </div>
           </div>
 
@@ -114,7 +115,13 @@ export const UserWindowModal: React.FC<UserWindowModalProps> = ({ isOpen, onClos
             <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"
-                onClick={() => setUserRole('admin')}
+                onClick={() => {
+                  if (userRole !== 'admin') {
+                    onClose();
+                    if (onRequestAdmin) onRequestAdmin();
+                    else setUserRole('admin');
+                  }
+                }}
                 className={`p-3 rounded-xl border text-xs font-semibold flex flex-col items-center justify-center space-y-1 transition cursor-pointer ${
                   userRole === 'admin'
                     ? 'bg-indigo-50/70 border-indigo-500 text-indigo-900 ring-2 ring-indigo-500/20 shadow-xs'
@@ -123,7 +130,7 @@ export const UserWindowModal: React.FC<UserWindowModalProps> = ({ isOpen, onClos
               >
                 <ShieldCheck className={`w-4 h-4 ${userRole === 'admin' ? 'text-indigo-600' : 'text-slate-400'}`} />
                 <span>Administrador</span>
-                <span className="text-[10px] text-slate-400 font-normal">Acceso total</span>
+                <span className="text-[10px] text-slate-400 font-normal">Requiere PIN</span>
               </button>
 
               <button
@@ -137,7 +144,7 @@ export const UserWindowModal: React.FC<UserWindowModalProps> = ({ isOpen, onClos
               >
                 <User className={`w-4 h-4 ${userRole === 'cajera' ? 'text-indigo-600' : 'text-slate-400'}`} />
                 <span>Cajera</span>
-                <span className="text-[10px] text-slate-400 font-normal">Punto de venta y caja</span>
+                <span className="text-[10px] text-slate-400 font-normal">Punto de venta</span>
               </button>
             </div>
           </div>

@@ -1,25 +1,16 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useStore } from '../../context/StoreContext';
-import { BankMovement, NeonTableInfo } from '../../types';
-import {
-  fetchNeonTablesList,
-  fetchNeonTableContent,
-  checkNeonDbStatus
-} from '../../services/api';
+import { BankMovement } from '../../types';
 import {
   Landmark,
-  Database,
   CheckCircle2,
   Clock,
   AlertTriangle,
-  RefreshCw,
   Search,
   Filter,
   PlusCircle,
-  Table,
   ArrowDownLeft,
   ArrowUpRight,
-  ExternalLink,
   ShieldCheck,
   ChevronRight,
   X,
@@ -32,24 +23,8 @@ import { GoogleSheetsSyncModal } from '../common/GoogleSheetsSyncModal';
 export const BankReconciliationView: React.FC = () => {
   const { bankMovements, addBankMovement, updateBankMovement, sales, expenses, exchangeRate } = useStore();
 
-  // Navigation subtabs inside reconciliation
-  const [activeSubTab, setActiveSubTab] = useState<'reconciliation' | 'neon_explorer'>('reconciliation');
   const [isBdvModalOpen, setIsBdvModalOpen] = useState(false);
   const [isSheetsModalOpen, setIsSheetsModalOpen] = useState(false);
-
-  // Neon DB state
-  const [dbStatus, setDbStatus] = useState<{ connected: boolean; message: string; databaseName?: string } | null>(null);
-  const [tablesList, setTablesList] = useState<NeonTableInfo[]>([]);
-  const [selectedTable, setSelectedTable] = useState<string>('');
-  const [tableData, setTableData] = useState<{
-    tableName: string;
-    rowCount: number;
-    columns: string[];
-    rows: any[];
-  } | null>(null);
-  const [isLoadingTables, setIsLoadingTables] = useState(false);
-  const [isLoadingData, setIsLoadingData] = useState(false);
-  const [tableSearch, setTableSearch] = useState('');
 
   // Bank reconciliation filters
   const [bankFilter, setBankFilter] = useState<string>('todos');
@@ -66,50 +41,6 @@ export const BankReconciliationView: React.FC = () => {
   const [descripcion, setDescripcion] = useState('');
   const [montoBs, setMontoBs] = useState('');
   const [notas, setNotas] = useState('');
-
-  // Load Neon status and tables
-  const loadNeonInfo = async () => {
-    setIsLoadingTables(true);
-    try {
-      const status = await checkNeonDbStatus();
-      setDbStatus(status);
-      const tables = await fetchNeonTablesList();
-      setTablesList(tables);
-      if (tables.length > 0 && !selectedTable) {
-        // Look for bank-related table or first table
-        const bankTable = tables.find(t => 
-          t.table_name.includes('banc') || 
-          t.table_name.includes('concilia') || 
-          t.table_name.includes('movim') ||
-          t.table_name === 'bank_reconciliations'
-        );
-        const targetTable = bankTable ? bankTable.table_name : tables[0].table_name;
-        setSelectedTable(targetTable);
-        loadTableRows(targetTable);
-      }
-    } catch (err) {
-      console.error('Error loading Neon data:', err);
-    } finally {
-      setIsLoadingTables(false);
-    }
-  };
-
-  const loadTableRows = async (tableName: string) => {
-    if (!tableName) return;
-    setIsLoadingData(true);
-    try {
-      const data = await fetchNeonTableContent(tableName, 50);
-      setTableData(data);
-    } catch (err) {
-      console.error('Error loading rows:', err);
-    } finally {
-      setIsLoadingData(false);
-    }
-  };
-
-  useEffect(() => {
-    loadNeonInfo();
-  }, []);
 
   // Filtered bank movements
   const filteredMovements = useMemo(() => {
@@ -232,85 +163,44 @@ export const BankReconciliationView: React.FC = () => {
           </div>
           <div>
             <h1 className="text-xl font-bold text-slate-900 tracking-tight">
-              Conciliación Bancaria & Datos de Neon
+              Conciliación Bancaria
             </h1>
             <p className="text-xs text-slate-500">
-              Visualiza tus tablas previas de Neon, concilia cuentas bancarias (BDV, Banesco) y cruza pagos con tus ventas y gastos.
+              Concilia cuentas bancarias (Banco de Venezuela, Banesco, etc.), carga tus estados de cuenta oficiales y cruza pagos automáticamente con tus ventas.
             </p>
           </div>
         </div>
 
-        {/* Subtabs selector */}
-        <div className="flex items-center bg-slate-100 p-1 rounded-lg border border-slate-200 text-xs font-semibold">
+        {/* Action buttons */}
+        <div className="flex flex-wrap items-center gap-2">
           <button
-            onClick={() => setActiveSubTab('reconciliation')}
-            className={`flex items-center space-x-2 px-3 py-1.5 rounded-md transition-colors ${
-              activeSubTab === 'reconciliation'
-                ? 'bg-white text-slate-900 shadow-xs'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
+            onClick={() => setIsSheetsModalOpen(true)}
+            className="flex items-center space-x-1.5 px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-lg text-xs font-semibold transition cursor-pointer shadow-2xs"
           >
-            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-            <span>Conciliación Bancaria</span>
+            <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+            <span>Google Sheets</span>
           </button>
+
           <button
-            onClick={() => {
-              setActiveSubTab('neon_explorer');
-              if (!tableData && selectedTable) {
-                loadTableRows(selectedTable);
-              }
-            }}
-            className={`flex items-center space-x-2 px-3 py-1.5 rounded-md transition-colors ${
-              activeSubTab === 'neon_explorer'
-                ? 'bg-white text-slate-900 shadow-xs'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
+            onClick={() => setIsBdvModalOpen(true)}
+            className="flex items-center space-x-1.5 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold transition cursor-pointer shadow-xs"
           >
-            <Database className="w-4 h-4 text-indigo-600" />
-            <span>Explorador de Tablas Neon</span>
-            {tablesList.length > 0 && (
-              <span className="px-1.5 py-0.2 text-[10px] bg-indigo-100 text-indigo-700 rounded-full font-bold">
-                {tablesList.length}
-              </span>
-            )}
+            <UploadCloud className="w-4 h-4" />
+            <span>Importar Archivo BDV</span>
+          </button>
+
+          <button
+            onClick={() => setIsNewMovModalOpen(true)}
+            className="flex items-center space-x-1.5 px-3 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-semibold transition cursor-pointer shadow-xs"
+          >
+            <PlusCircle className="w-4 h-4" />
+            <span>Nuevo Movimiento</span>
           </button>
         </div>
       </div>
 
-      {/* Connection Info Banner: Explains how it connects to their existing Neon DB */}
-      <div className="bg-gradient-to-r from-slate-900 to-indigo-950 text-white p-4 rounded-xl shadow-xs border border-slate-800 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-        <div className="flex items-center space-x-3">
-          <div className="w-10 h-10 rounded-lg bg-indigo-500/20 border border-indigo-500/40 flex items-center justify-center shrink-0">
-            <Database className="w-5 h-5 text-indigo-400" />
-          </div>
-          <div>
-            <div className="flex items-center space-x-2">
-              <h3 className="font-bold text-sm">¿Cómo se conecta tu información previa de Neon?</h3>
-              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                dbStatus?.connected ? 'bg-emerald-500/30 text-emerald-300 border border-emerald-500/50' : 'bg-amber-500/30 text-amber-300 border border-amber-500/50'
-              }`}>
-                {dbStatus?.connected ? 'Conectado a Neon' : 'Modo Local / Fallback'}
-              </span>
-            </div>
-            <p className="text-xs text-slate-300 mt-0.5">
-              Tu base de datos en Neon PostgreSQL no se sobreescribe ni se borra. Al colocar tu variable <code className="bg-slate-800 px-1 py-0.5 rounded text-indigo-300 font-mono text-[11px]">DATABASE_URL</code> en los Secrets o entorno de Vercel, la aplicación lee tus tablas existentes y sincroniza ventas, gastos y conciliaciones en tiempo real.
-            </p>
-          </div>
-        </div>
-
-        <button
-          onClick={loadNeonInfo}
-          disabled={isLoadingTables}
-          className="flex items-center space-x-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-medium transition-colors border border-slate-700 shrink-0 cursor-pointer"
-        >
-          <RefreshCw className={`w-3.5 h-3.5 ${isLoadingTables ? 'animate-spin' : ''}`} />
-          <span>Actualizar Conexión</span>
-        </button>
-      </div>
-
-      {/* SUBTAB 1: RECONCILIATION DASHBOARD */}
-      {activeSubTab === 'reconciliation' && (
-        <div className="space-y-6">
+      {/* RECONCILIATION DASHBOARD */}
+      <div className="space-y-6">
           {/* Metric cards */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-xs">
@@ -573,133 +463,6 @@ export const BankReconciliationView: React.FC = () => {
             </div>
           </div>
         </div>
-      )}
-
-      {/* SUBTAB 2: NEON DATABASE EXPLORER */}
-      {activeSubTab === 'neon_explorer' && (
-        <div className="space-y-4">
-          <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-xs space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
-              <div>
-                <h3 className="font-bold text-sm text-slate-900 flex items-center space-x-2">
-                  <Database className="w-4 h-4 text-indigo-600" />
-                  <span>Explorador de Tablas en tu Base de Datos Neon</span>
-                </h3>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Selecciona cualquiera de las tablas existentes en tu Neon para consultar sus filas, montos de conciliación y registros guardados.
-                </p>
-              </div>
-
-              {/* Table Selector */}
-              <div className="flex items-center space-x-2">
-                <span className="text-xs font-semibold text-slate-600 whitespace-nowrap">
-                  Tabla a consultar:
-                </span>
-                <select
-                  value={selectedTable}
-                  onChange={(e) => {
-                    setSelectedTable(e.target.value);
-                    loadTableRows(e.target.value);
-                  }}
-                  className="text-xs font-semibold p-2 bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:border-indigo-500"
-                >
-                  {tablesList.map((t) => (
-                    <option key={t.table_name} value={t.table_name}>
-                      {t.table_name}
-                    </option>
-                  ))}
-                </select>
-
-                <button
-                  onClick={() => loadTableRows(selectedTable)}
-                  disabled={isLoadingData || !selectedTable}
-                  className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs transition-colors"
-                  title="Recargar filas"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 ${isLoadingData ? 'animate-spin' : ''}`} />
-                </button>
-              </div>
-            </div>
-
-            {/* Table Meta Info */}
-            {tableData && (
-              <div className="flex items-center justify-between text-xs text-slate-600 bg-slate-50 p-2.5 rounded-lg border border-slate-200">
-                <div>
-                  Tabla activa: <span className="font-bold text-indigo-700 font-mono">{tableData.tableName}</span> | Columnas: <span className="font-semibold">{tableData.columns.length}</span>
-                </div>
-                <div>
-                  Registros en Neon: <span className="font-bold text-slate-900">{tableData.rowCount}</span> (mostrando hasta 50 filas)
-                </div>
-              </div>
-            )}
-
-            {/* Table Search */}
-            {tableData && tableData.rows.length > 0 && (
-              <div className="relative max-w-sm">
-                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
-                <input
-                  type="text"
-                  placeholder="Filtrar datos en pantalla..."
-                  value={tableSearch}
-                  onChange={(e) => setTableSearch(e.target.value)}
-                  className="w-full pl-8 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none"
-                />
-              </div>
-            )}
-
-            {/* Table Content */}
-            {isLoadingData ? (
-              <div className="py-12 text-center text-slate-400 text-xs flex flex-col items-center justify-center space-y-2">
-                <RefreshCw className="w-5 h-5 animate-spin text-indigo-500" />
-                <span>Consultando datos en Neon PostgreSQL...</span>
-              </div>
-            ) : !tableData || tableData.rows.length === 0 ? (
-              <div className="py-12 text-center text-slate-400 text-xs border border-dashed border-slate-200 rounded-lg">
-                No hay filas registradas aún en la tabla <span className="font-mono font-semibold">{selectedTable}</span>.
-              </div>
-            ) : (
-              <div className="overflow-x-auto max-h-[450px] border border-slate-200 rounded-lg">
-                <table className="w-full text-left text-xs text-slate-600">
-                  <thead className="bg-slate-100 text-slate-700 uppercase text-[10px] tracking-wider sticky top-0 border-b border-slate-200 z-10">
-                    <tr>
-                      {tableData.columns.map((col) => (
-                        <th key={col} className="py-2.5 px-3 font-bold whitespace-nowrap font-mono">
-                          {col}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 bg-white">
-                    {tableData.rows
-                      .filter((r) => {
-                        if (!tableSearch) return true;
-                        return JSON.stringify(r).toLowerCase().includes(tableSearch.toLowerCase());
-                      })
-                      .map((row, idx) => (
-                        <tr key={idx} className="hover:bg-slate-50/80 transition-colors">
-                          {tableData.columns.map((col) => {
-                            const val = row[col];
-                            const displayVal =
-                              val === null || val === undefined
-                                ? '-'
-                                : typeof val === 'object'
-                                ? JSON.stringify(val)
-                                : String(val);
-                            return (
-                              <td key={col} className="py-2 px-3 whitespace-nowrap max-w-[220px] truncate text-[11px]">
-                                {displayVal}
-                              </td>
-                            );
-                          })}
-                        </tr>
-                      ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
 
       {/* Modal: Registrar Movimiento Bancario */}
       {isNewMovModalOpen && (

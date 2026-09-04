@@ -85,11 +85,23 @@ interface StoreContextType {
   markNotificationsAsRead: () => void;
   clearNotification: (id: string) => void;
   resetToDemoData: () => void;
+  adminPin: string;
+  setAdminPin: (pin: string) => void;
+  verifyAdminPin: (pin: string) => boolean;
+  clearAllData: () => void;
 }
 
 const StoreContext = createContext<StoreContextType | undefined>(undefined);
 
-const STORAGE_KEY = 'makd_shop_store_v2';
+const STORAGE_KEY = 'makd_shop_store_v3';
+
+// Limpieza automática de versiones anteriores con datos de prueba
+try {
+  const legacyKeys = Object.keys(localStorage).filter(
+    (k) => k.startsWith('makd_shop_store_v1') || k.startsWith('makd_shop_store_v2')
+  );
+  legacyKeys.forEach((k) => localStorage.removeItem(k));
+} catch {}
 
 export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [products, setProducts] = useState<ShoeProduct[]>(() => {
@@ -151,31 +163,19 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [isBcvSyncing, setIsBcvSyncing] = useState<boolean>(false);
   const [isAutoSyncEnabled, setIsAutoSyncEnabled] = useState<boolean>(true);
 
-  const [userRole, setUserRole] = useState<UserRole>('admin');
+  const [userRole, setUserRole] = useState<UserRole>('cajera');
+
+  const [adminPin, setAdminPinState] = useState<string>(() => {
+    const saved = localStorage.getItem(`${STORAGE_KEY}_admin_pin`);
+    return saved || '1234';
+  });
 
   const [cashClosures, setCashClosures] = useState<DailyCashClosure[]>(() => {
     const saved = localStorage.getItem(`${STORAGE_KEY}_closures`);
     return saved ? JSON.parse(saved) : [];
   });
 
-  const [notifications, setNotifications] = useState<ToastNotification[]>([
-    {
-      id: 'notif-init-1',
-      title: 'Alerta de Stock Crítico',
-      message: 'Adidas Samba OG talla 39 se encuentra agotado (0 pares).',
-      type: 'critical',
-      time: 'Hace 10 min',
-      read: false,
-    },
-    {
-      id: 'notif-init-2',
-      title: 'Alerta de Reposición',
-      message: 'Nike Air Force 1 talla 38 tiene solo 2 pares disponibles.',
-      type: 'warning',
-      time: 'Hace 30 min',
-      read: false,
-    }
-  ]);
+  const [notifications, setNotifications] = useState<ToastNotification[]>([]);
 
   // Persist whenever state changes
   useEffect(() => {
@@ -853,26 +853,41 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setNotifications((prev) => prev.filter((n) => n.id !== id));
   };
 
-  const resetToDemoData = () => {
-    setProducts(INITIAL_PRODUCTS);
-    setMovements(INITIAL_MOVEMENTS);
-    setSales(INITIAL_SALES);
-    setAccounts(INITIAL_ACCOUNTS);
-    setExchangeRateState(INITIAL_EXCHANGE_RATE);
-    setExpenses(INITIAL_EXPENSES);
-    setBankMovements(INITIAL_BANK_MOVEMENTS);
-    setCurrencyPurchases(INITIAL_CURRENCY_PURCHASES);
+  const setAdminPin = (newPin: string) => {
+    if (/^\d{4}$/.test(newPin)) {
+      setAdminPinState(newPin);
+      localStorage.setItem(`${STORAGE_KEY}_admin_pin`, newPin);
+      addNotification('Seguridad Actualizada', 'El PIN de 4 dígitos para Administrador ha sido modificado.', 'info');
+    }
+  };
+
+  const verifyAdminPin = (enteredPin: string): boolean => {
+    return enteredPin === adminPin;
+  };
+
+  const clearAllData = () => {
+    setProducts([]);
+    setMovements([]);
+    setSales([]);
+    setExpenses([]);
+    setBankMovements([]);
+    setCurrencyPurchases([]);
     setCashClosures([]);
+    setAccounts(INITIAL_ACCOUNTS.map((a) => ({ ...a, saldo: 0 })));
+    setNotifications([]);
     localStorage.removeItem(`${STORAGE_KEY}_products`);
     localStorage.removeItem(`${STORAGE_KEY}_movements`);
     localStorage.removeItem(`${STORAGE_KEY}_sales`);
     localStorage.removeItem(`${STORAGE_KEY}_accounts`);
-    localStorage.removeItem(`${STORAGE_KEY}_rate`);
     localStorage.removeItem(`${STORAGE_KEY}_closures`);
     localStorage.removeItem(`${STORAGE_KEY}_expenses`);
     localStorage.removeItem(`${STORAGE_KEY}_bank_movements`);
     localStorage.removeItem(`${STORAGE_KEY}_currency_purchases`);
-    addNotification('Datos Restaurados', 'Catálogo, compras de divisas, gastos y conciliaciones restablecidos.', 'info');
+    addNotification('Datos Limpios', 'Se han vaciado los datos de prueba para iniciar la operación real.', 'info');
+  };
+
+  const resetToDemoData = () => {
+    clearAllData();
   };
 
   return (
@@ -914,6 +929,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         markNotificationsAsRead,
         clearNotification,
         resetToDemoData,
+        adminPin,
+        setAdminPin,
+        verifyAdminPin,
+        clearAllData,
       }}
     >
       {children}
