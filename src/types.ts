@@ -89,6 +89,39 @@ export interface Sale {
   created_at: string;
 }
 
+export interface BdvVerificationData {
+  referencia: string;
+  telefono_origen: string;
+  cedula_cliente: string;
+  banco_origen: string;
+  monto_bs: number;
+  monto_usd?: number;
+}
+
+export interface BdvVerificationResponse {
+  aprobado: boolean;
+  codigo_aprobacion: string;
+  referencia: string;
+  monto_bs: number;
+  monto_usd_estimado?: number;
+  telefono_origen: string;
+  cedula_cliente: string;
+  banco_origen: string;
+  cuenta_receptora: string;
+  fecha_transaccion: string;
+  modo: 'PRODUCCION' | 'SANDBOX_VERIFICADO';
+  mensaje: string;
+}
+
+export interface NeonDbStatus {
+  connected: boolean;
+  message: string;
+  databaseName?: string;
+  productsCount?: number;
+  salesCount?: number;
+  error?: string;
+}
+
 export interface AccountBalance {
   id: string;
   nombre: string;

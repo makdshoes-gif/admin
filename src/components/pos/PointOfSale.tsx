@@ -18,12 +18,15 @@ import {
   DollarSign,
   Layers,
   Sparkles,
-  RotateCcw
+  RotateCcw,
+  Landmark,
+  ShieldCheck
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { useStore } from '../../context/StoreContext';
 import { ShoeProduct, SaleItem, SalePayment, Sale } from '../../types';
 import { ReceiptModal } from '../common/ReceiptModal';
+import { BdvVerificationModal } from '../common/BdvVerificationModal';
 
 export const PointOfSale: React.FC = () => {
   const {
@@ -57,6 +60,15 @@ export const PointOfSale: React.FC = () => {
   const [isMixedPaymentOpen, setIsMixedPaymentOpen] = useState(false);
   const [singlePaymentAccount, setSinglePaymentAccount] = useState('Efectivo USD');
   const [mixedPayments, setMixedPayments] = useState<SalePayment[]>([]);
+
+  // BDV Verification State
+  const [showBdvModal, setShowBdvModal] = useState(false);
+  const [bdvVerifiedData, setBdvVerifiedData] = useState<{
+    referencia: string;
+    codigo_aprobacion: string;
+    monto_bs: number;
+    fecha: string;
+  } | null>(null);
 
   // Post-sale Receipt Modal
   const [lastSale, setLastSale] = useState<Sale | null>(null);
@@ -160,6 +172,7 @@ export const PointOfSale: React.FC = () => {
     setDiscountType('none');
     setDiscountValue(0);
     setMixedPayments([]);
+    setBdvVerifiedData(null);
   };
 
   // Mixed Payment Helper
@@ -221,6 +234,7 @@ export const PointOfSale: React.FC = () => {
           monto: isBs ? totalBs : totalUsd,
           tasa: isBs ? exchangeRate : 1,
           monto_equivalente_usd: totalUsd,
+          referencia: singlePaymentAccount.includes('Pago Móvil') && bdvVerifiedData ? bdvVerifiedData.referencia : undefined,
         },
       ];
     }
@@ -764,6 +778,57 @@ export const PointOfSale: React.FC = () => {
                   </div>
                 </div>
               )}
+
+              {/* BDV Pago Móvil Live Verification Callout */}
+              {(singlePaymentAccount.includes('Pago Móvil') || isMixedPaymentOpen) && (
+                <div className="p-3 bg-red-50/70 border border-red-200 rounded-xl space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5 text-red-700 font-bold text-xs">
+                      <Landmark className="w-3.5 h-3.5" />
+                      <span>Conciliación BDV en Línea</span>
+                    </div>
+                    <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-white text-red-600 border border-red-200">
+                      API 0102
+                    </span>
+                  </div>
+
+                  {bdvVerifiedData ? (
+                    <div className="bg-white p-2 rounded-lg border border-emerald-300 text-emerald-900 text-xs flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                        <div>
+                          <span className="font-bold block text-[11px]">Pago BDV Verificado</span>
+                          <span className="text-[10px] text-slate-500 font-mono">
+                            Ref: {bdvVerifiedData.referencia} • {bdvVerifiedData.codigo_aprobacion}
+                          </span>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setShowBdvModal(true)}
+                        className="text-[11px] text-indigo-600 font-bold hover:underline cursor-pointer"
+                      >
+                        Cambiar
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-[11px] text-slate-600">
+                        Verifica en segundos que los Bolívares ingresaron a la cuenta BDV.
+                      </p>
+                      <button
+                        type="button"
+                        id="open-bdv-verify-btn"
+                        onClick={() => setShowBdvModal(true)}
+                        className="px-2.5 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs font-bold flex items-center gap-1.5 shrink-0 shadow-2xs cursor-pointer transition"
+                      >
+                        <ShieldCheck className="w-3.5 h-3.5" />
+                        <span>Verificar BDV</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Totals Summary */}
@@ -817,6 +882,25 @@ export const PointOfSale: React.FC = () => {
 
       {/* Post-Sale Receipt Modal */}
       <ReceiptModal sale={lastSale} onClose={() => setLastSale(null)} />
+
+      {/* BDV Live Payment Verification Modal */}
+      <BdvVerificationModal
+        isOpen={showBdvModal}
+        onClose={() => setShowBdvModal(false)}
+        expectedAmountBs={totalBs}
+        expectedAmountUsd={totalUsd}
+        initialCustomerPhone={customerPhone}
+        initialCustomerRif={customerRif}
+        onVerificationSuccess={(res) => {
+          setBdvVerifiedData({
+            referencia: res.referencia,
+            codigo_aprobacion: res.codigo_aprobacion,
+            monto_bs: res.monto_bs,
+            fecha: res.fecha_transaccion,
+          });
+          setShowBdvModal(false);
+        }}
+      />
 
     </div>
   );

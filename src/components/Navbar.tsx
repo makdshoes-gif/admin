@@ -14,9 +14,13 @@ import {
   RotateCcw,
   Check,
   UserCheck,
-  Menu
+  Menu,
+  Cloud,
+  Database,
+  Landmark
 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
+import { CloudIntegrationModal } from './common/CloudIntegrationModal';
 
 interface NavbarProps {
   activeTab: 'pos' | 'inventory' | 'reports' | 'cash';
@@ -171,6 +175,7 @@ export const Header: React.FC<{
   const [showNotifications, setShowNotifications] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [manualMode, setManualMode] = useState(false);
+  const [showCloudModal, setShowCloudModal] = useState(false);
 
   const unreadCount = notifications.filter((n) => !n.read).length;
 
@@ -279,6 +284,17 @@ export const Header: React.FC<{
               isBcvSyncing ? 'animate-spin text-indigo-600' : ''
             }`}
           />
+        </button>
+
+        {/* BDV & Cloud Integrations Button */}
+        <button
+          id="cloud-integrations-btn"
+          onClick={() => setShowCloudModal(true)}
+          title="Conexiones: Banco de Venezuela (BDV), Neon Database y Vercel"
+          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-indigo-50 border border-indigo-200 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 transition cursor-pointer shadow-2xs"
+        >
+          <Cloud className="w-3.5 h-3.5 text-indigo-600" />
+          <span className="hidden md:inline font-bold">Cloud & BDV</span>
         </button>
 
         {/* Notification Bell */}
@@ -594,6 +610,11 @@ export const Header: React.FC<{
           </div>
         </div>
       )}
+      {/* Cloud & BDV Integrations Modal */}
+      <CloudIntegrationModal
+        isOpen={showCloudModal}
+        onClose={() => setShowCloudModal(false)}
+      />
     </header>
   );
 };
