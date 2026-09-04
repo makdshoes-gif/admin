@@ -23,14 +23,19 @@ import {
   ShieldCheck,
   ChevronRight,
   X,
-  FileSpreadsheet
+  FileSpreadsheet,
+  UploadCloud
 } from 'lucide-react';
+import { BdvFileImportModal } from './BdvFileImportModal';
+import { GoogleSheetsSyncModal } from '../common/GoogleSheetsSyncModal';
 
 export const BankReconciliationView: React.FC = () => {
   const { bankMovements, addBankMovement, updateBankMovement, sales, expenses, exchangeRate } = useStore();
 
   // Navigation subtabs inside reconciliation
   const [activeSubTab, setActiveSubTab] = useState<'reconciliation' | 'neon_explorer'>('reconciliation');
+  const [isBdvModalOpen, setIsBdvModalOpen] = useState(false);
+  const [isSheetsModalOpen, setIsSheetsModalOpen] = useState(false);
 
   // Neon DB state
   const [dbStatus, setDbStatus] = useState<{ connected: boolean; message: string; databaseName?: string } | null>(null);
@@ -414,14 +419,32 @@ export const BankReconciliationView: React.FC = () => {
               </select>
             </div>
 
-            <div className="flex items-center space-x-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                onClick={() => setIsBdvModalOpen(true)}
+                className="flex items-center space-x-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold shadow-xs transition-colors cursor-pointer"
+                title="Subir archivo o pegar estado de cuenta de Banco de Venezuela (0102)"
+              >
+                <Landmark className="w-3.5 h-3.5" />
+                <span>Subir Formato BDV</span>
+              </button>
+
+              <button
+                onClick={() => setIsSheetsModalOpen(true)}
+                className="flex items-center space-x-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-xs transition-colors cursor-pointer"
+                title="Sincronizar conciliación bancaria y balance con Google Sheets"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5" />
+                <span>Google Sheets</span>
+              </button>
+
               <button
                 onClick={handleAutoReconcile}
-                className="flex items-center space-x-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold shadow-xs transition-colors cursor-pointer"
+                className="flex items-center space-x-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-xs font-semibold shadow-xs transition-colors cursor-pointer"
                 title="Cruce automático de referencias con las ventas registradas"
               >
-                <CheckCircle2 className="w-3.5 h-3.5" />
-                <span>Conciliar Automático</span>
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Auto-Conciliar</span>
               </button>
 
               <button
@@ -429,7 +452,7 @@ export const BankReconciliationView: React.FC = () => {
                 className="flex items-center space-x-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold shadow-xs transition-colors cursor-pointer"
               >
                 <PlusCircle className="w-3.5 h-3.5" />
-                <span>Registrar Movimiento</span>
+                <span>Registrar Manual</span>
               </button>
             </div>
           </div>
@@ -820,6 +843,19 @@ export const BankReconciliationView: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* BDV Import Modal */}
+      <BdvFileImportModal
+        isOpen={isBdvModalOpen}
+        onClose={() => setIsBdvModalOpen(false)}
+      />
+
+      {/* Google Sheets Sync Modal */}
+      <GoogleSheetsSyncModal
+        isOpen={isSheetsModalOpen}
+        onClose={() => setIsSheetsModalOpen(false)}
+        periodLabel="Conciliación BDV & Movimientos"
+      />
     </div>
   );
 };

@@ -1,4 +1,4 @@
-import { ShoeProduct, StockMovement, Sale, AccountBalance } from '../types';
+import { ShoeProduct, StockMovement, Sale, AccountBalance, CurrencyPurchase } from '../types';
 
 export const INITIAL_EXCHANGE_RATE = 68.50; // Tasa oficial BCV Bs/USD
 
@@ -1095,6 +1095,45 @@ export const INITIAL_BANK_MOVEMENTS: import('../types').BankMovement[] = [
     vinculado_tipo: 'venta',
     notas: 'Pendiente confirmar si corresponde a venta de Nike Air Force o abono de cliente.',
     created_at: '2026-09-04T11:20:00Z',
+  }
+];
+
+export const INITIAL_CURRENCY_PURCHASES: CurrencyPurchase[] = [
+  {
+    id: 'cp-1',
+    fecha: '2026-09-02',
+    metodo: 'Binance P2P (USDT)',
+    monto_bs_gastado: 14000,
+    tasa_compra: 70.00,
+    monto_usd_recibido: 200.00,
+    referencia: 'BIN-P2P-9920148',
+    usuario: 'Administrador MAKD',
+    notas: 'Compra de USDT en Binance P2P con saldo positivo de Pago Móvil BDV para proveedor de calzado',
+    created_at: '2026-09-02T15:30:00Z',
+  },
+  {
+    id: 'cp-2',
+    fecha: '2026-09-03',
+    metodo: 'Zelle',
+    monto_bs_gastado: 17250,
+    tasa_compra: 69.00,
+    monto_usd_recibido: 250.00,
+    referencia: 'ZLL-TRF-441092',
+    usuario: 'Administrador MAKD',
+    notas: 'Compra de Zelle con bolívares en cuenta comercial BDV para pago de flete internacional',
+    created_at: '2026-09-03T18:15:00Z',
+  },
+  {
+    id: 'cp-3',
+    fecha: '2026-09-04',
+    metodo: 'Dólares Efectivo',
+    monto_bs_gastado: 6900,
+    tasa_compra: 69.00,
+    monto_usd_recibido: 100.00,
+    referencia: 'EFEC-CAMBIO-082',
+    usuario: 'Administrador MAKD',
+    notas: 'Cambio de bolívares en efectivo / transferencia por divisas en billete físico para caja fuerte',
+    created_at: '2026-09-04T12:00:00Z',
   }
 ];
 

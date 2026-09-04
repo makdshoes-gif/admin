@@ -215,3 +215,37 @@ export interface NeonTableInfo {
   row_count?: number;
 }
 
+export type CurrencyPurchaseMethod =
+  | 'Binance P2P (USDT)'
+  | 'Zelle'
+  | 'Dólares Efectivo'
+  | 'Transferencia USD';
+
+export interface CurrencyPurchase {
+  id: string;
+  fecha: string; // YYYY-MM-DD
+  metodo: CurrencyPurchaseMethod;
+  monto_bs_gastado: number; // Bolívares que se descuentan del balance positivo en Bs
+  tasa_compra: number;      // Tasa en Bs por cada $
+  monto_usd_recibido: number; // Dólares netos que se acreditan al balance positivo en USD
+  comision_usd?: number;
+  referencia?: string;      // N° de orden Binance, ID de Zelle, etc.
+  usuario: string;
+  notas?: string;
+  created_at: string;
+}
+
+export interface BdvParsedMovement {
+  id: string;
+  fecha: string;
+  referencia: string;
+  descripcion: string;
+  tipo: 'credito_ingreso' | 'debito_egreso';
+  monto_bs: number;
+  saldo_bs?: number;
+  estado_conciliacion: 'conciliado' | 'pendiente' | 'discrepancia';
+  venta_id?: string;
+  factura_ref?: string;
+  cliente?: string;
+}
+

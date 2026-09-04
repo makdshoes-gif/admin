@@ -19,9 +19,16 @@ import {
   AlertCircle,
   X,
   CheckCircle2,
+  FileSpreadsheet,
+  ArrowRightLeft,
+  Coins,
   Receipt,
-  Scale
+  Scale,
+  HelpCircle,
+  ExternalLink
 } from 'lucide-react';
+import { CurrencyPurchaseModal } from './CurrencyPurchaseModal';
+import { GoogleSheetsSyncModal } from '../common/GoogleSheetsSyncModal';
 
 const CATEGORIES: ExpenseCategory[] = [
   'Alquiler de Local',
@@ -38,13 +45,24 @@ const CATEGORIES: ExpenseCategory[] = [
 ];
 
 export const ExpensesManager: React.FC = () => {
-  const { expenses, addExpense, deleteExpense, sales, exchangeRate, accounts } = useStore();
+  const {
+    expenses,
+    addExpense,
+    deleteExpense,
+    sales,
+    exchangeRate,
+    accounts,
+    currencyPurchases,
+    deleteCurrencyPurchase,
+  } = useStore();
 
   // Filter state
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('todas');
   const [selectedPeriod, setSelectedPeriod] = useState<string>('este_mes'); // 'este_mes' | 'mes_anterior' | 'todo'
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isCurrencyModalOpen, setIsCurrencyModalOpen] = useState(false);
+  const [isSheetsModalOpen, setIsSheetsModalOpen] = useState(false);
 
   // Form State
   const todayIso = new Date().toISOString().split('T')[0];
@@ -106,6 +124,29 @@ export const ExpensesManager: React.FC = () => {
     });
   }, [periodExpenses, selectedCategory, searchTerm]);
 
+  // Filtered currency purchases according to selected period
+  const periodCurrencyPurchases = useMemo(() => {
+    return currencyPurchases.filter((c) => {
+      const pDate = c.fecha.split('T')[0];
+      if (selectedPeriod === 'este_mes') {
+        return pDate.startsWith(currentMonthStr);
+      } else if (selectedPeriod === 'mes_anterior') {
+        return pDate.startsWith(lastMonthStr);
+      }
+      return true;
+    });
+  }, [currencyPurchases, selectedPeriod, currentMonthStr, lastMonthStr]);
+
+  // Bolívares usados para comprar divisas
+  const totalBsGastadosDivisas = useMemo(() => {
+    return periodCurrencyPurchases.reduce((sum, c) => sum + c.monto_bs_gastado, 0);
+  }, [periodCurrencyPurchases]);
+
+  // Dólares recibidos por la compra (Binance, Zelle, Efectivo)
+  const totalUsdRecibidosDivisas = useMemo(() => {
+    return periodCurrencyPurchases.reduce((sum, c) => sum + c.monto_usd_recibido, 0);
+  }, [periodCurrencyPurchases]);
+
   // Financial Metrics (Fin de Mes / Profit & Loss)
   const totalIngresosUsd = useMemo(() => {
     return periodSales.reduce((sum, s) => sum + s.total_usd, 0);
@@ -133,6 +174,17 @@ export const ExpensesManager: React.FC = () => {
   // Utilidad Neta (Cuánto va quedando en fin de mes) = Utilidad Bruta - Gastos Operativos
   const utilidadNetaUsd = utilidadBrutaUsd - totalGastosUsd;
   const utilidadNetaBs = utilidadNetaUsd * exchangeRate;
+
+  // Lógica solicitada por el usuario:
+  // "en el reporte de fin de mes se puede agregar divisas, binance o zelle que se hayan comprado
+  // con los bs que se tienen en positivo teniendo un positivo en solo dolares a parte de la entrada
+  // que se tiene de bs se descuente de ahí"
+  
+  // Saldo restante en Bolívares descontando los Bs usados para comprar divisas y gastos en Bs
+  const saldoRestanteBs = Math.max(0, totalIngresosBs - totalGastosBs - totalBsGastadosDivisas);
+
+  // Positivo en solo dólares: utilidad en USD más los dólares adquiridos con los Bs positivos
+  const positivoEnSoloDolaresUsd = utilidadNetaUsd + totalUsdRecibidosDivisas;
 
   const margenNeto = totalIngresosUsd > 0 ? (utilidadNetaUsd / totalIngresosUsd) * 100 : 0;
 
@@ -292,9 +344,27 @@ export const ExpensesManager: React.FC = () => {
           </div>
 
           <button
+            onClick={() => setIsCurrencyModalOpen(true)}
+            className="flex items-center space-x-1.5 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold shadow-xs transition-colors cursor-pointer"
+            title="Registrar compra de Binance USDT, Zelle o Dólares Efectivo con Bolívares"
+          >
+            <ArrowRightLeft className="w-4 h-4" />
+            <span>Comprar Divisas (Bs ➔ USD)</span>
+          </button>
+
+          <button
+            onClick={() => setIsSheetsModalOpen(true)}
+            className="flex items-center space-x-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-xs transition-colors cursor-pointer"
+            title="Exportar reporte de fin de mes y divisas a Google Sheets"
+          >
+            <FileSpreadsheet className="w-4 h-4" />
+            <span>Google Sheets</span>
+          </button>
+
+          <button
             id="btn-nuevo-gasto"
             onClick={() => setIsModalOpen(true)}
-            className="flex items-center space-x-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold shadow-xs transition-colors cursor-pointer"
+            className="flex items-center space-x-1.5 px-3 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-semibold shadow-xs transition-colors cursor-pointer"
           >
             <PlusCircle className="w-4 h-4" />
             <span>Registrar Gasto</span>
@@ -400,6 +470,178 @@ export const ExpensesManager: React.FC = () => {
               {utilidadNetaUsd >= 0 ? `Ganancia ${margenNeto.toFixed(1)}%` : 'Déficit temporal'}
             </span>
           </div>
+        </div>
+      </div>
+
+      {/* End of Month Currency Conversion & "Positivo en Solo Dólares" Module */}
+      <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 rounded-2xl p-6 text-white shadow-xl border border-indigo-900/50 space-y-6">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-indigo-800/40 pb-4">
+          <div className="flex items-center space-x-3">
+            <div className="p-3 bg-blue-500/20 border border-blue-400/30 rounded-xl text-blue-400">
+              <ArrowRightLeft className="w-6 h-6" />
+            </div>
+            <div>
+              <div className="flex items-center space-x-2">
+                <h2 className="text-lg font-bold tracking-tight text-white">
+                  Reporte de Fin de Mes: Conversión de Bs Positivos y Saldo en Solo Dólares
+                </h2>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-blue-500/20 text-blue-300 border border-blue-400/30">
+                  {periodLabel}
+                </span>
+              </div>
+              <p className="text-xs text-slate-300 mt-0.5">
+                Descuenta automáticamente los Bolívares invertidos en Binance, Zelle o Efectivo para consolidar un balance positivo neto en solo dólares.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center space-x-2">
+            <button
+              onClick={() => setIsCurrencyModalOpen(true)}
+              className="px-3.5 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-xl shadow-xs transition-colors flex items-center space-x-1.5"
+            >
+              <ArrowRightLeft className="w-3.5 h-3.5" />
+              <span>+ Registrar Compra P2P</span>
+            </button>
+            <button
+              onClick={() => setIsSheetsModalOpen(true)}
+              className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl shadow-xs transition-colors flex items-center space-x-1.5"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5" />
+              <span>Exportar a Google Sheets</span>
+            </button>
+          </div>
+        </div>
+
+        {/* 4-Step Accounting Equation */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {/* Card 1: Entradas en Bs */}
+          <div className="bg-slate-800/80 border border-slate-700/80 rounded-xl p-4 space-y-1.5">
+            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
+              1. Entradas en Bolívares (Ventas)
+            </span>
+            <div className="text-xl font-extrabold text-white">
+              {totalIngresosBs.toLocaleString('es-VE', { minimumFractionDigits: 2 })} Bs
+            </div>
+            <p className="text-[11px] text-slate-400">
+              Ventas cobradas en Pago Móvil / Efectivo Bs
+            </p>
+          </div>
+
+          {/* Card 2: Descuento por compra de Divisas */}
+          <div className="bg-amber-950/40 border border-amber-800/50 rounded-xl p-4 space-y-1.5">
+            <span className="text-[11px] font-bold text-amber-400 uppercase tracking-wider block">
+              2. Bs Gastados en Divisas
+            </span>
+            <div className="text-xl font-extrabold text-amber-300">
+              -{totalBsGastadosDivisas.toLocaleString('es-VE', { minimumFractionDigits: 2 })} Bs
+            </div>
+            <p className="text-[11px] text-amber-200/80">
+              Descontado de la entrada de bolívares ({periodCurrencyPurchases.length} compras)
+            </p>
+          </div>
+
+          {/* Card 3: Saldo Restante en Bolívares */}
+          <div className="bg-slate-800/80 border border-slate-700/80 rounded-xl p-4 space-y-1.5">
+            <span className="text-[11px] font-bold text-emerald-400 uppercase tracking-wider block">
+              3. Saldo Restante en Bs
+            </span>
+            <div className="text-xl font-extrabold text-emerald-400">
+              {saldoRestanteBs.toLocaleString('es-VE', { minimumFractionDigits: 2 })} Bs
+            </div>
+            <p className="text-[11px] text-slate-400">
+              Disponible en cuentas después de compras y gastos
+            </p>
+          </div>
+
+          {/* Card 4: Positivo en Solo Dólares */}
+          <div className="bg-gradient-to-br from-blue-600/30 to-emerald-600/30 border-2 border-emerald-400/60 rounded-xl p-4 space-y-1.5 shadow-lg">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-black text-emerald-300 uppercase tracking-wider block">
+                4. Positivo en Solo Dólares
+              </span>
+              <span className="px-1.5 py-0.5 rounded bg-emerald-500/30 text-emerald-200 text-[10px] font-bold">
+                Neto USD
+              </span>
+            </div>
+            <div className="text-2xl font-black text-white">
+              ${positivoEnSoloDolaresUsd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </div>
+            <p className="text-[11px] text-emerald-200">
+              Incluye +${totalUsdRecibidosDivisas.toFixed(2)} USD comprados con los Bs positivos
+            </p>
+          </div>
+        </div>
+
+        {/* Currency Purchases History Table */}
+        <div className="bg-slate-900/90 rounded-xl border border-slate-800 p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider">
+              Detalle de Divisas Compradas con Bolívares ({periodCurrencyPurchases.length})
+            </h3>
+            <span className="text-[11px] text-slate-400">
+              Total Divisas Acreditadas: <strong className="text-emerald-400">+${totalUsdRecibidosDivisas.toFixed(2)} USD</strong>
+            </span>
+          </div>
+
+          {periodCurrencyPurchases.length === 0 ? (
+            <div className="py-6 text-center text-xs text-slate-400 border border-dashed border-slate-800 rounded-lg">
+              No hay compras de divisas registradas en este período. Haz clic en <strong>"+ Registrar Compra P2P"</strong> para convertir tus bolívares a Binance USDT, Zelle o Efectivo.
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="text-[10px] uppercase text-slate-400 border-b border-slate-800">
+                  <tr>
+                    <th className="py-2 px-3">Fecha</th>
+                    <th className="py-2 px-3">Destino</th>
+                    <th className="py-2 px-3 text-right">Bs. Gastados (Descontados)</th>
+                    <th className="py-2 px-3 text-center">Tasa Compra</th>
+                    <th className="py-2 px-3 text-right">Dólares Recibidos</th>
+                    <th className="py-2 px-3">Referencia / Comprobante</th>
+                    <th className="py-2 px-2 text-center">Acción</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800/60 font-medium text-slate-300">
+                  {periodCurrencyPurchases.map((cp) => (
+                    <tr key={cp.id} className="hover:bg-slate-800/40">
+                      <td className="py-2.5 px-3 font-mono text-[11px] text-slate-400">{cp.fecha}</td>
+                      <td className="py-2.5 px-3">
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-500/20 text-blue-300 border border-blue-400/20">
+                          {cp.metodo}
+                        </span>
+                      </td>
+                      <td className="py-2.5 px-3 text-right font-mono font-bold text-amber-400">
+                        -{cp.monto_bs_gastado.toLocaleString('es-VE')} Bs
+                      </td>
+                      <td className="py-2.5 px-3 text-center font-mono text-[11px] text-slate-400">
+                        {cp.tasa_compra.toFixed(2)} Bs/$
+                      </td>
+                      <td className="py-2.5 px-3 text-right font-mono font-black text-emerald-400">
+                        +${cp.monto_usd_recibido.toFixed(2)} USD
+                      </td>
+                      <td className="py-2.5 px-3 font-mono text-[11px] text-slate-400 truncate max-w-[150px]">
+                        {cp.referencia || '—'}
+                      </td>
+                      <td className="py-2.5 px-2 text-center">
+                        <button
+                          onClick={() => {
+                            if (window.confirm(`¿Seguro que desea anular la compra de divisas de $${cp.monto_usd_recibido.toFixed(2)} (${cp.metodo})? Se restituirán los bolívares al saldo.`)) {
+                              deleteCurrencyPurchase(cp.id);
+                            }
+                          }}
+                          className="p-1 text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 rounded transition-colors"
+                          title="Anular compra de divisas"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       </div>
 
@@ -794,6 +1036,19 @@ export const ExpensesManager: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Modal: Comprar Divisas (Bs a USD/Binance/Zelle) */}
+      <CurrencyPurchaseModal
+        isOpen={isCurrencyModalOpen}
+        onClose={() => setIsCurrencyModalOpen(false)}
+      />
+
+      {/* Modal: Exportar a Google Sheets */}
+      <GoogleSheetsSyncModal
+        isOpen={isSheetsModalOpen}
+        onClose={() => setIsSheetsModalOpen(false)}
+        periodLabel={periodLabel}
+      />
     </div>
   );
 };

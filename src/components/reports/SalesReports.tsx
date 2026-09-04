@@ -23,6 +23,7 @@ import { useStore } from '../../context/StoreContext';
 import { Sale, ReportPeriod } from '../../types';
 import { ReceiptModal } from '../common/ReceiptModal';
 import { DailySalesChart } from './DailySalesChart';
+import { GoogleSheetsSyncModal } from '../common/GoogleSheetsSyncModal';
 
 export const SalesReports: React.FC = () => {
   const { sales, exchangeRate, products, bcvInfo, isBcvSyncing, syncBcvRate } = useStore();
@@ -32,6 +33,7 @@ export const SalesReports: React.FC = () => {
   const [customEndDate, setCustomEndDate] = useState('');
   const [selectedSaleForReceipt, setSelectedSaleForReceipt] = useState<Sale | null>(null);
   const [lastGeneratedTime, setLastGeneratedTime] = useState<string>(new Date().toLocaleTimeString());
+  const [isSheetsModalOpen, setIsSheetsModalOpen] = useState(false);
 
   // Filter sales by selected period
   const filteredSales = useMemo(() => {
@@ -283,10 +285,20 @@ export const SalesReports: React.FC = () => {
           <button
             id="export-excel-btn"
             onClick={handleExportExcel}
-            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+            className="px-3 py-1.5 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+          >
+            <Download className="w-4 h-4" />
+            <span>Excel (.xlsx)</span>
+          </button>
+
+          <button
+            id="export-sheets-btn"
+            onClick={() => setIsSheetsModalOpen(true)}
+            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+            title="Sincronizar y exportar a Google Sheets"
           >
             <FileSpreadsheet className="w-4 h-4" />
-            <span>Exportar a Excel (.xlsx)</span>
+            <span>Google Sheets</span>
           </button>
 
           <button
@@ -687,6 +699,12 @@ export const SalesReports: React.FC = () => {
         onClose={() => setSelectedSaleForReceipt(null)}
       />
 
+      {/* Google Sheets Sync Modal */}
+      <GoogleSheetsSyncModal
+        isOpen={isSheetsModalOpen}
+        onClose={() => setIsSheetsModalOpen(false)}
+        periodLabel={`Ventas ${period.toUpperCase()}`}
+      />
     </div>
   );
 };

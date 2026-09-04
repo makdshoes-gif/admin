@@ -8,6 +8,7 @@ import {
   UserRole,
   Expense,
   BankMovement,
+  CurrencyPurchase,
 } from '../types';
 import {
   INITIAL_PRODUCTS,
@@ -17,6 +18,7 @@ import {
   INITIAL_EXCHANGE_RATE,
   INITIAL_EXPENSES,
   INITIAL_BANK_MOVEMENTS,
+  INITIAL_CURRENCY_PURCHASES,
 } from '../data/initialData';
 import { fetchLiveBcvRate, BcvRateInfo } from '../services/bcvService';
 import { 
@@ -71,11 +73,15 @@ interface StoreContextType {
   ) => DailyCashClosure;
   expenses: Expense[];
   bankMovements: BankMovement[];
+  currencyPurchases: CurrencyPurchase[];
   addExpense: (expense: Omit<Expense, 'id' | 'created_at'>) => void;
   deleteExpense: (id: string) => void;
   updateExpense: (id: string, updates: Partial<Expense>) => void;
   addBankMovement: (movement: Omit<BankMovement, 'id' | 'created_at'>) => void;
   updateBankMovement: (id: string, updates: Partial<BankMovement>) => void;
+  importBankMovements: (movements: Omit<BankMovement, 'id' | 'created_at'>[]) => number;
+  addCurrencyPurchase: (purchase: Omit<CurrencyPurchase, 'id' | 'created_at'>) => void;
+  deleteCurrencyPurchase: (id: string) => void;
   markNotificationsAsRead: () => void;
   clearNotification: (id: string) => void;
   resetToDemoData: () => void;
@@ -114,6 +120,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [bankMovements, setBankMovements] = useState<BankMovement[]>(() => {
     const saved = localStorage.getItem(`${STORAGE_KEY}_bank_movements`);
     return saved ? JSON.parse(saved) : INITIAL_BANK_MOVEMENTS;
+  });
+
+  const [currencyPurchases, setCurrencyPurchases] = useState<CurrencyPurchase[]>(() => {
+    const saved = localStorage.getItem(`${STORAGE_KEY}_currency_purchases`);
+    return saved ? JSON.parse(saved) : INITIAL_CURRENCY_PURCHASES;
   });
 
   const [exchangeRate, setExchangeRateState] = useState<number>(() => {
@@ -198,6 +209,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   useEffect(() => {
     localStorage.setItem(`${STORAGE_KEY}_bank_movements`, JSON.stringify(bankMovements));
   }, [bankMovements]);
+
+  useEffect(() => {
+    localStorage.setItem(`${STORAGE_KEY}_currency_purchases`, JSON.stringify(currencyPurchases));
+  }, [currencyPurchases]);
 
   useEffect(() => {
     localStorage.setItem(`${STORAGE_KEY}_bcv_info`, JSON.stringify(bcvInfo));
@@ -725,6 +740,111 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     );
   };
 
+  // Batch import bank movements (e.g. from BDV statement)
+  const importBankMovements = (movements: Omit<BankMovement, 'id' | 'created_at'>[]): number => {
+    const newItems: BankMovement[] = movements.map((mov, idx) => ({
+      ...mov,
+      id: `bm-bdv-${Date.now()}-${idx}-${Math.random().toString(36).substr(2, 4)}`,
+      created_at: new Date().toISOString(),
+    }));
+
+    setBankMovements((prev) => [...newItems, ...prev]);
+
+    // Save asynchronously to Neon if table exists
+    newItems.forEach((item) => {
+      saveBankReconciliationApi(item).catch(() => {});
+    });
+
+    addNotification(
+      'Movimientos BDV Importados',
+      `Se incorporaron con éxito ${newItems.length} movimientos de la cuenta Banco de Venezuela a la conciliación.`,
+      'success'
+    );
+
+    return newItems.length;
+  };
+
+  // Currency Purchases (Conversión de Bs a Divisas / Binance / Zelle)
+  const addCurrencyPurchase = (purchaseData: Omit<CurrencyPurchase, 'id' | 'created_at'>) => {
+    const newPurchase: CurrencyPurchase = {
+      ...purchaseData,
+      id: `cp-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      created_at: new Date().toISOString(),
+    };
+
+    setCurrencyPurchases((prev) => [newPurchase, ...prev]);
+
+    // 1. Descontar los Bolívares del saldo en Bs (Pago Móvil / Efectivo Bs)
+    setAccounts((prevAccounts) =>
+      prevAccounts.map((acc) => {
+        if (acc.moneda === 'Bs' && acc.nombre.toLowerCase().includes('pago móvil')) {
+          return {
+            ...acc,
+            saldo: Math.max(0, acc.saldo - purchaseData.monto_bs_gastado),
+          };
+        }
+        return acc;
+      })
+    );
+
+    // 2. Acreditar los Dólares al saldo positivo en USD (Binance / Zelle / Efectivo)
+    setAccounts((prevAccounts) =>
+      prevAccounts.map((acc) => {
+        const methodLower = purchaseData.metodo.toLowerCase();
+        if (
+          (methodLower.includes('binance') && acc.nombre.toLowerCase().includes('binance')) ||
+          (methodLower.includes('zelle') && acc.nombre.toLowerCase().includes('zelle')) ||
+          (methodLower.includes('efectivo') && acc.nombre.toLowerCase().includes('efectivo usd'))
+        ) {
+          return {
+            ...acc,
+            saldo: acc.saldo + purchaseData.monto_usd_recibido,
+          };
+        }
+        return acc;
+      })
+    );
+
+    addNotification(
+      'Compra de Divisas Registrada',
+      `Conversión: -${purchaseData.monto_bs_gastado.toLocaleString('es-VE')} Bs ➔ +$${purchaseData.monto_usd_recibido.toFixed(2)} (${purchaseData.metodo})`,
+      'success'
+    );
+  };
+
+  const deleteCurrencyPurchase = (id: string) => {
+    const target = currencyPurchases.find((c) => c.id === id);
+    if (!target) return;
+
+    setCurrencyPurchases((prev) => prev.filter((c) => c.id !== id));
+
+    // Revertir balances
+    setAccounts((prevAccounts) =>
+      prevAccounts.map((acc) => {
+        if (acc.moneda === 'Bs' && acc.nombre.toLowerCase().includes('pago móvil')) {
+          return {
+            ...acc,
+            saldo: acc.saldo + target.monto_bs_gastado,
+          };
+        }
+        const methodLower = target.metodo.toLowerCase();
+        if (
+          (methodLower.includes('binance') && acc.nombre.toLowerCase().includes('binance')) ||
+          (methodLower.includes('zelle') && acc.nombre.toLowerCase().includes('zelle')) ||
+          (methodLower.includes('efectivo') && acc.nombre.toLowerCase().includes('efectivo usd'))
+        ) {
+          return {
+            ...acc,
+            saldo: Math.max(0, acc.saldo - target.monto_usd_recibido),
+          };
+        }
+        return acc;
+      })
+    );
+
+    addNotification('Registro Eliminado', 'Se anuló la compra de divisas seleccionada.', 'info');
+  };
+
   const markNotificationsAsRead = () => {
     setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
   };
@@ -741,6 +861,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setExchangeRateState(INITIAL_EXCHANGE_RATE);
     setExpenses(INITIAL_EXPENSES);
     setBankMovements(INITIAL_BANK_MOVEMENTS);
+    setCurrencyPurchases(INITIAL_CURRENCY_PURCHASES);
     setCashClosures([]);
     localStorage.removeItem(`${STORAGE_KEY}_products`);
     localStorage.removeItem(`${STORAGE_KEY}_movements`);
@@ -750,7 +871,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     localStorage.removeItem(`${STORAGE_KEY}_closures`);
     localStorage.removeItem(`${STORAGE_KEY}_expenses`);
     localStorage.removeItem(`${STORAGE_KEY}_bank_movements`);
-    addNotification('Datos Restaurados', 'Catálogo, gastos y conciliaciones restablecidos al demo inicial.', 'info');
+    localStorage.removeItem(`${STORAGE_KEY}_currency_purchases`);
+    addNotification('Datos Restaurados', 'Catálogo, compras de divisas, gastos y conciliaciones restablecidos.', 'info');
   };
 
   return (
@@ -780,11 +902,15 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         recordCashClosure,
         expenses,
         bankMovements,
+        currencyPurchases,
         addExpense,
         deleteExpense,
         updateExpense,
         addBankMovement,
         updateBankMovement,
+        importBankMovements,
+        addCurrencyPurchase,
+        deleteCurrencyPurchase,
         markNotificationsAsRead,
         clearNotification,
         resetToDemoData,
