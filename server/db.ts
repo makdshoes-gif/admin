@@ -202,10 +202,167 @@ export async function initDatabaseSchema() {
       );
     `;
 
+    // 7. Table for Stock Movements (flexible JSONB payload, matches src/types.ts StockMovement)
+    await sql`
+      CREATE TABLE IF NOT EXISTS stock_movements (
+        id VARCHAR(64) PRIMARY KEY,
+        data JSONB NOT NULL,
+        fecha TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      );
+    `;
+
+    // 8. Table for Daily Cash Closures (flexible JSONB payload, matches src/types.ts DailyCashClosure)
+    await sql`
+      CREATE TABLE IF NOT EXISTS daily_closures (
+        id VARCHAR(64) PRIMARY KEY,
+        data JSONB NOT NULL,
+        fecha VARCHAR(20),
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      );
+    `;
+
+    // 9. Key/value table for small global settings: accounts, admin_pin, exchange_rate, bcv_info, currency_purchases
+    await sql`
+      CREATE TABLE IF NOT EXISTS store_settings (
+        key VARCHAR(50) PRIMARY KEY,
+        value JSONB NOT NULL,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      );
+    `;
+
     isInitialized = true;
     console.log('✅ Esquema Neon PostgreSQL verificado e inicializado correctamente.');
   } catch (error) {
     console.error('Error al inicializar tablas en Neon:', error);
+  }
+}
+
+// ---------- Store Settings (accounts, admin_pin, exchange_rate, etc.) ----------
+
+const DEFAULT_ACCOUNTS = [
+  { id: 'acc-1', nombre: 'Efectivo USD', moneda: 'USD', saldo: 0.0, icono: 'Banknote' },
+  { id: 'acc-2', nombre: 'Efectivo Bs', moneda: 'Bs', saldo: 0.0, icono: 'Banknote' },
+  { id: 'acc-3', nombre: 'Pago Móvil (BDV)', moneda: 'Bs', saldo: 0.0, icono: 'Smartphone' },
+  { id: 'acc-pos', nombre: 'Punto de Venta', moneda: 'Bs', saldo: 0.0, icono: 'CreditCard' },
+  { id: 'acc-4', nombre: 'Zelle', moneda: 'USD', saldo: 0.0, icono: 'CreditCard' },
+  { id: 'acc-5', nombre: 'Binance USDT', moneda: 'USD', saldo: 0.0, icono: 'Coins' },
+  { id: 'acc-6', nombre: 'Cashea', moneda: 'USD', saldo: 0.0, icono: 'CircleDollarSign' },
+];
+
+const SETTING_DEFAULTS: Record<string, unknown> = {
+  accounts: DEFAULT_ACCOUNTS,
+  admin_pin: '1234',
+  exchange_rate: 68.5,
+  bcv_info: null,
+  currency_purchases: [],
+};
+
+export async function getStoreSetting<T = unknown>(key: string): Promise<T> {
+  const sql = getNeonSql();
+  const fallback = (SETTING_DEFAULTS[key] ?? null) as T;
+  if (!sql) return fallback;
+
+  try {
+    await initDatabaseSchema();
+    const rows = await sql`SELECT value FROM store_settings WHERE key = ${key}`;
+    if (rows.length === 0) return fallback;
+    return rows[0].value as T;
+  } catch (err) {
+    console.error(`Error leyendo store_settings[${key}]:`, err);
+    return fallback;
+  }
+}
+
+export async function setStoreSetting(key: string, value: unknown): Promise<void> {
+  const sql = getNeonSql();
+  if (!sql) throw new Error('DATABASE_URL no configurada en Neon');
+
+  await initDatabaseSchema();
+  await sql`
+    INSERT INTO store_settings (key, value, updated_at)
+    VALUES (${key}, ${JSON.stringify(value)}, NOW())
+    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW();
+  `;
+}
+
+// ---------- Stock Movements ----------
+
+export async function getStockMovements(): Promise<any[]> {
+  const sql = getNeonSql();
+  if (!sql) return [];
+  try {
+    await initDatabaseSchema();
+    const rows = await sql`SELECT data FROM stock_movements ORDER BY fecha DESC, created_at DESC`;
+    return rows.map((r: any) => r.data);
+  } catch (err) {
+    console.error('Error leyendo stock_movements:', err);
+    return [];
+  }
+}
+
+export async function addStockMovement(movement: any): Promise<void> {
+  const sql = getNeonSql();
+  if (!sql) throw new Error('DATABASE_URL no configurada en Neon');
+  await initDatabaseSchema();
+  await sql`
+    INSERT INTO stock_movements (id, data, fecha)
+    VALUES (${movement.id}, ${JSON.stringify(movement)}, ${movement.fecha || new Date().toISOString()})
+    ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data;
+  `;
+}
+
+export async function replaceStockMovements(movements: any[]): Promise<void> {
+  const sql = getNeonSql();
+  if (!sql) throw new Error('DATABASE_URL no configurada en Neon');
+  await initDatabaseSchema();
+  await sql`DELETE FROM stock_movements`;
+  for (const m of movements) {
+    await sql`
+      INSERT INTO stock_movements (id, data, fecha)
+      VALUES (${m.id}, ${JSON.stringify(m)}, ${m.fecha || new Date().toISOString()})
+      ON CONFLICT (id) DO NOTHING;
+    `;
+  }
+}
+
+// ---------- Daily Cash Closures ----------
+
+export async function getDailyClosures(): Promise<any[]> {
+  const sql = getNeonSql();
+  if (!sql) return [];
+  try {
+    await initDatabaseSchema();
+    const rows = await sql`SELECT data FROM daily_closures ORDER BY created_at DESC`;
+    return rows.map((r: any) => r.data);
+  } catch (err) {
+    console.error('Error leyendo daily_closures:', err);
+    return [];
+  }
+}
+
+export async function addDailyClosure(closure: any): Promise<void> {
+  const sql = getNeonSql();
+  if (!sql) throw new Error('DATABASE_URL no configurada en Neon');
+  await initDatabaseSchema();
+  await sql`
+    INSERT INTO daily_closures (id, data, fecha)
+    VALUES (${closure.id}, ${JSON.stringify(closure)}, ${closure.fecha || null})
+    ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data;
+  `;
+}
+
+export async function replaceDailyClosures(closures: any[]): Promise<void> {
+  const sql = getNeonSql();
+  if (!sql) throw new Error('DATABASE_URL no configurada en Neon');
+  await initDatabaseSchema();
+  await sql`DELETE FROM daily_closures`;
+  for (const c of closures) {
+    await sql`
+      INSERT INTO daily_closures (id, data, fecha)
+      VALUES (${c.id}, ${JSON.stringify(c)}, ${c.fecha || null})
+      ON CONFLICT (id) DO NOTHING;
+    `;
   }
 }
 
