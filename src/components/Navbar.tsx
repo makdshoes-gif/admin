@@ -177,6 +177,9 @@ export const Header: React.FC<{
     isAutoSyncEnabled,
     syncBcvRate,
     setIsAutoSyncEnabled,
+    syncStatus,
+    lastSyncedAt,
+    forceSync,
   } = useStore();
 
   const [showRateModal, setShowRateModal] = useState(false);
@@ -298,6 +301,35 @@ export const Header: React.FC<{
               isBcvSyncing ? 'animate-spin text-indigo-600' : ''
             }`}
           />
+        </button>
+
+        {/* Cloud Sync Indicator & Force Refresh */}
+        <button
+          id="cloud-sync-status-btn"
+          onClick={() => forceSync()}
+          title={`Sincronización en la nube: ${
+            syncStatus === 'synced' ? 'Sincronizado con el servidor' : syncStatus === 'syncing' ? 'Sincronizando...' : 'Error de sincronización'
+          }. Última sinc: ${lastSyncedAt}. Clic para refrescar.`}
+          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-semibold transition cursor-pointer shadow-2xs ${
+            syncStatus === 'synced'
+              ? 'bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100'
+              : syncStatus === 'syncing'
+              ? 'bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100'
+              : 'bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100'
+          }`}
+        >
+          <RefreshCw
+            className={`w-3.5 h-3.5 ${
+              syncStatus === 'syncing'
+                ? 'animate-spin text-blue-600'
+                : syncStatus === 'synced'
+                ? 'text-emerald-600'
+                : 'text-amber-600'
+            }`}
+          />
+          <span className="hidden lg:inline font-bold">
+            {syncStatus === 'synced' ? 'Nube OK' : syncStatus === 'syncing' ? 'Guardando...' : 'Reintentar'}
+          </span>
         </button>
 
         {/* BDV & Cloud Integrations Button */}

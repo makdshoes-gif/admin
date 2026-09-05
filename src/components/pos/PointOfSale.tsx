@@ -22,11 +22,12 @@ import {
   Landmark,
   ShieldCheck,
   Edit3,
-  Tag
+  Tag,
+  Calendar
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { useStore } from '../../context/StoreContext';
-import { ShoeProduct, SaleItem, SalePayment, Sale } from '../../types';
+import { ShoeProduct, SaleItem, SalePayment, Sale, ProductCategory } from '../../types';
 import { ReceiptModal } from '../common/ReceiptModal';
 import { BdvVerificationModal } from '../common/BdvVerificationModal';
 
@@ -48,6 +49,7 @@ export const PointOfSale: React.FC = () => {
 
   // Search & Filter State
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState<string>('Todas');
   const [selectedBrand, setSelectedBrand] = useState('Todas');
   const [selectedType, setSelectedType] = useState('Todos');
   const [selectedSize, setSelectedSize] = useState('Todas');
@@ -60,7 +62,8 @@ export const PointOfSale: React.FC = () => {
   const [applyIva, setApplyIva] = useState(false);
   const ivaPercent = 16;
 
-  // Customer Data
+  // Invoice & Customer Data
+  const [invoiceDate, setInvoiceDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
   const [customerName, setCustomerName] = useState('');
   const [customerLastName, setCustomerLastName] = useState('');
   const [customerRif, setCustomerRif] = useState('');
@@ -102,13 +105,16 @@ export const PointOfSale: React.FC = () => {
         p.color.toLowerCase().includes(searchQuery.toLowerCase()) ||
         p.talla.includes(searchQuery);
 
+      const matchCategory =
+        selectedCategory === 'Todas' || (p.categoria || 'Calzado') === selectedCategory;
+
       const matchBrand = selectedBrand === 'Todas' || p.marca === selectedBrand;
       const matchType = selectedType === 'Todos' || p.tipo === selectedType;
       const matchSize = selectedSize === 'Todas' || p.talla === selectedSize;
 
-      return matchSearch && matchBrand && matchType && matchSize;
+      return matchCategory && matchSearch && matchBrand && matchType && matchSize;
     });
-  }, [products, searchQuery, selectedBrand, selectedType, selectedSize]);
+  }, [products, searchQuery, selectedCategory, selectedBrand, selectedType, selectedSize]);
 
   // Cart Calculations
   const subtotalUsd = useMemo(() => {
@@ -309,6 +315,12 @@ export const PointOfSale: React.FC = () => {
 
     const invoiceNumber = `MK-${Math.floor(1000 + Math.random() * 9000)}`;
 
+    const now = new Date();
+    const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
+    const finalSaleDate = invoiceDate
+      ? new Date(`${invoiceDate}T${timeStr}`).toISOString()
+      : now.toISOString();
+
     const newSale = recordSale({
       numero_factura: invoiceNumber,
       cliente_nombre: customerName.trim() || 'Consumidor',
@@ -325,7 +337,7 @@ export const PointOfSale: React.FC = () => {
       total_bs: totalBs,
       tasa_cambio: exchangeRate,
       pagos: finalPayments,
-      fecha: new Date().toISOString(),
+      fecha: finalSaleDate,
       usuario: userRole === 'admin' ? 'Admin' : 'Cajera',
     });
 
@@ -342,6 +354,7 @@ export const PointOfSale: React.FC = () => {
 
     // Reset Form & open receipt
     handleClearCart();
+    setInvoiceDate(new Date().toISOString().split('T')[0]);
     setIsMixedPaymentOpen(false);
     setLastSale(newSale);
   };
@@ -379,6 +392,33 @@ export const PointOfSale: React.FC = () => {
           
           {/* Search & Filter Bar */}
           <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs space-y-3">
+            {/* Category Quick Filter Pills */}
+            <div className="flex flex-wrap items-center gap-1.5 pb-2 border-b border-slate-100 text-xs">
+              <span className="text-slate-400 font-semibold mr-1 text-[11px]">Categoría:</span>
+              {[
+                { id: 'Todas', label: 'Todas' },
+                { id: 'Calzado', label: '👟 Calzado' },
+                { id: 'Gorras', label: '🧢 Gorras' },
+                { id: 'Medias', label: '🧦 Medias' },
+                { id: 'Accesorios', label: '🎒 Accesorios' },
+                { id: 'Ropa', label: '👕 Ropa' },
+                { id: 'Otros', label: '📦 Otros' },
+              ].map((cat) => (
+                <button
+                  key={cat.id}
+                  type="button"
+                  onClick={() => setSelectedCategory(cat.id)}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+                    selectedCategory === cat.id
+                      ? 'bg-indigo-600 text-white font-bold shadow-xs'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  {cat.label}
+                </button>
+              ))}
+            </div>
+
             <div className="relative">
               <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
               <input
@@ -815,6 +855,46 @@ export const PointOfSale: React.FC = () => {
                   placeholder="WhatsApp / Teléfono"
                   className="px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:bg-white"
                 />
+              </div>
+
+              {/* Invoice Date (Backdating / Historical Invoices) */}
+              <div className="pt-2 border-t border-slate-100">
+                <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">
+                  <span className="flex items-center gap-1">
+                    <Calendar className="w-3.5 h-3.5 text-indigo-600" /> Fecha de Emisión Factura
+                  </span>
+                  {invoiceDate !== new Date().toISOString().split('T')[0] ? (
+                    <span className="text-amber-700 bg-amber-50 border border-amber-200 font-bold px-1.5 py-0.5 rounded text-[9px] flex items-center gap-1">
+                      ⚠️ Fecha anterior
+                    </span>
+                  ) : (
+                    <span className="text-emerald-700 bg-emerald-50 font-bold px-1.5 py-0.5 rounded text-[9px]">
+                      Hoy
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="date"
+                    id="invoice-date-picker"
+                    value={invoiceDate}
+                    max={new Date().toISOString().split('T')[0]}
+                    onChange={(e) => setInvoiceDate(e.target.value)}
+                    className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-900 focus:outline-none focus:border-indigo-500 focus:bg-white font-mono cursor-pointer"
+                  />
+                  {invoiceDate !== new Date().toISOString().split('T')[0] && (
+                    <button
+                      type="button"
+                      onClick={() => setInvoiceDate(new Date().toISOString().split('T')[0])}
+                      className="text-[10px] text-indigo-600 hover:text-indigo-800 font-semibold whitespace-nowrap underline cursor-pointer"
+                    >
+                      Hoy
+                    </button>
+                  )}
+                </div>
+                <p className="text-[9px] text-slate-400 mt-0.5">
+                  Modifica la fecha si esta venta corresponde a un día anterior que no se facturó a tiempo.
+                </p>
               </div>
             </div>
 

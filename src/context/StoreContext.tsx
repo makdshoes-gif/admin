@@ -57,6 +57,7 @@ interface StoreContextType {
   setUserRole: (role: UserRole) => void;
   setExchangeRate: (rate: number, isManual?: boolean) => void;
   addProduct: (product: Omit<ShoeProduct, 'id' | 'created_at'>) => void;
+  addProductsBulk: (newProductsList: Omit<ShoeProduct, 'id' | 'created_at'>[], replaceAll?: boolean) => void;
   updateProduct: (id: string, updates: Partial<ShoeProduct>) => void;
   adjustStock: (
     productId: string,
@@ -89,6 +90,9 @@ interface StoreContextType {
   setAdminPin: (pin: string) => void;
   verifyAdminPin: (pin: string) => boolean;
   clearAllData: () => void;
+  syncStatus: 'synced' | 'syncing' | 'error';
+  lastSyncedAt: string;
+  forceSync: () => Promise<void>;
 }
 
 const StoreContext = createContext<StoreContextType | undefined>(undefined);
@@ -121,7 +125,19 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const [accounts, setAccounts] = useState<AccountBalance[]>(() => {
     const saved = localStorage.getItem(`${STORAGE_KEY}_accounts`);
-    return saved ? JSON.parse(saved) : INITIAL_ACCOUNTS;
+    if (saved) {
+      try {
+        const parsed: AccountBalance[] = JSON.parse(saved);
+        const hasPos = parsed.some((a) => a.nombre.toLowerCase().includes('punto de venta') || a.id === 'acc-pos');
+        if (!hasPos) {
+          parsed.splice(3, 0, { id: 'acc-pos', nombre: 'Punto de Venta', moneda: 'Bs', saldo: 0.00, icono: 'CreditCard' });
+        }
+        return parsed;
+      } catch (e) {
+        return INITIAL_ACCOUNTS;
+      }
+    }
+    return INITIAL_ACCOUNTS;
   });
 
   const [expenses, setExpenses] = useState<Expense[]>(() => {
@@ -176,6 +192,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   });
 
   const [notifications, setNotifications] = useState<ToastNotification[]>([]);
+  const [syncStatus, setSyncStatus] = useState<'synced' | 'syncing' | 'error'>('synced');
+  const [lastSyncedAt, setLastSyncedAt] = useState<string>('Al iniciar');
 
   // Persist whenever state changes
   useEffect(() => {
@@ -218,29 +236,119 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     localStorage.setItem(`${STORAGE_KEY}_bcv_info`, JSON.stringify(bcvInfo));
   }, [bcvInfo]);
 
-  // Sync expenses and bank reconciliations from Neon backend if configured
+  // Master synchronization function from server store
+  const syncFromServer = useCallback(async (silent = false) => {
+    if (!silent) setSyncStatus('syncing');
+    try {
+      const res = await fetch('/api/store/state');
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const json = await res.json();
+      if (json && json.data) {
+        const d = json.data;
+        if (Array.isArray(d.products)) {
+          const mappedProducts: ShoeProduct[] = d.products.map((p: any) => ({
+            id: p.id,
+            nombre: p.nombre,
+            sku: p.sku || `SKU-${p.id}`,
+            categoria: p.categoria || 'Calzado',
+            marca: p.marca || 'Genérica',
+            tipo: p.tipo || 'Deportivo',
+            talla: String(p.talla || '38'),
+            color: p.color || 'Estándar',
+            moneda: p.moneda || 'USD',
+            precio: Number(p.precio) || 0,
+            costo: Number(p.costo) || 0,
+            stock: Number(p.stock) || 0,
+            stock_minimo: Number(p.stock_minimo) || 2,
+            activo: p.activo !== false,
+            imagen: p.imagen_url || p.imagen || '',
+            created_at: p.created_at || new Date().toISOString(),
+          }));
+          setProducts(mappedProducts);
+          try { localStorage.setItem(`${STORAGE_KEY}_products`, JSON.stringify(mappedProducts)); } catch {}
+        }
+        if (Array.isArray(d.sales)) {
+          setSales(d.sales);
+          try { localStorage.setItem(`${STORAGE_KEY}_sales`, JSON.stringify(d.sales)); } catch {}
+        }
+        if (Array.isArray(d.movements)) {
+          setMovements(d.movements);
+          try { localStorage.setItem(`${STORAGE_KEY}_movements`, JSON.stringify(d.movements)); } catch {}
+        }
+        if (Array.isArray(d.accounts) && d.accounts.length > 0) {
+          setAccounts(d.accounts);
+          try { localStorage.setItem(`${STORAGE_KEY}_accounts`, JSON.stringify(d.accounts)); } catch {}
+        }
+        if (Array.isArray(d.cashClosures)) {
+          setCashClosures(d.cashClosures);
+          try { localStorage.setItem(`${STORAGE_KEY}_closures`, JSON.stringify(d.cashClosures)); } catch {}
+        }
+        if (Array.isArray(d.expenses) && d.expenses.length > 0) {
+          setExpenses(d.expenses);
+          try { localStorage.setItem(`${STORAGE_KEY}_expenses`, JSON.stringify(d.expenses)); } catch {}
+        }
+        if (typeof d.exchangeRate === 'number' && d.exchangeRate > 0) {
+          setExchangeRateState(d.exchangeRate);
+        }
+        if (d.adminPin) {
+          setAdminPinState(d.adminPin);
+        }
+        setSyncStatus('synced');
+        setLastSyncedAt(new Date().toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+      }
+    } catch (err) {
+      console.warn('Sync from server error:', err);
+      setSyncStatus('error');
+    }
+  }, []);
+
+  const forceSync = useCallback(async () => {
+    await syncFromServer(false);
+  }, [syncFromServer]);
+
+  // Initial load and continuous synchronization
   useEffect(() => {
+    syncFromServer(false);
+
+    // Also fetch neon expenses & reconciliations if configured
     fetchExpensesApi().then((neonExpenses) => {
       if (neonExpenses && neonExpenses.length > 0) {
         setExpenses((prev) => {
-          // Merge remote with local to avoid losing new local items
-          const existingIds = new Set(prev.map(e => e.id));
-          const toAdd = neonExpenses.filter(e => !existingIds.has(e.id));
+          const existingIds = new Set(prev.map((e) => e.id));
+          const toAdd = neonExpenses.filter((e) => !existingIds.has(e.id));
           return [...toAdd, ...prev];
         });
       }
-    });
+    }).catch(() => {});
 
     fetchBankReconciliationsApi().then((neonMovements) => {
       if (neonMovements && neonMovements.length > 0) {
         setBankMovements((prev) => {
-          const existingIds = new Set(prev.map(m => m.id));
-          const toAdd = neonMovements.filter(m => !existingIds.has(m.id));
+          const existingIds = new Set(prev.map((m) => m.id));
+          const toAdd = neonMovements.filter((m) => !existingIds.has(m.id));
           return [...toAdd, ...prev];
         });
       }
-    });
-  }, []);
+    }).catch(() => {});
+
+    // Polling interval every 12 seconds
+    const interval = setInterval(() => {
+      syncFromServer(true);
+    }, 12000);
+
+    // Sync when returning to the tab
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        syncFromServer(true);
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [syncFromServer]);
 
   const addNotification = useCallback((
     title: string,
@@ -334,6 +442,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         lastSyncedAt: new Date().toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' }),
       }));
     }
+    fetch('/api/store/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ exchangeRate: rate }),
+    }).catch(() => {});
     addNotification(
       'Tasa BCV Actualizada',
       `Nueva tasa establecida en ${rate.toFixed(2)} Bs/USD ${isManual ? '(Ajuste manual)' : '(Oficial)'}`,
@@ -354,7 +467,20 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       created_at: new Date().toISOString(),
     };
 
-    setProducts((prev) => [newProduct, ...prev]);
+    setProducts((prev) => {
+      const updated = [newProduct, ...prev];
+      try {
+        localStorage.setItem(`${STORAGE_KEY}_products`, JSON.stringify(updated));
+      } catch (e) {}
+      return updated;
+    });
+
+    // Save to server
+    fetch('/api/products', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newProduct),
+    }).catch((e) => console.log('Backend sync info:', e));
 
     // If it has initial stock > 0, record movement
     if (newProduct.stock > 0) {
@@ -374,6 +500,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         usuario: userRole === 'admin' ? 'Administrador' : 'Cajera',
       };
       setMovements((prev) => [initialMovement, ...prev]);
+      fetch('/api/movements', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(initialMovement),
+      }).catch(() => {});
     }
 
     addNotification(
@@ -383,17 +514,97 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     );
   };
 
+  // Add Products Bulk (Excel import or Multi-size model creation)
+  const addProductsBulk = (newProductsList: Omit<ShoeProduct, 'id' | 'created_at'>[], replaceAll: boolean = false) => {
+    if (!newProductsList || newProductsList.length === 0) return;
+
+    const timestamp = Date.now();
+    const createdDate = new Date().toISOString();
+
+    const formattedProducts: ShoeProduct[] = newProductsList.map((p, idx) => ({
+      ...p,
+      id: `prod-${timestamp}-${idx}-${Math.random().toString(36).substring(2, 6)}`,
+      created_at: createdDate,
+    }));
+
+    // Generate initial movements for those with stock > 0
+    const newMovements: StockMovement[] = formattedProducts
+      .filter((p) => p.stock > 0)
+      .map((p, idx) => ({
+        id: `mov-${timestamp}-${idx}`,
+        producto_id: p.id,
+        producto_nombre: p.nombre,
+        sku: p.sku,
+        talla: p.talla,
+        marca: p.marca,
+        tipo: 'entrada',
+        cantidad: p.stock,
+        stock_anterior: 0,
+        stock_nuevo: p.stock,
+        motivo: replaceAll ? 'Carga masiva de inventario' : 'Entrada modelo / importación',
+        fecha: createdDate,
+        usuario: userRole === 'admin' ? 'Administrador' : 'Cajera',
+      }));
+
+    if (replaceAll) {
+      setProducts(formattedProducts);
+      setMovements((prev) => [...newMovements, ...prev]);
+      try {
+        localStorage.setItem(`${STORAGE_KEY}_products`, JSON.stringify(formattedProducts));
+      } catch (e) {}
+    } else {
+      setProducts((prev) => {
+        const merged = [...formattedProducts, ...prev];
+        try {
+          localStorage.setItem(`${STORAGE_KEY}_products`, JSON.stringify(merged));
+        } catch (e) {}
+        return merged;
+      });
+      if (newMovements.length > 0) {
+        setMovements((prev) => [...newMovements, ...prev]);
+      }
+    }
+
+    // Persist to server in bulk
+    fetch('/api/products/bulk', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ products: formattedProducts, replaceExisting: replaceAll }),
+    }).catch((e) => console.log('Backend bulk sync info:', e));
+
+    addNotification(
+      'Inventario Actualizado',
+      `Se han registrado ${formattedProducts.length} artículos/tallas exitosamente.`,
+      'success'
+    );
+  };
+
   // Update Product
   const updateProduct = (id: string, updates: Partial<ShoeProduct>) => {
-    setProducts((prev) =>
-      prev.map((p) => {
+    let updatedItem: ShoeProduct | undefined;
+    setProducts((prev) => {
+      const updated = prev.map((p) => {
         if (p.id === id) {
-          return { ...p, ...updates };
+          updatedItem = { ...p, ...updates };
+          return updatedItem;
         }
         return p;
-      })
-    );
-    addNotification('Producto Actualizado', 'Información del calzado guardada.', 'info');
+      });
+      try {
+        localStorage.setItem(`${STORAGE_KEY}_products`, JSON.stringify(updated));
+      } catch (e) {}
+      return updated;
+    });
+
+    if (updatedItem) {
+      fetch('/api/products', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedItem),
+      }).catch((e) => console.log('Backend update sync info:', e));
+    }
+
+    addNotification('Producto Actualizado', 'Información guardada con éxito.', 'info');
   };
 
   // Adjust stock in real time (Manual Batch entry, Scrap adjustment, Return)
@@ -436,6 +647,19 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     setMovements((prev) => [movement, ...prev]);
 
+    // Persist to server
+    fetch('/api/products', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...product, stock: newStock }),
+    }).catch(() => {});
+
+    fetch('/api/movements', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(movement),
+    }).catch(() => {});
+
     // Real-time alerts
     if (newStock === 0) {
       addNotification(
@@ -463,6 +687,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const product = products.find((p) => p.id === id);
     if (!product) return;
     setProducts((prev) => prev.filter((p) => p.id !== id));
+    fetch(`/api/products/${id}`, { method: 'DELETE' }).catch(() => {});
     addNotification('Producto Eliminado', `${product.nombre} retirado del catálogo.`, 'info');
   };
 
@@ -566,6 +791,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     setSales((prev) => [completedSale, ...prev]);
 
+    // Persist sale to server
+    fetch('/api/sales', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(completedSale),
+    }).catch((e) => console.log('Backend sale sync info:', e));
+
     addNotification(
       'Venta Exitosa',
       `Factura #${completedSale.numero_factura} por $${completedSale.total_usd.toFixed(2)} (${completedSale.items.reduce((s, i) => s + i.cantidad, 0)} pares)`,
@@ -625,6 +857,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     };
 
     setCashClosures((prev) => [closure, ...prev]);
+
+    fetch('/api/closures', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(closure),
+    }).catch(() => {});
+
     addNotification(
       'Cierre de Caja Guardado',
       `Arqueo de ${todayStr} registrado con $${totalUsd.toFixed(2)} en ${todaySales.length} ventas.`,
@@ -883,6 +1122,20 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     localStorage.removeItem(`${STORAGE_KEY}_expenses`);
     localStorage.removeItem(`${STORAGE_KEY}_bank_movements`);
     localStorage.removeItem(`${STORAGE_KEY}_currency_purchases`);
+
+    fetch('/api/store/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        products: [],
+        sales: [],
+        movements: [],
+        expenses: [],
+        cashClosures: [],
+        accounts: INITIAL_ACCOUNTS.map((a) => ({ ...a, saldo: 0 })),
+      }),
+    }).catch(() => {});
+
     addNotification('Datos Limpios', 'Se han vaciado los datos de prueba para iniciar la operación real.', 'info');
   };
 
@@ -910,6 +1163,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         setUserRole,
         setExchangeRate,
         addProduct,
+        addProductsBulk,
         updateProduct,
         adjustStock,
         deleteProduct,
@@ -933,6 +1187,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         setAdminPin,
         verifyAdminPin,
         clearAllData,
+        syncStatus,
+        lastSyncedAt,
+        forceSync,
       }}
     >
       {children}

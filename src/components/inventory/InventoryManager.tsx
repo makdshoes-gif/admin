@@ -19,13 +19,15 @@ import {
   ShieldAlert,
   PackageCheck,
   Tag,
-  Printer
+  Printer,
+  FileSpreadsheet
 } from 'lucide-react';
 import { useStore } from '../../context/StoreContext';
-import { ShoeProduct, ShoeType, MovementType } from '../../types';
+import { ShoeProduct, ShoeType, MovementType, ProductCategory } from '../../types';
 import { ProductFormModal } from './ProductFormModal';
 import { StockMovementModal } from './StockMovementModal';
 import { ShoeLabelModal } from './ShoeLabelModal';
+import { ExcelImportModal } from './ExcelImportModal';
 
 export const InventoryManager: React.FC = () => {
   const {
@@ -33,6 +35,7 @@ export const InventoryManager: React.FC = () => {
     movements,
     exchangeRate,
     addProduct,
+    addProductsBulk,
     updateProduct,
     adjustStock,
     deleteProduct,
@@ -43,6 +46,7 @@ export const InventoryManager: React.FC = () => {
 
   // Filter & Search states
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState<string>('Todas');
   const [selectedBrand, setSelectedBrand] = useState('Todas');
   const [selectedType, setSelectedType] = useState('Todos');
   const [selectedSize, setSelectedSize] = useState('Todas');
@@ -51,6 +55,7 @@ export const InventoryManager: React.FC = () => {
   // Modals state
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<ShoeProduct | null>(null);
+  const [isExcelModalOpen, setIsExcelModalOpen] = useState(false);
 
   const [isMovementModalOpen, setIsMovementModalOpen] = useState(false);
   const [movementTargetProduct, setMovementTargetProduct] = useState<ShoeProduct | null>(null);
@@ -100,6 +105,9 @@ export const InventoryManager: React.FC = () => {
     return products.filter((p) => {
       if (!p.activo) return false;
 
+      const matchCategory =
+        selectedCategory === 'Todas' || (p.categoria || 'Calzado') === selectedCategory;
+
       const matchSearch =
         p.nombre.toLowerCase().includes(searchQuery.toLowerCase()) ||
         p.sku.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -119,9 +127,9 @@ export const InventoryManager: React.FC = () => {
         matchStock = p.stock > p.stock_minimo;
       }
 
-      return matchSearch && matchBrand && matchType && matchSize && matchStock;
+      return matchCategory && matchSearch && matchBrand && matchType && matchSize && matchStock;
     });
-  }, [products, searchQuery, selectedBrand, selectedType, selectedSize, selectedStockStatus]);
+  }, [products, searchQuery, selectedCategory, selectedBrand, selectedType, selectedSize, selectedStockStatus]);
 
   // Filtered movements for Kardex
   const filteredMovements = useMemo(() => {
@@ -158,20 +166,32 @@ export const InventoryManager: React.FC = () => {
           </p>
         </div>
 
-        {/* Action Button: Nuevo Calzado */}
-        {userRole === 'admin' && (
+        {/* Action Buttons: Subir Excel and Nuevo Producto */}
+        <div className="flex items-center gap-2 self-start md:self-auto flex-wrap">
+          <button
+            id="import-excel-btn"
+            type="button"
+            onClick={() => setIsExcelModalOpen(true)}
+            className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-semibold rounded-lg text-xs flex items-center gap-2 shadow-xs transition-colors cursor-pointer"
+            title="Importar inventario masivo desde archivo Excel (.xlsx / .xls)"
+          >
+            <FileSpreadsheet className="w-4 h-4" />
+            <span>Subir Excel / CSV</span>
+          </button>
+
           <button
             id="new-product-btn"
+            type="button"
             onClick={() => {
               setEditingProduct(null);
               setIsProductModalOpen(true);
             }}
-            className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-lg text-xs flex items-center gap-2 shadow-xs transition-colors cursor-pointer self-start md:self-auto"
+            className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-semibold rounded-lg text-xs flex items-center gap-2 shadow-xs transition-colors cursor-pointer"
           >
             <Plus className="w-4 h-4" />
-            <span>Nuevo Modelo de Calzado</span>
+            <span>Nuevo Modelo / Producto</span>
           </button>
-        )}
+        </div>
       </div>
 
       {/* KPI Cards Grid (High Density 4-Card Pattern) */}
@@ -296,6 +316,33 @@ export const InventoryManager: React.FC = () => {
           
           {/* Filters Bar */}
           <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs space-y-3">
+            {/* Category Quick Filter Pills */}
+            <div className="flex flex-wrap items-center gap-1.5 pb-1 border-b border-slate-100 text-xs">
+              <span className="text-slate-400 font-semibold mr-1 text-[11px]">Categoría:</span>
+              {[
+                { id: 'Todas', label: 'Todas' },
+                { id: 'Calzado', label: '👟 Calzado' },
+                { id: 'Gorras', label: '🧢 Gorras' },
+                { id: 'Medias', label: '🧦 Medias' },
+                { id: 'Accesorios', label: '🎒 Accesorios' },
+                { id: 'Ropa', label: '👕 Ropa' },
+                { id: 'Otros', label: '📦 Otros' },
+              ].map((cat) => (
+                <button
+                  key={cat.id}
+                  type="button"
+                  onClick={() => setSelectedCategory(cat.id)}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+                    selectedCategory === cat.id
+                      ? 'bg-indigo-600 text-white font-bold shadow-xs'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  {cat.label}
+                </button>
+              ))}
+            </div>
+
             <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
               
               {/* Search input */}
@@ -810,6 +857,21 @@ export const InventoryManager: React.FC = () => {
           } else {
             addProduct(data);
           }
+        }}
+        onSaveBulk={(bulk) => {
+          addProductsBulk(bulk, false);
+        }}
+      />
+
+      {/* Modal: Excel Bulk Inventory Import */}
+      <ExcelImportModal
+        isOpen={isExcelModalOpen}
+        onClose={() => setIsExcelModalOpen(false)}
+        onImport={(newProducts, replaceAll) => {
+          addProductsBulk(newProducts, replaceAll);
+        }}
+        onImportSuccess={(newProducts, replaceAll) => {
+          addProductsBulk(newProducts, replaceAll);
         }}
       />
 

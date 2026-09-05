@@ -1,4 +1,24 @@
-export type ShoeType = 'Deportivo' | 'Casual' | 'Botas' | 'Tacones' | 'Sandalias' | 'Mocasines' | 'Infantil';
+export type ShoeType =
+  | 'Deportivo'
+  | 'Casual'
+  | 'Botas'
+  | 'Tacones'
+  | 'Sandalias'
+  | 'Mocasines'
+  | 'Infantil'
+  | 'Gorras'
+  | 'Medias'
+  | 'Accesorios'
+  | 'Ropa'
+  | 'Otros';
+
+export type ProductCategory =
+  | 'Calzado'
+  | 'Gorras'
+  | 'Medias'
+  | 'Accesorios'
+  | 'Ropa'
+  | 'Otros';
 
 export type Currency = 'USD' | 'Bs';
 
