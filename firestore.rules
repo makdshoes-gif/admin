@@ -1,0 +1,47 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    match /products/{productId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && isValidId(productId);
+    }
+
+    match /sales/{saleId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && isValidId(saleId);
+    }
+
+    match /movements/{movementId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && isValidId(movementId);
+    }
+
+    match /expenses/{expenseId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && isValidId(expenseId);
+    }
+
+    match /cash_closures/{closureId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && isValidId(closureId);
+    }
+
+    match /store_config/{configId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && isValidId(configId);
+    }
+  }
+}

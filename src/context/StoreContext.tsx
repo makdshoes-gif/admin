@@ -29,6 +29,23 @@ import {
   saveBankReconciliationApi,
   updateBankReconciliationApi
 } from '../services/api';
+import {
+  db,
+  auth,
+  OperationType,
+  handleFirestoreError,
+  loginWithGoogle,
+  logoutUser,
+} from '../lib/firebase';
+import {
+  collection,
+  doc,
+  setDoc,
+  deleteDoc,
+  onSnapshot,
+  writeBatch,
+} from 'firebase/firestore';
+import { onAuthStateChanged, User } from 'firebase/auth';
 
 export interface ToastNotification {
   id: string;
@@ -93,6 +110,11 @@ interface StoreContextType {
   syncStatus: 'synced' | 'syncing' | 'error';
   lastSyncedAt: string;
   forceSync: () => Promise<void>;
+  currentUser: User | null;
+  isFirebaseConnected: boolean;
+  loginWithGoogleAction: () => Promise<void>;
+  logoutUserAction: () => Promise<void>;
+  pushAllToCloud: () => Promise<void>;
 }
 
 const StoreContext = createContext<StoreContextType | undefined>(undefined);
@@ -194,6 +216,18 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [notifications, setNotifications] = useState<ToastNotification[]>([]);
   const [syncStatus, setSyncStatus] = useState<'synced' | 'syncing' | 'error'>('synced');
   const [lastSyncedAt, setLastSyncedAt] = useState<string>('Al iniciar');
+
+  // Firebase Auth State
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [isFirebaseConnected, setIsFirebaseConnected] = useState<boolean>(false);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setCurrentUser(user);
+      setIsFirebaseConnected(!!user);
+    });
+    return () => unsubscribe();
+  }, []);
 
   // Persist whenever state changes
   useEffect(() => {
@@ -366,6 +400,187 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setNotifications((prev) => [newNotif, ...prev.slice(0, 19)]);
   }, []);
 
+  const loginWithGoogleAction = useCallback(async () => {
+    try {
+      const user = await loginWithGoogle();
+      setCurrentUser(user);
+      setIsFirebaseConnected(true);
+      addNotification(
+        'Google Conectado',
+        `Sesión iniciada como ${user.email}. Tu catálogo y ventas se sincronizan en tiempo real con Firestore en todas tus PCs.`,
+        'success'
+      );
+    } catch (err: any) {
+      console.error('Login error:', err);
+      addNotification('Error de Autenticación', err.message || 'No se pudo conectar con Google.', 'critical');
+    }
+  }, [addNotification]);
+
+  const logoutUserAction = useCallback(async () => {
+    try {
+      await logoutUser();
+      setCurrentUser(null);
+      setIsFirebaseConnected(false);
+      addNotification('Sesión Cerrada', 'Has desconectado la cuenta de Google en este equipo.', 'info');
+    } catch (err: any) {
+      console.error('Logout error:', err);
+    }
+  }, [addNotification]);
+
+  // Real-time Firestore sync via onSnapshot when currentUser is logged in
+  useEffect(() => {
+    if (!currentUser) return;
+    setSyncStatus('syncing');
+
+    const unsubProducts = onSnapshot(
+      collection(db, 'products'),
+      (snap) => {
+        if (!snap.empty) {
+          const cloudProducts = snap.docs.map((d) => d.data() as ShoeProduct);
+          setProducts(cloudProducts);
+          try {
+            localStorage.setItem(`${STORAGE_KEY}_products`, JSON.stringify(cloudProducts));
+          } catch {}
+        }
+        setSyncStatus('synced');
+        setLastSyncedAt(
+          new Date().toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+        );
+      },
+      (err) => handleFirestoreError(err, OperationType.GET, 'products')
+    );
+
+    const unsubSales = onSnapshot(
+      collection(db, 'sales'),
+      (snap) => {
+        if (!snap.empty) {
+          const cloudSales = snap.docs.map((d) => d.data() as Sale);
+          cloudSales.sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime());
+          setSales(cloudSales);
+          try {
+            localStorage.setItem(`${STORAGE_KEY}_sales`, JSON.stringify(cloudSales));
+          } catch {}
+        }
+      },
+      (err) => handleFirestoreError(err, OperationType.GET, 'sales')
+    );
+
+    const unsubMovements = onSnapshot(
+      collection(db, 'movements'),
+      (snap) => {
+        if (!snap.empty) {
+          const cloudMovs = snap.docs.map((d) => d.data() as StockMovement);
+          cloudMovs.sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime());
+          setMovements(cloudMovs);
+          try {
+            localStorage.setItem(`${STORAGE_KEY}_movements`, JSON.stringify(cloudMovs));
+          } catch {}
+        }
+      },
+      (err) => handleFirestoreError(err, OperationType.GET, 'movements')
+    );
+
+    const unsubExpenses = onSnapshot(
+      collection(db, 'expenses'),
+      (snap) => {
+        if (!snap.empty) {
+          const cloudExp = snap.docs.map((d) => d.data() as Expense);
+          setExpenses(cloudExp);
+          try {
+            localStorage.setItem(`${STORAGE_KEY}_expenses`, JSON.stringify(cloudExp));
+          } catch {}
+        }
+      },
+      (err) => handleFirestoreError(err, OperationType.GET, 'expenses')
+    );
+
+    const unsubClosures = onSnapshot(
+      collection(db, 'cash_closures'),
+      (snap) => {
+        if (!snap.empty) {
+          const cloudClosures = snap.docs.map((d) => d.data() as DailyCashClosure);
+          setCashClosures(cloudClosures);
+          try {
+            localStorage.setItem(`${STORAGE_KEY}_closures`, JSON.stringify(cloudClosures));
+          } catch {}
+        }
+      },
+      (err) => handleFirestoreError(err, OperationType.GET, 'cash_closures')
+    );
+
+    const unsubConfig = onSnapshot(
+      doc(db, 'store_config', 'main'),
+      (snap) => {
+        if (snap.exists()) {
+          const cfg = snap.data();
+          if (typeof cfg.exchangeRate === 'number' && cfg.exchangeRate > 0) {
+            setExchangeRateState(cfg.exchangeRate);
+          }
+          if (cfg.adminPin) {
+            setAdminPinState(cfg.adminPin);
+          }
+        }
+      },
+      (err) => handleFirestoreError(err, OperationType.GET, 'store_config/main')
+    );
+
+    return () => {
+      unsubProducts();
+      unsubSales();
+      unsubMovements();
+      unsubExpenses();
+      unsubClosures();
+      unsubConfig();
+    };
+  }, [currentUser]);
+
+  const pushAllToCloud = useCallback(async () => {
+    if (!auth.currentUser) {
+      addNotification(
+        'Iniciar Sesión Requerido',
+        'Inicia sesión con Google para subir tus datos a la Nube.',
+        'warning'
+      );
+      return;
+    }
+    setSyncStatus('syncing');
+    try {
+      const batch = writeBatch(db);
+      products.forEach((p) => {
+        batch.set(doc(db, 'products', p.id), p);
+      });
+      sales.slice(0, 100).forEach((s) => {
+        batch.set(doc(db, 'sales', s.id), s);
+      });
+      movements.slice(0, 100).forEach((m) => {
+        batch.set(doc(db, 'movements', m.id), m);
+      });
+      batch.set(
+        doc(db, 'store_config', 'main'),
+        {
+          id: 'main',
+          exchangeRate,
+          adminPin,
+          updatedAt: new Date().toISOString(),
+        },
+        { merge: true }
+      );
+      await batch.commit();
+      setSyncStatus('synced');
+      setLastSyncedAt(
+        new Date().toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+      );
+      addNotification(
+        'Nube Sincronizada con Éxito',
+        `Se han subido ${products.length} productos y ${sales.length} facturas a Firestore. Ya están disponibles en tus otras computadoras.`,
+        'success'
+      );
+    } catch (err: any) {
+      handleFirestoreError(err, OperationType.WRITE, 'pushAllToCloud');
+      setSyncStatus('error');
+    }
+  }, [products, sales, movements, exchangeRate, adminPin, addNotification]);
+
   const syncBcvRate = useCallback(async (silent = false) => {
     setIsBcvSyncing(true);
     try {
@@ -447,6 +662,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ exchangeRate: rate }),
     }).catch(() => {});
+
+    if (currentUser) {
+      setDoc(doc(db, 'store_config', 'main'), { id: 'main', exchangeRate: rate, updatedAt: new Date().toISOString() }, { merge: true }).catch((err) =>
+        handleFirestoreError(err, OperationType.WRITE, 'store_config/main')
+      );
+    }
+
     addNotification(
       'Tasa BCV Actualizada',
       `Nueva tasa establecida en ${rate.toFixed(2)} Bs/USD ${isManual ? '(Ajuste manual)' : '(Oficial)'}`,
@@ -482,6 +704,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       body: JSON.stringify(newProduct),
     }).catch((e) => console.log('Backend sync info:', e));
 
+    if (currentUser) {
+      setDoc(doc(db, 'products', newProduct.id), newProduct).catch((err) =>
+        handleFirestoreError(err, OperationType.WRITE, `products/${newProduct.id}`)
+      );
+    }
+
     // If it has initial stock > 0, record movement
     if (newProduct.stock > 0) {
       const initialMovement: StockMovement = {
@@ -505,6 +733,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(initialMovement),
       }).catch(() => {});
+
+      if (currentUser) {
+        setDoc(doc(db, 'movements', initialMovement.id), initialMovement).catch((err) =>
+          handleFirestoreError(err, OperationType.WRITE, `movements/${initialMovement.id}`)
+        );
+      }
     }
 
     addNotification(
@@ -572,6 +806,23 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       body: JSON.stringify({ products: formattedProducts, replaceExisting: replaceAll }),
     }).catch((e) => console.log('Backend bulk sync info:', e));
 
+    if (currentUser) {
+      try {
+        const batch = writeBatch(db);
+        formattedProducts.forEach((p) => {
+          batch.set(doc(db, 'products', p.id), p);
+        });
+        newMovements.forEach((m) => {
+          batch.set(doc(db, 'movements', m.id), m);
+        });
+        batch.commit().catch((err) =>
+          handleFirestoreError(err, OperationType.WRITE, 'products/bulk')
+        );
+      } catch (err) {
+        console.warn('Firestore bulk write warning:', err);
+      }
+    }
+
     addNotification(
       'Inventario Actualizado',
       `Se han registrado ${formattedProducts.length} artículos/tallas exitosamente.`,
@@ -602,6 +853,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updatedItem),
       }).catch((e) => console.log('Backend update sync info:', e));
+
+      if (currentUser) {
+        setDoc(doc(db, 'products', id), updatedItem, { merge: true }).catch((err) =>
+          handleFirestoreError(err, OperationType.UPDATE, `products/${id}`)
+        );
+      }
     }
 
     addNotification('Producto Actualizado', 'Información guardada con éxito.', 'info');
@@ -660,6 +917,15 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       body: JSON.stringify(movement),
     }).catch(() => {});
 
+    if (currentUser) {
+      setDoc(doc(db, 'products', product.id), { ...product, stock: newStock }, { merge: true }).catch((err) =>
+        handleFirestoreError(err, OperationType.UPDATE, `products/${product.id}`)
+      );
+      setDoc(doc(db, 'movements', movement.id), movement).catch((err) =>
+        handleFirestoreError(err, OperationType.WRITE, `movements/${movement.id}`)
+      );
+    }
+
     // Real-time alerts
     if (newStock === 0) {
       addNotification(
@@ -688,6 +954,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (!product) return;
     setProducts((prev) => prev.filter((p) => p.id !== id));
     fetch(`/api/products/${id}`, { method: 'DELETE' }).catch(() => {});
+
+    if (currentUser) {
+      deleteDoc(doc(db, 'products', id)).catch((err) =>
+        handleFirestoreError(err, OperationType.DELETE, `products/${id}`)
+      );
+    }
+
     addNotification('Producto Eliminado', `${product.nombre} retirado del catálogo.`, 'info');
   };
 
@@ -798,6 +1071,28 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       body: JSON.stringify(completedSale),
     }).catch((e) => console.log('Backend sale sync info:', e));
 
+    if (currentUser) {
+      try {
+        const batch = writeBatch(db);
+        batch.set(doc(db, 'sales', completedSale.id), completedSale);
+        saleMovements.forEach((m) => {
+          batch.set(doc(db, 'movements', m.id), m);
+        });
+        saleData.items.forEach((item) => {
+          const prod = products.find((p) => p.id === item.producto_id);
+          if (prod) {
+            const newStock = Math.max(0, prod.stock - item.cantidad);
+            batch.update(doc(db, 'products', prod.id), { stock: newStock });
+          }
+        });
+        batch.commit().catch((err) =>
+          handleFirestoreError(err, OperationType.WRITE, `sales/${completedSale.id}`)
+        );
+      } catch (err) {
+        console.warn('Firestore sale write warning:', err);
+      }
+    }
+
     addNotification(
       'Venta Exitosa',
       `Factura #${completedSale.numero_factura} por $${completedSale.total_usd.toFixed(2)} (${completedSale.items.reduce((s, i) => s + i.cantidad, 0)} pares)`,
@@ -864,6 +1159,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       body: JSON.stringify(closure),
     }).catch(() => {});
 
+    if (currentUser) {
+      setDoc(doc(db, 'cash_closures', closure.id), closure).catch((err) =>
+        handleFirestoreError(err, OperationType.WRITE, `cash_closures/${closure.id}`)
+      );
+    }
+
     addNotification(
       'Cierre de Caja Guardado',
       `Arqueo de ${todayStr} registrado con $${totalUsd.toFixed(2)} en ${todaySales.length} ventas.`,
@@ -902,6 +1203,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     // Save to Neon API in background
     saveExpenseApi(newExpense).catch((e) => console.warn('Could not sync expense to Neon:', e));
 
+    if (currentUser) {
+      setDoc(doc(db, 'expenses', newExpense.id), newExpense).catch((err) =>
+        handleFirestoreError(err, OperationType.WRITE, `expenses/${newExpense.id}`)
+      );
+    }
+
     addNotification(
       'Gasto Registrado',
       `${expenseData.categoria}: $${expenseData.monto_usd.toFixed(2)} (${expenseData.descripcion})`,
@@ -929,6 +1236,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         return acc;
       })
     );
+
+    if (currentUser) {
+      deleteDoc(doc(db, 'expenses', id)).catch((err) =>
+        handleFirestoreError(err, OperationType.DELETE, `expenses/${id}`)
+      );
+    }
 
     deleteExpenseApi(id).catch((e) => console.warn('Could not delete expense on Neon:', e));
 
@@ -1190,6 +1503,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         syncStatus,
         lastSyncedAt,
         forceSync,
+        currentUser,
+        isFirebaseConnected,
+        loginWithGoogleAction,
+        logoutUserAction,
+        pushAllToCloud,
       }}
     >
       {children}

@@ -180,6 +180,9 @@ export const Header: React.FC<{
     syncStatus,
     lastSyncedAt,
     forceSync,
+    currentUser,
+    isFirebaseConnected,
+    loginWithGoogleAction,
   } = useStore();
 
   const [showRateModal, setShowRateModal] = useState(false);
@@ -306,29 +309,31 @@ export const Header: React.FC<{
         {/* Cloud Sync Indicator & Force Refresh */}
         <button
           id="cloud-sync-status-btn"
-          onClick={() => forceSync()}
-          title={`Sincronización en la nube: ${
-            syncStatus === 'synced' ? 'Sincronizado con el servidor' : syncStatus === 'syncing' ? 'Sincronizando...' : 'Error de sincronización'
-          }. Última sinc: ${lastSyncedAt}. Clic para refrescar.`}
+          onClick={() => {
+            if (!isFirebaseConnected) {
+              setShowCloudModal(true);
+            } else {
+              forceSync();
+            }
+          }}
+          title={
+            isFirebaseConnected
+              ? `Multi-PC Nube Activa (${currentUser?.email}). Última sincronización: ${lastSyncedAt}. Clic para refrescar.`
+              : 'Sincronización Multi-PC desconectada. Clic para conectar tu cuenta y compartir catálogo con otras PCs.'
+          }
           className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-semibold transition cursor-pointer shadow-2xs ${
-            syncStatus === 'synced'
+            isFirebaseConnected
               ? 'bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100'
-              : syncStatus === 'syncing'
-              ? 'bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100'
-              : 'bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100'
+              : 'bg-indigo-50 border-indigo-200 text-indigo-700 hover:bg-indigo-100'
           }`}
         >
-          <RefreshCw
-            className={`w-3.5 h-3.5 ${
-              syncStatus === 'syncing'
-                ? 'animate-spin text-blue-600'
-                : syncStatus === 'synced'
-                ? 'text-emerald-600'
-                : 'text-amber-600'
-            }`}
-          />
-          <span className="hidden lg:inline font-bold">
-            {syncStatus === 'synced' ? 'Nube OK' : syncStatus === 'syncing' ? 'Guardando...' : 'Reintentar'}
+          {isFirebaseConnected ? (
+            <Cloud className="w-3.5 h-3.5 text-emerald-600 animate-pulse" />
+          ) : (
+            <RefreshCw className={`w-3.5 h-3.5 ${syncStatus === 'syncing' ? 'animate-spin text-indigo-600' : 'text-indigo-600'}`} />
+          )}
+          <span className="hidden sm:inline font-bold">
+            {isFirebaseConnected ? 'Multi-PC Conectado' : 'Sincronizar PCs'}
           </span>
         </button>
 
@@ -336,11 +341,11 @@ export const Header: React.FC<{
         <button
           id="cloud-integrations-btn"
           onClick={() => setShowCloudModal(true)}
-          title="Conexiones: Banco de Venezuela (BDV), Neon Database y Vercel"
-          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-indigo-50 border border-indigo-200 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 transition cursor-pointer shadow-2xs"
+          title="Conexiones: Firestore Multi-PC, Banco de Venezuela (BDV), Neon Database y Vercel"
+          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-100 transition cursor-pointer shadow-2xs"
         >
-          <Cloud className="w-3.5 h-3.5 text-indigo-600" />
-          <span className="hidden md:inline font-bold">Cloud & BDV</span>
+          <Cloud className="w-3.5 h-3.5 text-slate-600" />
+          <span className="hidden md:inline font-bold">Centro Nube</span>
         </button>
 
         {/* Notification Bell */}

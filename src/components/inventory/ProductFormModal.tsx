@@ -260,20 +260,20 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
     const video = videoRef.current;
     if (!video) return;
 
-    // Check if video is loaded and has dimensions
-    const width = video.videoWidth || 640;
-    const height = video.videoHeight || 480;
-
-    if (video.videoWidth === 0 || video.videoHeight === 0) {
-      alert('La cámara se está inicializando. Por favor espera un segundo y presiona de nuevo.');
+    // Check if video is loaded, ready and has dimensions
+    if (video.readyState < 2 || video.videoWidth === 0 || video.videoHeight === 0) {
+      setCameraError('La cámara aún se está inicializando. Espera 1 segundo e inténtalo de nuevo o usa la cámara del móvil.');
       return;
     }
+
+    const width = video.videoWidth || 640;
+    const height = video.videoHeight || 480;
 
     const canvas = document.createElement('canvas');
     canvas.width = width;
     canvas.height = height;
 
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
     if (ctx) {
       // Mirror if front camera
       if (cameraFacing === 'user') {
@@ -281,8 +281,39 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
         ctx.scale(-1, 1);
       }
       ctx.drawImage(video, 0, 0, width, height);
+
+      // Verify that the frame is not pitch black (hardware/buffer issue check)
+      try {
+        const sampleData = ctx.getImageData(
+          Math.floor(width / 4),
+          Math.floor(height / 4),
+          Math.floor(width / 2),
+          Math.floor(height / 2)
+        );
+        let nonBlackPixels = 0;
+        for (let i = 0; i < sampleData.data.length; i += 16) {
+          const r = sampleData.data[i];
+          const g = sampleData.data[i + 1];
+          const b = sampleData.data[i + 2];
+          if (r > 12 || g > 12 || b > 12) {
+            nonBlackPixels++;
+            if (nonBlackPixels > 10) break;
+          }
+        }
+
+        if (nonBlackPixels <= 5) {
+          // Frame is completely black, trigger native camera or retry
+          setCameraError('El navegador devolvió un fotograma negro. Abriendo la cámara nativa de tu dispositivo para tomar la foto con calidad...');
+          nativeCameraInputRef.current?.click();
+          return;
+        }
+      } catch (err) {
+        console.warn('Canvas pixel check info:', err);
+      }
+
       const photoDataUrl = canvas.toDataURL('image/jpeg', 0.88);
       setImagen(photoDataUrl);
+      setCameraError(null);
       stopCamera();
     }
   };

@@ -21,16 +21,26 @@ import { useStore } from '../../context/StoreContext';
 interface CloudIntegrationModalProps {
   isOpen: boolean;
   onClose: () => void;
-  defaultTab?: 'bdv' | 'neon' | 'vercel';
+  defaultTab?: 'firestore' | 'bdv' | 'neon' | 'vercel';
 }
 
 export const CloudIntegrationModal: React.FC<CloudIntegrationModalProps> = ({
   isOpen,
   onClose,
-  defaultTab = 'bdv',
+  defaultTab = 'firestore',
 }) => {
-  const { products, sales } = useStore();
-  const [activeTab, setActiveTab] = useState<'bdv' | 'neon' | 'vercel'>(defaultTab);
+  const {
+    products,
+    sales,
+    currentUser,
+    isFirebaseConnected,
+    loginWithGoogleAction,
+    logoutUserAction,
+    pushAllToCloud,
+    syncStatus,
+    lastSyncedAt,
+  } = useStore();
+  const [activeTab, setActiveTab] = useState<'firestore' | 'bdv' | 'neon' | 'vercel'>(defaultTab);
 
   // Neon DB state
   const [neonStatus, setNeonStatus] = useState<NeonDbStatus | null>(null);
@@ -120,10 +130,27 @@ export const CloudIntegrationModal: React.FC<CloudIntegrationModalProps> = ({
         </div>
 
         {/* Tab Navigation */}
-        <div className="flex border-b border-slate-200 px-4 sm:px-6 bg-white gap-2 pt-2">
+        <div className="flex border-b border-slate-200 px-4 sm:px-6 bg-white gap-2 pt-2 overflow-x-auto">
+          <button
+            onClick={() => setActiveTab('firestore')}
+            className={`pb-3 px-3 text-xs font-bold flex items-center gap-2 border-b-2 transition cursor-pointer shrink-0 ${
+              activeTab === 'firestore'
+                ? 'border-indigo-600 text-indigo-600'
+                : 'border-transparent text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <Cloud className="w-4 h-4" />
+            <span>Sincronización Multi-PC (Firestore)</span>
+            {isFirebaseConnected ? (
+              <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+            ) : (
+              <span className="w-2 h-2 rounded-full bg-amber-400"></span>
+            )}
+          </button>
+
           <button
             onClick={() => setActiveTab('bdv')}
-            className={`pb-3 px-3 text-xs font-bold flex items-center gap-2 border-b-2 transition cursor-pointer ${
+            className={`pb-3 px-3 text-xs font-bold flex items-center gap-2 border-b-2 transition cursor-pointer shrink-0 ${
               activeTab === 'bdv'
                 ? 'border-red-600 text-red-600'
                 : 'border-transparent text-slate-500 hover:text-slate-800'
@@ -135,7 +162,7 @@ export const CloudIntegrationModal: React.FC<CloudIntegrationModalProps> = ({
 
           <button
             onClick={() => setActiveTab('neon')}
-            className={`pb-3 px-3 text-xs font-bold flex items-center gap-2 border-b-2 transition cursor-pointer ${
+            className={`pb-3 px-3 text-xs font-bold flex items-center gap-2 border-b-2 transition cursor-pointer shrink-0 ${
               activeTab === 'neon'
                 ? 'border-emerald-600 text-emerald-600'
                 : 'border-transparent text-slate-500 hover:text-slate-800'
@@ -150,7 +177,7 @@ export const CloudIntegrationModal: React.FC<CloudIntegrationModalProps> = ({
 
           <button
             onClick={() => setActiveTab('vercel')}
-            className={`pb-3 px-3 text-xs font-bold flex items-center gap-2 border-b-2 transition cursor-pointer ${
+            className={`pb-3 px-3 text-xs font-bold flex items-center gap-2 border-b-2 transition cursor-pointer shrink-0 ${
               activeTab === 'vercel'
                 ? 'border-indigo-600 text-indigo-600'
                 : 'border-transparent text-slate-500 hover:text-slate-800'
@@ -163,6 +190,127 @@ export const CloudIntegrationModal: React.FC<CloudIntegrationModalProps> = ({
 
         {/* Tab Content */}
         <div className="p-4 sm:p-6 overflow-y-auto space-y-4 flex-1">
+
+          {/* TAB 0: FIRESTORE MULTI-PC SYNC */}
+          {activeTab === 'firestore' && (
+            <div className="space-y-4 text-xs">
+              <div className="p-4 rounded-xl bg-indigo-50/80 border border-indigo-200 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`w-2.5 h-2.5 rounded-full ${
+                        isFirebaseConnected ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'
+                      }`}
+                    ></span>
+                    <span className="font-bold text-slate-900 text-sm">
+                      Sincronización en la Nube Multi-Dispositivo
+                    </span>
+                  </div>
+                  <span
+                    className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border shadow-2xs ${
+                      isFirebaseConnected
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                        : 'bg-amber-50 text-amber-700 border-amber-200'
+                    }`}
+                  >
+                    {isFirebaseConnected ? 'Nube Activa (En Vivo)' : 'Sesión Desconectada'}
+                  </span>
+                </div>
+
+                <p className="text-slate-600 leading-relaxed text-xs">
+                  {isFirebaseConnected ? (
+                    <>
+                      Conectado como <strong>{currentUser?.email}</strong>. Cada venta, producto agregado o ajuste de inventario se sincroniza en tiempo real en todos tus equipos mediante Google Cloud Firestore.
+                    </>
+                  ) : (
+                    <>
+                      Inicia sesión con tu cuenta de Google en esta PC y en tus otras computadoras. Al hacerlo, el catálogo, las tallas, las ventas y las facturas se mantienen exactamente idénticos y actualizados al instante en cualquier navegador.
+                    </>
+                  )}
+                </p>
+
+                <div className="flex flex-wrap items-center gap-3 pt-2">
+                  {!isFirebaseConnected ? (
+                    <button
+                      id="google-cloud-login-btn"
+                      onClick={() => loginWithGoogleAction()}
+                      className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg shadow-sm flex items-center gap-2 cursor-pointer transition"
+                    >
+                      <svg className="w-4 h-4" viewBox="0 0 24 24">
+                        <path
+                          fill="currentColor"
+                          d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                        />
+                        <path
+                          fill="currentColor"
+                          d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                        />
+                        <path
+                          fill="currentColor"
+                          d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
+                        />
+                        <path
+                          fill="currentColor"
+                          d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
+                        />
+                      </svg>
+                      <span>Conectar con Google para Sincronizar</span>
+                    </button>
+                  ) : (
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        id="google-cloud-push-btn"
+                        onClick={() => pushAllToCloud()}
+                        className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg shadow-sm flex items-center gap-2 cursor-pointer transition"
+                      >
+                        <Cloud className="w-4 h-4" />
+                        <span>Subir Todo el Catálogo a la Nube Ahora</span>
+                      </button>
+                      <button
+                        id="google-cloud-logout-btn"
+                        onClick={() => logoutUserAction()}
+                        className="px-3 py-2 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 font-semibold rounded-lg text-xs cursor-pointer transition"
+                      >
+                        Cerrar Sesión Google
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Status Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
+                  <span className="text-slate-400 block text-[10px] uppercase font-bold">Estado Sync</span>
+                  <span className="font-bold text-slate-800 text-sm">
+                    {syncStatus === 'synced' ? 'Sincronizado' : syncStatus === 'syncing' ? 'Sincronizando...' : 'Pendiente'}
+                  </span>
+                </div>
+                <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
+                  <span className="text-slate-400 block text-[10px] uppercase font-bold">Última Actualización</span>
+                  <span className="font-bold text-slate-800 text-sm">{lastSyncedAt}</span>
+                </div>
+                <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
+                  <span className="text-slate-400 block text-[10px] uppercase font-bold">Productos Registrados</span>
+                  <span className="font-bold text-indigo-700 text-sm">{products.length} pares</span>
+                </div>
+              </div>
+
+              {/* Multi-PC Instructions */}
+              <div className="border border-slate-200 rounded-xl p-4 bg-white space-y-2">
+                <h4 className="font-bold text-slate-900 text-xs flex items-center gap-1.5">
+                  <CheckCircle2 className="w-4 h-4 text-indigo-600" />
+                  <span>¿Cómo ver tus datos en otra computadora?</span>
+                </h4>
+                <ol className="list-decimal list-inside space-y-1.5 text-slate-600 leading-relaxed pl-1">
+                  <li>Inicia sesión con Google en esta computadora y haz clic en <strong>"Subir Todo el Catálogo a la Nube Ahora"</strong>.</li>
+                  <li>Abre la aplicación en tu otra PC o laptop.</li>
+                  <li>Inicia sesión con la misma cuenta de Google en esa segunda computadora.</li>
+                  <li>¡Listo! Los calzados, existencias por talla, ventas y facturas aparecerán de inmediato en ambas pantallas y cualquier cambio se actualizará en vivo.</li>
+                </ol>
+              </div>
+            </div>
+          )}
 
           {/* TAB 1: BDV (Banco de Venezuela) */}
           {activeTab === 'bdv' && (
