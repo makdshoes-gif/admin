@@ -36,12 +36,13 @@ function AppContent() {
         {/* High Density White Top Header with Live Revenue */}
         <Header
           activeTab={activeTab}
+          setActiveTab={setActiveTab}
           onToggleMobile={() => setMobileOpen(!mobileOpen)}
         />
 
         {/* Dynamic Page Views */}
         <main className="flex-1 p-4 sm:p-6 overflow-y-auto">
-          {activeTab === 'pos' && <PointOfSale />}
+          {activeTab === 'pos' && <PointOfSale onNavigateToLayaways={() => setActiveTab('layaways')} />}
           {activeTab === 'inventory' && <InventoryManager />}
           {activeTab === 'layaways' && <LayawaysManager />}
           {activeTab === 'reports' && userRole === 'admin' && <SalesReports />}

@@ -163,8 +163,9 @@ export const Sidebar: React.FC<{
 
 export const Header: React.FC<{
   activeTab: NavigationTab;
+  setActiveTab?: (tab: NavigationTab) => void;
   onToggleMobile: () => void;
-}> = ({ activeTab, onToggleMobile }) => {
+}> = ({ activeTab, setActiveTab, onToggleMobile }) => {
   const {
     exchangeRate,
     setExchangeRate,
@@ -175,6 +176,7 @@ export const Header: React.FC<{
     userRole,
     setUserRole,
     sales,
+    layaways,
     bcvInfo,
     isBcvSyncing,
     isAutoSyncEnabled,
@@ -196,6 +198,7 @@ export const Header: React.FC<{
   const [showUserModal, setShowUserModal] = useState(false);
 
   const unreadCount = notifications.filter((n) => !n.read).length;
+  const activeLayawaysCount = layaways ? layaways.filter((l) => l.estado === 'activo').length : 0;
 
   // Live Revenue Calculation (Today's Sales)
   const todayStr = new Date().toISOString().split('T')[0];
@@ -258,10 +261,34 @@ export const Header: React.FC<{
       </div>
 
       {/* Right Actions: Live Revenue, BCV Rate, Alerts, User Avatar */}
-      <div className="flex items-center space-x-3 sm:space-x-5">
+      <div className="flex items-center space-x-2 sm:space-x-3">
         
+        {/* Quick Apartados Access Button */}
+        {setActiveTab && (
+          <button
+            id="header-quick-layaways-btn"
+            onClick={() => setActiveTab('layaways')}
+            className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer border ${
+              activeTab === 'layaways'
+                ? 'bg-amber-600 text-white border-amber-700 shadow-xs'
+                : 'bg-amber-50 text-amber-900 border-amber-200/80 hover:bg-amber-100 hover:border-amber-300'
+            }`}
+            title="Ir al Sistema de Apartados y Reservas de Calzados"
+          >
+            <BookmarkCheck className={`w-3.5 h-3.5 ${activeTab === 'layaways' ? 'text-white' : 'text-amber-600'}`} />
+            <span className="font-bold hidden xs:inline">Apartados</span>
+            {activeLayawaysCount > 0 && (
+              <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
+                activeTab === 'layaways' ? 'bg-white text-amber-700' : 'bg-amber-600 text-white'
+              }`}>
+                {activeLayawaysCount}
+              </span>
+            )}
+          </button>
+        )}
+
         {/* Live Revenue Metric (from Design HTML) */}
-        <div className="text-right hidden sm:block">
+        <div className="text-right hidden md:block">
           <p className="text-[10px] text-slate-400 uppercase font-bold">Ventas de Hoy</p>
           <p className="text-sm font-bold text-indigo-600 font-mono">
             ${liveRevenue.toFixed(2)}

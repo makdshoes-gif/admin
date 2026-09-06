@@ -31,9 +31,25 @@ export const LayawaysManager: React.FC = () => {
     addLayawayPayment,
     cancelLayaway,
     deliverLayaway,
+    accounts,
     paymentAccounts,
     userRole,
   } = useStore();
+
+  const availableAccounts = useMemo(() => {
+    const list = (paymentAccounts && paymentAccounts.length > 0)
+      ? paymentAccounts
+      : (accounts && accounts.length > 0)
+      ? accounts
+      : [
+          { id: 'acc-1', nombre: 'Efectivo $', moneda: 'USD' as const, saldo: 0 },
+          { id: 'acc-2', nombre: 'Efectivo Bs', moneda: 'Bs' as const, saldo: 0 },
+          { id: 'acc-3', nombre: 'Pago Móvil (BDV)', moneda: 'Bs' as const, saldo: 0 },
+          { id: 'acc-pos', nombre: 'Punto de Venta', moneda: 'Bs' as const, saldo: 0 },
+          { id: 'acc-4', nombre: 'Zelle', moneda: 'USD' as const, saldo: 0 },
+        ];
+    return list;
+  }, [paymentAccounts, accounts]);
 
   // Search & Filter state
   const [searchTerm, setSearchTerm] = useState('');
@@ -65,6 +81,28 @@ export const LayawaysManager: React.FC = () => {
   const [selectedProductId, setSelectedProductId] = useState('');
   const [itemQuantity, setItemQuantity] = useState(1);
   const [cartItems, setCartItems] = useState<LayawayItem[]>([]);
+  const [shoeSearchQuery, setShoeSearchQuery] = useState('');
+  const [includeOutOfStock, setIncludeOutOfStock] = useState(false);
+
+  // Filtered products list for layaways: handles products with undefined activo, safe stock and search
+  const selectableProducts = useMemo(() => {
+    return products.filter((p) => {
+      const isActivo = p.activo !== false;
+      const currentStock = Number(p.stock) || 0;
+      if (!isActivo) return false;
+      if (!includeOutOfStock && currentStock <= 0) return false;
+
+      if (!shoeSearchQuery.trim()) return true;
+      const q = shoeSearchQuery.toLowerCase();
+      return (
+        (p.nombre || '').toLowerCase().includes(q) ||
+        (p.marca || '').toLowerCase().includes(q) ||
+        (p.sku || '').toLowerCase().includes(q) ||
+        (p.color || '').toLowerCase().includes(q) ||
+        String(p.talla || '').includes(q)
+      );
+    });
+  }, [products, includeOutOfStock, shoeSearchQuery]);
 
   // Initial payment for new layaway
   const [abonoInicialMonto, setAbonoInicialMonto] = useState<number>(0);
@@ -702,39 +740,74 @@ export const LayawaysManager: React.FC = () => {
 
               {/* Shoes Selection */}
               <div className="bg-slate-50 p-3 rounded-lg border border-slate-200 space-y-2.5">
-                <span className="font-bold text-slate-700 flex items-center gap-1.5">
-                  <ShoppingBag className="w-3.5 h-3.5 text-indigo-600" />
-                  Seleccionar Calzado a Reservar
-                </span>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <span className="font-bold text-slate-700 flex items-center gap-1.5 text-xs sm:text-sm">
+                    <ShoppingBag className="w-4 h-4 text-indigo-600" />
+                    Seleccionar Calzado a Apartar ({selectableProducts.length} disponibles)
+                  </span>
+                  
+                  <div className="flex items-center gap-3 text-xs">
+                    <label className="flex items-center gap-1.5 cursor-pointer text-slate-600 select-none">
+                      <input
+                        type="checkbox"
+                        checked={includeOutOfStock}
+                        onChange={(e) => setIncludeOutOfStock(e.target.checked)}
+                        className="rounded text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5"
+                      />
+                      <span>Mostrar sin stock / Por encargo</span>
+                    </label>
+                  </div>
+                </div>
+
+                {/* Search query input */}
+                <div>
+                  <input
+                    type="text"
+                    placeholder="Buscar calzado por modelo, marca (Nike, Adidas...), talla o SKU..."
+                    value={shoeSearchQuery}
+                    onChange={(e) => setShoeSearchQuery(e.target.value)}
+                    className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs text-slate-900 placeholder:text-slate-400 focus:outline-hidden focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                  />
+                </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
                   <div className="sm:col-span-8">
-                    <label className="text-slate-500 font-medium block mb-1">Modelo de Zapato y Talla</label>
+                    <label className="text-slate-500 font-medium block mb-1 text-xs">Calzado y Talla</label>
                     <select
                       value={selectedProductId}
                       onChange={(e) => setSelectedProductId(e.target.value)}
-                      className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-slate-900"
+                      className="w-full px-2.5 py-2 bg-white border border-slate-200 rounded-lg text-slate-900 text-xs sm:text-sm font-medium focus:ring-2 focus:ring-indigo-500/20"
                     >
-                      <option value="">-- Seleccionar Calzado del Catálogo --</option>
-                      {products
-                        .filter((p) => p.activo && p.stock > 0)
-                        .map((p) => (
+                      <option value="">-- Seleccionar Calzado ({selectableProducts.length}) --</option>
+                      {selectableProducts.map((p) => {
+                        const pr = Number(p.precio) || 0;
+                        const prBs = exchangeRate > 0 ? (pr * exchangeRate).toFixed(2) : '0.00';
+                        const stk = Number(p.stock) || 0;
+                        return (
                           <option key={p.id} value={p.id}>
-                            {p.nombre} ({p.marca}) - Talla {p.talla} (${p.precio.toFixed(2)}) [{p.stock} disp.]
+                            {p.nombre} ({p.marca || 'Genérica'}) - Talla {p.talla} | ${pr.toFixed(2)} (Bs. {prBs}) [{stk} en stock]
                           </option>
-                        ))}
+                        );
+                      })}
                     </select>
+
+                    {selectableProducts.length === 0 && (
+                      <p className="text-amber-600 text-xs mt-1.5 font-medium">
+                        ⚠️ No se encontraron calzados {shoeSearchQuery ? 'con esa búsqueda' : 'con stock disponible'}. 
+                        {!includeOutOfStock && ' Puedes marcar la casilla "Mostrar sin stock / Por encargo" arriba.'}
+                      </p>
+                    )}
                   </div>
 
                   <div className="sm:col-span-2">
-                    <label className="text-slate-500 font-medium block mb-1">Cantidad</label>
+                    <label className="text-slate-500 font-medium block mb-1 text-xs">Cantidad</label>
                     <input
                       type="number"
                       min="1"
-                      max={activeProduct ? activeProduct.stock : 1}
+                      max={activeProduct && Number(activeProduct.stock) > 0 ? Number(activeProduct.stock) : 99}
                       value={itemQuantity}
                       onChange={(e) => setItemQuantity(parseInt(e.target.value) || 1)}
-                      className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-slate-900"
+                      className="w-full px-2.5 py-2 bg-white border border-slate-200 rounded-lg text-slate-900 text-center font-bold text-xs sm:text-sm"
                     />
                   </div>
 
@@ -743,12 +816,42 @@ export const LayawaysManager: React.FC = () => {
                       type="button"
                       onClick={handleAddItem}
                       disabled={!selectedProductId}
-                      className="w-full py-1.5 px-3 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white rounded-lg font-bold shadow-2xs cursor-pointer transition-colors"
+                      className="w-full py-2 px-3 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 disabled:opacity-40 text-white rounded-lg font-bold shadow-2xs cursor-pointer transition-colors text-xs flex items-center justify-center gap-1"
                     >
-                      + Agregar
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Agregar</span>
                     </button>
                   </div>
                 </div>
+
+                {/* Selected shoe preview banner */}
+                {activeProduct && (
+                  <div className="p-2 bg-indigo-50/70 border border-indigo-100 rounded-lg flex items-center justify-between text-xs text-indigo-900">
+                    <div className="flex items-center gap-2">
+                      {activeProduct.imagen ? (
+                        <img
+                          src={activeProduct.imagen}
+                          alt={activeProduct.nombre}
+                          className="w-8 h-8 rounded-md object-cover border border-indigo-200"
+                        />
+                      ) : (
+                        <div className="w-8 h-8 rounded-md bg-indigo-200 text-indigo-700 flex items-center justify-center font-bold text-[10px]">
+                          👟
+                        </div>
+                      )}
+                      <div>
+                        <div className="font-bold">{activeProduct.nombre}</div>
+                        <div className="text-[11px] text-indigo-700">
+                          Marca: {activeProduct.marca} • Talla: {activeProduct.talla} • Stock: {Number(activeProduct.stock) || 0}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="font-bold text-sm text-indigo-950">${(Number(activeProduct.precio) || 0).toFixed(2)}</div>
+                      <div className="text-[10px] text-indigo-600">Bs. {((Number(activeProduct.precio) || 0) * exchangeRate).toFixed(2)}</div>
+                    </div>
+                  </div>
+                )}
 
                 {/* Items Cart */}
                 {cartItems.length > 0 && (

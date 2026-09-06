@@ -23,7 +23,8 @@ import {
   ShieldCheck,
   Edit3,
   Tag,
-  Calendar
+  Calendar,
+  BookmarkCheck
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { useStore } from '../../context/StoreContext';
@@ -38,7 +39,7 @@ export interface CartItem {
   customCost?: number;  // Costo de producto modificado en facturación
 }
 
-export const PointOfSale: React.FC = () => {
+export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ onNavigateToLayaways }) => {
   const {
     products,
     exchangeRate,
@@ -615,14 +616,27 @@ export const PointOfSale: React.FC = () => {
                   {cart.reduce((s, i) => s + i.quantity, 0)} pares
                 </span>
               </div>
-              {cart.length > 0 && (
-                <button
-                  onClick={handleClearCart}
-                  className="text-xs text-rose-600 hover:text-rose-700 flex items-center gap-1 font-semibold cursor-pointer"
-                >
-                  <Trash2 className="w-3.5 h-3.5" /> Vaciar
-                </button>
-              )}
+              <div className="flex items-center gap-2">
+                {onNavigateToLayaways && (
+                  <button
+                    type="button"
+                    onClick={onNavigateToLayaways}
+                    className="text-[11px] text-amber-800 hover:text-amber-900 bg-amber-50 hover:bg-amber-100 border border-amber-200 px-2 py-1 rounded-md font-semibold flex items-center gap-1 transition cursor-pointer"
+                    title="Ver o gestionar apartados de clientes"
+                  >
+                    <BookmarkCheck className="w-3.5 h-3.5 text-amber-600" />
+                    <span>Ver Apartados</span>
+                  </button>
+                )}
+                {cart.length > 0 && (
+                  <button
+                    onClick={handleClearCart}
+                    className="text-xs text-rose-600 hover:text-rose-700 flex items-center gap-1 font-semibold cursor-pointer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" /> Vaciar
+                  </button>
+                )}
+              </div>
             </div>
 
             {/* Cart Items List */}

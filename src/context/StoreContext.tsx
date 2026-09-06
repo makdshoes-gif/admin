@@ -63,6 +63,7 @@ interface StoreContextType {
   movements: StockMovement[];
   sales: Sale[];
   accounts: AccountBalance[];
+  paymentAccounts: AccountBalance[];
   exchangeRate: number;
   userRole: UserRole;
   cashClosures: DailyCashClosure[];
@@ -1904,6 +1905,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         movements,
         sales,
         accounts,
+        paymentAccounts: accounts,
         exchangeRate,
         userRole,
         cashClosures,
