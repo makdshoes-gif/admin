@@ -856,3 +856,54 @@ async function startServer() {
 }
 
 startServer();
+import { GoogleGenAI } from '@google/genai';
+
+// Inicializar el cliente de Gemini con la clave del entorno
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+
+// Endpoint para analizar el calzado mediante la cámara
+app.post('/api/analyze-shoe', async (req, res) => {
+  try {
+    const { imageBase64 } = req.body;
+
+    if (!imageBase64) {
+      return res.status(400).json({ error: 'No se ha proporcionado ninguna imagen' });
+    }
+
+    // Limpiar el prefijo de codificación base64 si lo trae
+    const base64Data = imageBase64.replace(/^data:image\/\w+;base64,/, '');
+
+    const prompt = `
+      Analiza esta imagen de un calzado para el sistema de inventario de Makd Shop. 
+      Devuelve la respuesta estrictamente en formato JSON válido (sin bloques de código markdown como \`\`\`json) con las siguientes claves exactas:
+      - "marcaModelo": Marca y silueta identificada (ej. Nike Dunk Low Panda).
+      - "estiloCategoria": Estilo (ej. Sneakers, Casual, Deportivo, etc.).
+      - "colores": Colores primarios y contrastes.
+      - "materiales": Acabados (cuero liso, gamuza, suela, etc.).
+      - "tituloComercial": Un título comercial atractivo para la tienda.
+      - "descripcionTienda": Una descripción comercial lista para compartir en WhatsApp o Instagram.
+    `;
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: [
+        {
+          inlineData: {
+            data: base64Data,
+            mimeType: 'image/jpeg',
+          },
+        },
+        prompt,
+      ],
+    });
+
+    const textResponse = response.text || '';
+    const cleanJson = textResponse.replace(/```json/g, '').replace(/```/g, '').trim();
+    const data = JSON.parse(cleanJson);
+
+    res.json(data);
+  } catch (error) {
+    console.error('Error al analizar el zapato con Gemini:', error);
+    res.status(500).json({ error: 'Error al procesar la imagen con IA' });
+  }
+});
