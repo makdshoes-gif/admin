@@ -1,20 +1,30 @@
-const startCamera = async () => {
-    try {
-      // Intentamos primero con la cámara trasera (móviles), y si falla, usamos cualquier cámara disponible (PC)
-      let stream;
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-      } catch (e) {
-        stream = await navigator.mediaDevices.getUserMedia({ video: true });
-      }
+// Dentro de tu página o vista de productos existente:
+import ShoeScanner from './components/ShoeScanner';
+
+export default function GestionInventario() {
+  const [mostrarEscanner, setMostrarEscanner] = useState(false);
+
+  return (
+    <div>
+      {/* Tu panel y tablas normales */}
+      <h2>Panel de Inventario Makd Shop</h2>
       
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        videoRef.current.play();
-        setStreaming(true);
-      }
-    } catch (err) {
-      console.error("Error al acceder a la cámara:", err);
-      alert("No se pudo acceder a la cámara. Revisa los permisos del navegador.");
-    }
-  };
+      {/* Botón para abrir el escáner como una ventana emergente o sección */}
+      <button 
+        onClick={() => setMostrarEscanner(!mostrarEscanner)}
+        className="bg-purple-600 text-white px-4 py-2 rounded-lg"
+      >
+        {mostrarEscanner ? 'Cerrar Escáner IA' : '📸 Escanear Zapato con IA'}
+      </button>
+
+      {mostrarEscanner && (
+        <div className="my-4">
+          <ShoeScanner onProductDetected={(data) => {
+            console.log("Datos listos para guardar:", data);
+            // Aquí rellenas los inputs de tu formulario con data.tituloComercial, etc.
+          }} />
+        </div>
+      )}
+    </div>
+  );
+}
