@@ -1,7 +1,110 @@
-import { neon, NeonQueryFunction } from '@neondatabase/serverless';
+import { neon, type NeonQueryFunction } from '@neondatabase/serverless';
 
 let sqlClient: NeonQueryFunction<false, false> | null = null;
 let isInitialized = false;
+
+// PostgreSQL (y por lo tanto Neon) devuelve las columnas NUMERIC/DECIMAL como
+// strings, no como números JS, para evitar pérdida de precisión. Nuestro
+// esquema usa NUMERIC para todos los campos de dinero/tasas, así que cada fila
+// leída directo de la BD necesita estos campos convertidos de vuelta a número
+// antes de enviarse al cliente — si no, cosas como `total_usd.toFixed(2)` o
+// `sum + row.total_usd` se rompen (concatenación de texto en vez de suma).
+function normalizeNumericFields<T extends Record<string, any>>(row: T, fields: string[]): T {
+  const out: any = { ...row };
+  for (const field of fields) {
+    if (out[field] !== null && out[field] !== undefined && out[field] !== '') {
+      const n = Number(out[field]);
+      if (!Number.isNaN(n)) out[field] = n;
+    }
+  }
+  return out;
+}
+
+function normalizeNumericRows<T extends Record<string, any>>(rows: T[], fields: string[]): T[] {
+  return rows.map((row) => normalizeNumericFields(row, fields));
+}
+
+export const NUMERIC_FIELDS = {
+  shoe_products: ['precio', 'costo'],
+  sales_transactions: [
+    'subtotal_usd',
+    'descuento_usd',
+    'porcentaje_iva',
+    'iva_monto_usd',
+    'total_usd',
+    'total_bs',
+    'costo_total_usd',
+    'ganancia_neta_usd',
+    'tasa_cambio',
+  ],
+  expenses: ['monto', 'tasa_cambio', 'monto_usd', 'monto_bs'],
+  bank_reconciliations: ['monto_bs', 'monto_usd'],
+};
+
+export function normalizeProducts<T extends Record<string, any>>(rows: T[]): T[] {
+  return normalizeNumericRows(rows, NUMERIC_FIELDS.shoe_products);
+}
+
+export function normalizeSales<T extends Record<string, any>>(rows: T[]): T[] {
+  return normalizeNumericRows(rows, NUMERIC_FIELDS.sales_transactions);
+}
+
+export function normalizeExpenses<T extends Record<string, any>>(rows: T[]): T[] {
+  return normalizeNumericRows(rows, NUMERIC_FIELDS.expenses);
+}
+
+export function normalizeBankReconciliations<T extends Record<string, any>>(rows: T[]): T[] {
+  return normalizeNumericRows(rows, NUMERIC_FIELDS.bank_reconciliations);
+}
+
+export async function getDailyClosures(): Promise<any[]> {
+  const sql = getNeonSql();
+  if (!sql) return [];
+  try {
+    const rows = await sql`SELECT * FROM cash_closures ORDER BY fecha DESC, created_at DESC`;
+    return rows;
+  } catch (err) {
+    console.error('Error obteniendo cierres de caja:', err);
+    return [];
+  }
+}
+
+export async function addDailyClosure(closure: any): Promise<boolean> {
+  const sql = getNeonSql();
+  if (!sql) return false;
+  try {
+    await sql`
+      INSERT INTO cash_closures (
+        id, fecha, monto_apertura_usd, monto_apertura_bs, total_ventas_usd, total_ventas_bs,
+        totales_por_cuenta, monto_declarado_usd, monto_declarado_bs, diferencia_usd, diferencia_bs,
+        tasa_bcv, usuario, observaciones, estado
+      ) VALUES (
+        ${closure.id}, ${closure.fecha}, ${closure.monto_apertura_usd || 0}, ${closure.monto_apertura_bs || 0},
+        ${closure.total_ventas_usd || 0}, ${closure.total_ventas_bs || 0}, ${JSON.stringify(closure.totales_por_cuenta || {})},
+        ${closure.monto_declarado_usd || 0}, ${closure.monto_declarado_bs || 0}, ${closure.diferencia_usd || 0},
+        ${closure.diferencia_bs || 0}, ${closure.tasa_bcv || 0}, ${closure.usuario || ''}, ${closure.observaciones || ''},
+        ${closure.estado || 'cerrado'}
+      )
+    `;
+    return true;
+  } catch (err) {
+    console.error('Error insertando cierre de caja:', err);
+    return false;
+  }
+}
+
+export async function replaceDailyClosures(closures: any[]): Promise<boolean> {
+  const sql = getNeonSql();
+  if (!sql) return false;
+  try {
+    for (const c of closures) {
+      await addDailyClosure(c);
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 export function getNeonSql(): NeonQueryFunction<false, false> | null {
   const databaseUrl = process.env.DATABASE_URL;

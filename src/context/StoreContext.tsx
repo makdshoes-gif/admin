@@ -331,8 +331,18 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           try { localStorage.setItem(`${STORAGE_KEY}_products`, JSON.stringify(mappedProducts)); } catch {}
         }
         if (Array.isArray(d.sales)) {
-          setSales(d.sales);
-          try { localStorage.setItem(`${STORAGE_KEY}_sales`, JSON.stringify(d.sales)); } catch {}
+          const mappedSales = d.sales.map((s: any) => ({
+            ...s,
+            total_usd: Number(s.total_usd) || 0,
+            total_bs: Number(s.total_bs) || 0,
+            subtotal_usd: Number(s.subtotal_usd) || 0,
+            descuento_usd: Number(s.descuento_usd) || 0,
+            costo_total_usd: Number(s.costo_total_usd) || 0,
+            ganancia_neta_usd: Number(s.ganancia_neta_usd) || 0,
+            tasa_cambio: Number(s.tasa_cambio) || 0,
+          }));
+          setSales(mappedSales);
+          try { localStorage.setItem(`${STORAGE_KEY}_sales`, JSON.stringify(mappedSales)); } catch {}
         }
         if (Array.isArray(d.layaways)) {
           setLayaways(d.layaways);

@@ -202,7 +202,7 @@ export const Header: React.FC<{
   const liveRevenue = useMemo(() => {
     return sales
       .filter((s) => s.fecha.startsWith(todayStr))
-      .reduce((sum, s) => sum + s.total_usd, 0);
+      .reduce((sum, s) => sum + (Number(s.total_usd) || 0), 0);
   }, [sales, todayStr]);
 
   const handleUpdateRate = (e: React.FormEvent) => {

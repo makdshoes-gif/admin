@@ -2,7 +2,20 @@ import express from 'express';
 import path from 'path';
 import fs from 'fs';
 import { createServer as createViteServer } from 'vite';
-import { checkDatabaseConnection, getNeonSql, initDatabaseSchema, getNeonTables, getNeonTableData } from './server/db.js';
+import { 
+  checkDatabaseConnection, 
+  getNeonSql, 
+  initDatabaseSchema, 
+  getNeonTables, 
+  getNeonTableData,
+  getDailyClosures,
+  addDailyClosure,
+  replaceDailyClosures,
+  normalizeProducts,
+  normalizeSales,
+  normalizeExpenses,
+  normalizeBankReconciliations,
+} from './server/db.js';
 import { verifyBdvPayment, getBdvApiConfig, getRecentVerifications } from './server/bdv.js';
 
 const DATA_DIR = path.join(process.cwd(), 'server', 'data');
@@ -231,12 +244,51 @@ async function startServer() {
   });
 
   // 4. Global Store Synchronization API (Master State across all devices)
-  app.get('/api/store/state', (req, res) => {
+  app.get('/api/store/state', async (req, res) => {
+    const sql = getNeonSql();
+    if (sql) {
+      try {
+        await initDatabaseSchema();
+        const [products, sales, expenses, reconciliations, closures] = await Promise.all([
+          sql`SELECT * FROM shoe_products ORDER BY nombre ASC`,
+          sql`SELECT * FROM sales_transactions ORDER BY fecha DESC`,
+          sql`SELECT * FROM expenses ORDER BY fecha DESC, created_at DESC`,
+          sql`SELECT * FROM bank_reconciliations ORDER BY fecha DESC, created_at DESC`,
+          sql`SELECT * FROM cash_closures ORDER BY fecha DESC, created_at DESC`,
+        ]);
+        const store = readServerStore();
+        return res.json({
+          success: true,
+          source: 'neon_postgres',
+          data: {
+            products: normalizeProducts(products as any[]),
+            sales: normalizeSales(sales as any[]),
+            movements: store.movements || [],
+            cashClosures: closures || [],
+            expenses: normalizeExpenses(expenses as any[]),
+            accounts: store.accounts || DEFAULT_ACCOUNTS,
+            layaways: store.layaways || [],
+            bankMovements: normalizeBankReconciliations(reconciliations as any[]),
+            currencyPurchases: store.currencyPurchases || [],
+            exchangeRate: store.exchangeRate || 807.39,
+            adminPin: store.adminPin || '1234',
+            updatedAt: new Date().toISOString(),
+          },
+        });
+      } catch (err) {
+        console.error('Neon /api/store/state fetch error, using local fallback:', err);
+      }
+    }
     const store = readServerStore();
     res.json({
       success: true,
       source: 'server_store',
-      data: store,
+      data: {
+        ...store,
+        products: normalizeProducts(store.products || []),
+        sales: normalizeSales(store.sales || []),
+        expenses: normalizeExpenses(store.expenses || []),
+      },
     });
   });
 
@@ -267,7 +319,7 @@ async function startServer() {
     if (sql) {
       try {
         const rows = await sql`SELECT * FROM shoe_products ORDER BY nombre ASC`;
-        return res.json({ source: 'neon_postgres', data: rows });
+        return res.json({ source: 'neon_postgres', data: normalizeProducts(rows as any[]) });
       } catch (err) {
         console.error('Neon products fetch error, using local fallback:', err);
       }
@@ -399,7 +451,7 @@ async function startServer() {
     if (sql) {
       try {
         const rows = await sql`SELECT * FROM sales_transactions ORDER BY fecha DESC`;
-        return res.json({ source: 'neon_postgres', data: rows });
+        return res.json({ source: 'neon_postgres', data: normalizeSales(rows as any[]) });
       } catch (err) {
         console.error('Neon sales fetch error, using local fallback:', err);
       }
@@ -638,7 +690,7 @@ async function startServer() {
     try {
       await initDatabaseSchema();
       const rows = await sql`SELECT * FROM expenses ORDER BY fecha DESC, created_at DESC`;
-      res.json({ source: 'neon_postgres', data: rows });
+      res.json({ source: 'neon_postgres', data: normalizeExpenses(rows as any[]) });
     } catch (err: unknown) {
       console.error('Error al obtener gastos de Neon:', err);
       res.json({ source: 'local_fallback', error: String(err), data: [] });
@@ -725,7 +777,7 @@ async function startServer() {
     try {
       await initDatabaseSchema();
       const rows = await sql`SELECT * FROM bank_reconciliations ORDER BY fecha DESC, created_at DESC`;
-      res.json({ source: 'neon_postgres', data: rows });
+      res.json({ source: 'neon_postgres', data: normalizeBankReconciliations(rows as any[]) });
     } catch (err: unknown) {
       res.json({ source: 'local_fallback', error: String(err), data: [] });
     }
