@@ -12,6 +12,7 @@ import { SalesReports } from './components/reports/SalesReports';
 import { CashClosure } from './components/cash/CashClosure';
 import { ExpensesManager } from './components/expenses/ExpensesManager';
 import { BankReconciliationView } from './components/banking/BankReconciliationView';
+import { LayawaysManager } from './components/layaways/LayawaysManager';
 
 function AppContent() {
   const [activeTab, setActiveTab] = useState<NavigationTab>('pos');
@@ -42,6 +43,7 @@ function AppContent() {
         <main className="flex-1 p-4 sm:p-6 overflow-y-auto">
           {activeTab === 'pos' && <PointOfSale />}
           {activeTab === 'inventory' && <InventoryManager />}
+          {activeTab === 'layaways' && <LayawaysManager />}
           {activeTab === 'reports' && userRole === 'admin' && <SalesReports />}
           {activeTab === 'cash' && <CashClosure />}
           {activeTab === 'expenses' && <ExpensesManager />}

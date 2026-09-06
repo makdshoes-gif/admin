@@ -9,6 +9,8 @@ import {
   Expense,
   BankMovement,
   CurrencyPurchase,
+  Layaway,
+  LayawayPayment,
 } from '../types';
 import {
   INITIAL_PRODUCTS,
@@ -86,6 +88,18 @@ interface StoreContextType {
   recordSale: (
     saleData: Omit<Sale, 'id' | 'created_at' | 'costo_total_usd' | 'ganancia_neta_usd'>
   ) => Sale;
+  updateSaleDate: (saleId: string, newDateIso: string) => boolean;
+  layaways: Layaway[];
+  createLayaway: (
+    layawayData: Omit<Layaway, 'id' | 'codigo_apartado' | 'created_at' | 'updated_at' | 'saldo_pendiente_usd' | 'saldo_pendiente_bs'>
+  ) => Layaway;
+  addLayawayPayment: (
+    layawayId: string,
+    payment: Omit<LayawayPayment, 'id'> & { id?: string }
+  ) => Layaway | null;
+  cancelLayaway: (layawayId: string, reason?: string) => boolean;
+  deliverLayaway: (layawayId: string) => boolean;
+  updateLayaway: (layawayId: string, updates: Partial<Layaway>) => boolean;
   recordCashClosure: (
     notas?: string
   ) => DailyCashClosure;
@@ -143,6 +157,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [sales, setSales] = useState<Sale[]>(() => {
     const saved = localStorage.getItem(`${STORAGE_KEY}_sales`);
     return saved ? JSON.parse(saved) : INITIAL_SALES;
+  });
+
+  const [layaways, setLayaways] = useState<Layaway[]>(() => {
+    const saved = localStorage.getItem(`${STORAGE_KEY}_layaways`);
+    return saved ? JSON.parse(saved) : [];
   });
 
   const [accounts, setAccounts] = useState<AccountBalance[]>(() => {
@@ -243,6 +262,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }, [sales]);
 
   useEffect(() => {
+    localStorage.setItem(`${STORAGE_KEY}_layaways`, JSON.stringify(layaways));
+  }, [layaways]);
+
+  useEffect(() => {
     localStorage.setItem(`${STORAGE_KEY}_accounts`, JSON.stringify(accounts));
   }, [accounts]);
 
@@ -276,7 +299,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     try {
       const res = await fetch('/api/store/state');
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const json = await res.json();
+      const text = await res.text();
+      let json: any = null;
+      try {
+        json = text ? JSON.parse(text) : null;
+      } catch {
+        json = null;
+      }
       if (json && json.data) {
         const d = json.data;
         if (Array.isArray(d.products)) {
@@ -304,6 +333,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         if (Array.isArray(d.sales)) {
           setSales(d.sales);
           try { localStorage.setItem(`${STORAGE_KEY}_sales`, JSON.stringify(d.sales)); } catch {}
+        }
+        if (Array.isArray(d.layaways)) {
+          setLayaways(d.layaways);
+          try { localStorage.setItem(`${STORAGE_KEY}_layaways`, JSON.stringify(d.layaways)); } catch {}
         }
         if (Array.isArray(d.movements)) {
           setMovements(d.movements);
@@ -465,6 +498,21 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       (err) => handleFirestoreError(err, OperationType.GET, 'sales')
     );
 
+    const unsubLayaways = onSnapshot(
+      collection(db, 'layaways'),
+      (snap) => {
+        if (!snap.empty) {
+          const cloudLayaways = snap.docs.map((d) => d.data() as Layaway);
+          cloudLayaways.sort((a, b) => new Date(b.fecha_apartado).getTime() - new Date(a.fecha_apartado).getTime());
+          setLayaways(cloudLayaways);
+          try {
+            localStorage.setItem(`${STORAGE_KEY}_layaways`, JSON.stringify(cloudLayaways));
+          } catch {}
+        }
+      },
+      (err) => handleFirestoreError(err, OperationType.GET, 'layaways')
+    );
+
     const unsubMovements = onSnapshot(
       collection(db, 'movements'),
       (snap) => {
@@ -527,6 +575,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return () => {
       unsubProducts();
       unsubSales();
+      unsubLayaways();
       unsubMovements();
       unsubExpenses();
       unsubClosures();
@@ -589,15 +638,21 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       
       setExchangeRateState((currentRate) => {
         if (Math.abs(currentRate - newRate) > 0.01) {
+          const weekendNote = liveData.isWeekendRate
+            ? ` [Tasa del Lunes ${liveData.effectiveMondayDate} válida para Viernes, Sábado y Domingo]`
+            : '';
           addNotification(
             'Tasa BCV Sincronizada en Vivo',
-            `Tasa oficial del BCV actualizada: ${newRate.toFixed(2)} Bs/USD (Fuente: ${liveData.source})`,
+            `Tasa oficial del BCV actualizada: ${newRate.toFixed(2)} Bs/USD${weekendNote}.`,
             'success'
           );
         } else if (!silent) {
+          const weekendNote = liveData.isWeekendRate
+            ? ` (Tasa del Lunes ${liveData.effectiveMondayDate} válida para Viernes, Sábado y Domingo)`
+            : '';
           addNotification(
             'Tasa BCV al Día',
-            `La tasa oficial confirmada por el BCV se mantiene en ${newRate.toFixed(2)} Bs/USD.`,
+            `La tasa oficial del BCV se mantiene en ${newRate.toFixed(2)} Bs/USD${weekendNote}.`,
             'info'
           );
         }
@@ -610,6 +665,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         lastSyncedAt: new Date().toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
         source: liveData.source,
         status: 'synced',
+        isWeekendRate: liveData.isWeekendRate,
+        effectiveMondayDate: liveData.effectiveMondayDate,
+        currentDayName: liveData.currentDayName,
+        cycleRuleDescription: liveData.cycleRuleDescription,
       });
     } catch (err: unknown) {
       const errorMsg = err instanceof Error ? err.message : 'Fallo de conexión';
@@ -1102,6 +1161,378 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return completedSale;
   };
 
+  // Update Sale Date (e.g., historical sales backdating or retroactive invoice date change)
+  const updateSaleDate = (saleId: string, newDateIso: string): boolean => {
+    const saleIndex = sales.findIndex((s) => s.id === saleId);
+    if (saleIndex === -1) return false;
+
+    const currentSale = sales[saleIndex];
+    const updatedSale: Sale = {
+      ...currentSale,
+      fecha: newDateIso,
+    };
+
+    setSales((prev) => {
+      const updated = [...prev];
+      updated[saleIndex] = updatedSale;
+      try {
+        localStorage.setItem(`${STORAGE_KEY}_sales`, JSON.stringify(updated));
+      } catch {}
+      return updated;
+    });
+
+    // Sync to backend
+    fetch(`/api/sales/${saleId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fecha: newDateIso }),
+    }).catch(() => {});
+
+    // Sync to Firestore
+    if (currentUser) {
+      setDoc(doc(db, 'sales', saleId), { fecha: newDateIso }, { merge: true }).catch((err) =>
+        handleFirestoreError(err, OperationType.UPDATE, `sales/${saleId}`)
+      );
+    }
+
+    addNotification(
+      'Fecha Actualizada',
+      `La fecha de la factura #${updatedSale.numero_factura} fue modificada a ${new Date(newDateIso).toLocaleDateString('es-VE')}.`,
+      'success'
+    );
+    return true;
+  };
+
+  // Sistema de Apartados (Layaway)
+  const createLayaway = (
+    layawayData: Omit<Layaway, 'id' | 'codigo_apartado' | 'created_at' | 'updated_at' | 'saldo_pendiente_usd' | 'saldo_pendiente_bs'>
+  ): Layaway => {
+    const id = `layaway-${Date.now()}`;
+    const randCode = Math.floor(1000 + Math.random() * 9000);
+    const codigo_apartado = `AP-${randCode}`;
+    const timestamp = new Date().toISOString();
+
+    const saldo_pendiente_usd = Math.max(0, layawayData.total_usd - layawayData.total_abonado_usd);
+    const saldo_pendiente_bs = saldo_pendiente_usd * layawayData.tasa_cambio;
+
+    // 1. Deduct stock for reserved shoes so they aren't sold to other walk-ins
+    setProducts((prevProducts) => {
+      const updated = [...prevProducts];
+      layawayData.items.forEach((item) => {
+        const prodIndex = updated.findIndex((p) => p.id === item.producto_id);
+        if (prodIndex !== -1) {
+          const currentProd = updated[prodIndex];
+          const newStock = Math.max(0, currentProd.stock - item.cantidad);
+          updated[prodIndex] = { ...currentProd, stock: newStock };
+        }
+      });
+      try {
+        localStorage.setItem(`${STORAGE_KEY}_products`, JSON.stringify(updated));
+      } catch {}
+      return updated;
+    });
+
+    // 2. Stock movements for reservation
+    const movementsToSave: StockMovement[] = layawayData.items.map((it, idx) => ({
+      id: `mov-${Date.now()}-${idx}`,
+      producto_id: it.producto_id,
+      producto_nombre: it.nombre_producto,
+      sku: it.sku,
+      talla: it.talla,
+      marca: it.marca,
+      tipo: 'salida_ajuste' as const,
+      cantidad: it.cantidad,
+      stock_anterior: 0,
+      stock_nuevo: 0,
+      motivo: `Apartado reservado (${codigo_apartado}) - Cliente: ${layawayData.cliente_nombre}`,
+      fecha: layawayData.fecha_apartado || timestamp,
+      usuario: layawayData.usuario || 'Cajera',
+    }));
+    setMovements((prev) => [...movementsToSave, ...prev]);
+
+    // 3. Update accounts if initial deposit is made
+    if (layawayData.abonos && layawayData.abonos.length > 0) {
+      setAccounts((prevAccounts) => {
+        const updated = [...prevAccounts];
+        layawayData.abonos.forEach((abono) => {
+          const accIndex = updated.findIndex((acc) => acc.nombre === abono.cuenta);
+          if (accIndex !== -1) {
+            updated[accIndex] = {
+              ...updated[accIndex],
+              saldo: updated[accIndex].saldo + abono.monto,
+            };
+          }
+        });
+        return updated;
+      });
+    }
+
+    const newLayaway: Layaway = {
+      ...layawayData,
+      id,
+      codigo_apartado,
+      saldo_pendiente_usd,
+      saldo_pendiente_bs,
+      estado: saldo_pendiente_usd <= 0.05 ? 'completado' : 'activo',
+      created_at: timestamp,
+      updated_at: timestamp,
+    };
+
+    setLayaways((prev) => [newLayaway, ...prev]);
+
+    // Backend sync
+    fetch('/api/layaways', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newLayaway),
+    }).catch(() => {});
+
+    // Firestore sync
+    if (currentUser) {
+      setDoc(doc(db, 'layaways', newLayaway.id), newLayaway).catch((err) =>
+        handleFirestoreError(err, OperationType.WRITE, `layaways/${newLayaway.id}`)
+      );
+    }
+
+    addNotification(
+      'Apartado Registrado',
+      `Apartado ${codigo_apartado} para ${newLayaway.cliente_nombre}. Saldo pendiente: $${saldo_pendiente_usd.toFixed(2)}.`,
+      'success'
+    );
+
+    return newLayaway;
+  };
+
+  const addLayawayPayment = (
+    layawayId: string,
+    paymentData: Omit<LayawayPayment, 'id'> & { id?: string }
+  ): Layaway | null => {
+    const layawayIndex = layaways.findIndex((l) => l.id === layawayId);
+    if (layawayIndex === -1) return null;
+
+    const current = layaways[layawayIndex];
+    const paymentId = paymentData.id || `pay-${Date.now()}`;
+    const newPayment: LayawayPayment = {
+      ...paymentData,
+      id: paymentId,
+      fecha: paymentData.fecha || new Date().toISOString(),
+    };
+
+    const newAbonos = [...current.abonos, newPayment];
+    const newTotalAbonadoUsd = current.total_abonado_usd + newPayment.monto_equivalente_usd;
+    const newTotalAbonadoBs = current.total_abonado_bs + (newPayment.moneda === 'Bs' ? newPayment.monto : newPayment.monto * current.tasa_cambio);
+    const newSaldoUsd = Math.max(0, current.total_usd - newTotalAbonadoUsd);
+    const newSaldoBs = newSaldoUsd * current.tasa_cambio;
+
+    const isFullyPaid = newSaldoUsd <= 0.05;
+
+    const updated: Layaway = {
+      ...current,
+      abonos: newAbonos,
+      total_abonado_usd: newTotalAbonadoUsd,
+      total_abonado_bs: newTotalAbonadoBs,
+      saldo_pendiente_usd: newSaldoUsd,
+      saldo_pendiente_bs: newSaldoBs,
+      estado: isFullyPaid ? 'completado' : current.estado,
+      updated_at: new Date().toISOString(),
+    };
+
+    // Update accounts with new deposit
+    setAccounts((prevAccounts) => {
+      const updatedAcc = [...prevAccounts];
+      const accIndex = updatedAcc.findIndex((acc) => acc.nombre === newPayment.cuenta);
+      if (accIndex !== -1) {
+        updatedAcc[accIndex] = {
+          ...updatedAcc[accIndex],
+          saldo: updatedAcc[accIndex].saldo + newPayment.monto,
+        };
+      }
+      return updatedAcc;
+    });
+
+    setLayaways((prev) => {
+      const next = [...prev];
+      next[layawayIndex] = updated;
+      try {
+        localStorage.setItem(`${STORAGE_KEY}_layaways`, JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+
+    fetch(`/api/layaways/${layawayId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updated),
+    }).catch(() => {});
+
+    if (currentUser) {
+      setDoc(doc(db, 'layaways', layawayId), updated).catch((err) =>
+        handleFirestoreError(err, OperationType.WRITE, `layaways/${layawayId}`)
+      );
+    }
+
+    addNotification(
+      'Abono Registrado',
+      `Se abonaron ${newPayment.moneda === 'USD' ? '$' : 'Bs '}${newPayment.monto.toFixed(2)} al apartado ${updated.codigo_apartado}. Restante: $${newSaldoUsd.toFixed(2)}.`,
+      'success'
+    );
+
+    return updated;
+  };
+
+  const cancelLayaway = (layawayId: string, reason?: string): boolean => {
+    const layawayIndex = layaways.findIndex((l) => l.id === layawayId);
+    if (layawayIndex === -1) return false;
+
+    const current = layaways[layawayIndex];
+    if (current.estado === 'cancelado') return false;
+
+    // Restore stock of reserved products
+    setProducts((prevProducts) => {
+      const updated = [...prevProducts];
+      current.items.forEach((item) => {
+        const prodIndex = updated.findIndex((p) => p.id === item.producto_id);
+        if (prodIndex !== -1) {
+          const prod = updated[prodIndex];
+          updated[prodIndex] = { ...prod, stock: prod.stock + item.cantidad };
+        }
+      });
+      try {
+        localStorage.setItem(`${STORAGE_KEY}_products`, JSON.stringify(updated));
+      } catch {}
+      return updated;
+    });
+
+    // Record stock return movement
+    const restoreMovements: StockMovement[] = current.items.map((it, idx) => ({
+      id: `mov-${Date.now()}-${idx}`,
+      producto_id: it.producto_id,
+      producto_nombre: it.nombre_producto,
+      sku: it.sku,
+      talla: it.talla,
+      marca: it.marca,
+      tipo: 'devolucion' as const,
+      cantidad: it.cantidad,
+      stock_anterior: 0,
+      stock_nuevo: 0,
+      motivo: `Apartado ${current.codigo_apartado} cancelado${reason ? ` - ${reason}` : ''}`,
+      fecha: new Date().toISOString(),
+      usuario: 'Administrador',
+    }));
+    setMovements((prev) => [...restoreMovements, ...prev]);
+
+    const updated: Layaway = {
+      ...current,
+      estado: 'cancelado',
+      notas: current.notas ? `${current.notas} | Cancelado: ${reason || 'Anulado'}` : `Cancelado: ${reason || 'Anulado'}`,
+      updated_at: new Date().toISOString(),
+    };
+
+    setLayaways((prev) => {
+      const next = [...prev];
+      next[layawayIndex] = updated;
+      try {
+        localStorage.setItem(`${STORAGE_KEY}_layaways`, JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+
+    fetch(`/api/layaways/${layawayId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updated),
+    }).catch(() => {});
+
+    if (currentUser) {
+      setDoc(doc(db, 'layaways', layawayId), updated).catch((err) =>
+        handleFirestoreError(err, OperationType.WRITE, `layaways/${layawayId}`)
+      );
+    }
+
+    addNotification(
+      'Apartado Cancelado',
+      `Apartado ${current.codigo_apartado} cancelado. Los calzados regresaron al inventario activo.`,
+      'info'
+    );
+    return true;
+  };
+
+  const deliverLayaway = (layawayId: string): boolean => {
+    const layawayIndex = layaways.findIndex((l) => l.id === layawayId);
+    if (layawayIndex === -1) return false;
+
+    const current = layaways[layawayIndex];
+    const updated: Layaway = {
+      ...current,
+      estado: 'completado',
+      updated_at: new Date().toISOString(),
+    };
+
+    setLayaways((prev) => {
+      const next = [...prev];
+      next[layawayIndex] = updated;
+      try {
+        localStorage.setItem(`${STORAGE_KEY}_layaways`, JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+
+    fetch(`/api/layaways/${layawayId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updated),
+    }).catch(() => {});
+
+    if (currentUser) {
+      setDoc(doc(db, 'layaways', layawayId), updated).catch((err) =>
+        handleFirestoreError(err, OperationType.WRITE, `layaways/${layawayId}`)
+      );
+    }
+
+    addNotification(
+      'Apartado Entregado',
+      `Apartado ${current.codigo_apartado} entregado al cliente y completado.`,
+      'success'
+    );
+    return true;
+  };
+
+  const updateLayaway = (layawayId: string, updates: Partial<Layaway>): boolean => {
+    const layawayIndex = layaways.findIndex((l) => l.id === layawayId);
+    if (layawayIndex === -1) return false;
+
+    const current = layaways[layawayIndex];
+    const updated: Layaway = {
+      ...current,
+      ...updates,
+      updated_at: new Date().toISOString(),
+    };
+
+    setLayaways((prev) => {
+      const next = [...prev];
+      next[layawayIndex] = updated;
+      try {
+        localStorage.setItem(`${STORAGE_KEY}_layaways`, JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+
+    fetch(`/api/layaways/${layawayId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updated),
+    }).catch(() => {});
+
+    if (currentUser) {
+      setDoc(doc(db, 'layaways', layawayId), updated).catch((err) =>
+        handleFirestoreError(err, OperationType.WRITE, `layaways/${layawayId}`)
+      );
+    }
+
+    addNotification('Apartado Actualizado', `Información de apartado ${updated.codigo_apartado} actualizada.`, 'info');
+    return true;
+  };
+
   // Record Cash Register Closure (Arqueo de caja diario)
   const recordCashClosure = (notas?: string): DailyCashClosure => {
     const todayStr = new Date().toISOString().split('T')[0];
@@ -1481,6 +1912,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         adjustStock,
         deleteProduct,
         recordSale,
+        updateSaleDate,
+        layaways,
+        createLayaway,
+        addLayawayPayment,
+        cancelLayaway,
+        deliverLayaway,
+        updateLayaway,
         recordCashClosure,
         expenses,
         bankMovements,

@@ -39,6 +39,11 @@ service cloud.firestore {
       allow write: if isSignedIn() && isValidId(closureId);
     }
 
+    match /layaways/{layawayId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && isValidId(layawayId);
+    }
+
     match /store_config/{configId} {
       allow read: if isSignedIn();
       allow write: if isSignedIn() && isValidId(configId);

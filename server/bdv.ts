@@ -90,7 +90,13 @@ export async function verifyBdvPayment(data: BdvVerificationRequest): Promise<Bd
       });
 
       if (response.ok) {
-        const resData = await response.json();
+        const text = await response.text();
+        let resData: any = {};
+        try {
+          resData = text ? JSON.parse(text) : {};
+        } catch {
+          resData = {};
+        }
         const result: BdvVerificationResult = {
           aprobado: resData.status === 'APROBADO' || resData.aprobado === true,
           codigo_aprobacion: resData.codigo_aprobacion || `BDV-${refClean.slice(-6)}`,

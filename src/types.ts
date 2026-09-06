@@ -269,3 +269,55 @@ export interface BdvParsedMovement {
   cliente?: string;
 }
 
+export type LayawayStatus = 'activo' | 'completado' | 'cancelado' | 'vencido';
+
+export interface LayawayPayment {
+  id: string;
+  fecha: string; // ISO string
+  monto: number;
+  moneda: Currency;
+  tasa_cambio: number;
+  monto_equivalente_usd: number;
+  cuenta: string; // 'Efectivo USD' | 'Efectivo Bs' | 'Pago Móvil' | 'Zelle' | etc.
+  referencia?: string;
+  notas?: string;
+}
+
+export interface LayawayItem {
+  producto_id: string;
+  nombre_producto: string;
+  sku: string;
+  talla: string;
+  marca: string;
+  color?: string;
+  cantidad: number;
+  precio_unitario: number; // en USD
+  subtotal: number; // en USD
+}
+
+export interface Layaway {
+  id: string;
+  codigo_apartado: string; // ej. AP-1024
+  cliente_nombre: string;
+  cliente_apellido?: string;
+  cliente_cedula?: string;
+  cliente_telefono?: string;
+  items: LayawayItem[];
+  total_usd: number;
+  total_bs: number;
+  tasa_cambio: number;
+  total_abonado_usd: number;
+  total_abonado_bs: number;
+  saldo_pendiente_usd: number;
+  saldo_pendiente_bs: number;
+  abonos: LayawayPayment[];
+  fecha_apartado: string; // ISO string
+  fecha_vencimiento: string; // YYYY-MM-DD
+  estado: LayawayStatus;
+  usuario: string;
+  notas?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+

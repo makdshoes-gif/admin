@@ -1,6 +1,7 @@
-import React from 'react';
-import { Printer, CheckCircle, X, Download, Share2 } from 'lucide-react';
+import React, { useState } from 'react';
+import { Printer, CheckCircle, X, Download, Share2, Calendar, Edit2, Check } from 'lucide-react';
 import { Sale } from '../../types';
+import { useStore } from '../../context/StoreContext';
 
 interface ReceiptModalProps {
   sale: Sale | null;
@@ -8,7 +9,19 @@ interface ReceiptModalProps {
 }
 
 export const ReceiptModal: React.FC<ReceiptModalProps> = ({ sale, onClose }) => {
+  const { updateSaleDate } = useStore();
+  const [isEditingDate, setIsEditingDate] = useState(false);
+  const [editDateValue, setEditDateValue] = useState(sale?.fecha ? sale.fecha.slice(0, 16) : '');
+
   if (!sale) return null;
+
+  const handleSaveDate = () => {
+    if (!editDateValue) return;
+    const isoDate = new Date(editDateValue).toISOString();
+    updateSaleDate(sale.id, isoDate);
+    sale.fecha = isoDate;
+    setIsEditingDate(false);
+  };
 
   const handlePrint = () => {
     window.print();
@@ -60,9 +73,48 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ sale, onClose }) => 
             <div className="mt-2.5 inline-block px-2.5 py-0.5 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded font-bold text-xs">
               FACTURA #{sale.numero_factura}
             </div>
-            <p className="text-[10px] text-slate-400 mt-1">
-              Fecha: {new Date(sale.fecha).toLocaleString('es-VE')}
-            </p>
+
+            {/* Date with quick edit for previous days */}
+            <div className="mt-1 flex items-center justify-center gap-1.5 text-[10px] text-slate-500">
+              {isEditingDate ? (
+                <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-md print:hidden">
+                  <input
+                    type="datetime-local"
+                    value={editDateValue}
+                    onChange={(e) => setEditDateValue(e.target.value)}
+                    className="px-1.5 py-0.5 text-[10px] border border-slate-300 rounded bg-white text-slate-800"
+                  />
+                  <button
+                    onClick={handleSaveDate}
+                    className="p-1 bg-emerald-600 text-white rounded hover:bg-emerald-700"
+                    title="Guardar nueva fecha"
+                  >
+                    <Check className="w-3 h-3" />
+                  </button>
+                  <button
+                    onClick={() => setIsEditingDate(false)}
+                    className="p-1 text-slate-500 hover:text-slate-700"
+                    title="Cancelar"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-1">
+                  <span>Fecha: {new Date(sale.fecha).toLocaleString('es-VE')}</span>
+                  <button
+                    onClick={() => {
+                      setEditDateValue(sale.fecha ? sale.fecha.slice(0, 16) : '');
+                      setIsEditingDate(true);
+                    }}
+                    className="p-0.5 text-indigo-600 hover:text-indigo-800 rounded print:hidden cursor-pointer"
+                    title="Modificar fecha de factura (días anteriores)"
+                  >
+                    <Edit2 className="w-2.5 h-2.5" />
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Customer Details */}

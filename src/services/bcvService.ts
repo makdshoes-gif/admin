@@ -2,6 +2,10 @@
  * Servicio de sincronización en tiempo real con la tasa oficial del Banco Central de Venezuela (BCV).
  * Utiliza DolarApi (https://ve.dolarapi.com/v1/dolares/oficial) como fuente oficial directa,
  * con soporte de reintentos, formato de fechas y manejo de fallos.
+ * 
+ * Regla Oficial BCV Fin de Semana:
+ * La tasa fijada y publicada por el BCV para el día Lunes (fecha valor lunes)
+ * es la tasa oficial válida y aplicable para el día Viernes, Sábado y Domingo.
  */
 
 export interface BcvApiResponse {
@@ -21,16 +25,78 @@ export interface BcvRateInfo {
   source: string;
   status: 'synced' | 'syncing' | 'error' | 'manual';
   error?: string;
+  isWeekendRate?: boolean;
+  effectiveMondayDate?: string;
+  currentDayName?: string;
+  cycleRuleDescription?: string;
 }
 
 const BCV_API_PRIMARY = 'https://ve.dolarapi.com/v1/dolares/oficial';
 const BCV_API_FALLBACK = 'https://ve.dolarapi.com/v1/dolares';
 
+export function getWeekendMondayEffectiveDate(): {
+  isWeekend: boolean;
+  dayName: string;
+  mondayFormatted: string;
+  cycleRuleDescription: string;
+} {
+  const now = new Date();
+  const day = now.getDay(); // 0 = Sunday, 1 = Monday, ..., 5 = Friday, 6 = Saturday
+  
+  // En Venezuela, la tasa oficial del día lunes es válida para Viernes, Sábado y Domingo
+  const isWeekendCycle = day === 5 || day === 6 || day === 0;
+
+  const dayNames: Record<number, string> = {
+    0: 'Domingo',
+    1: 'Lunes',
+    2: 'Martes',
+    3: 'Miércoles',
+    4: 'Jueves',
+    5: 'Viernes',
+    6: 'Sábado',
+  };
+  const currentDayName = dayNames[day] || '';
+
+  let daysUntilMonday = 0;
+  if (day === 5) {
+    daysUntilMonday = 3; // Viernes -> Próximo Lunes
+  } else if (day === 6) {
+    daysUntilMonday = 2; // Sábado -> Próximo Lunes
+  } else if (day === 0) {
+    daysUntilMonday = 1; // Domingo -> Mañana Lunes
+  }
+
+  const nextMonday = new Date(now);
+  nextMonday.setDate(now.getDate() + daysUntilMonday);
+
+  const mondayFormatted = nextMonday.toLocaleDateString('es-VE', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+  });
+
+  const cycleRuleDescription = isWeekendCycle
+    ? `La tasa oficial del BCV del día Lunes (${mondayFormatted}) es válida para Viernes, Sábado y Domingo.`
+    : 'Tasa oficial del Banco Central de Venezuela.';
+
+  return {
+    isWeekend: isWeekendCycle,
+    dayName: currentDayName,
+    mondayFormatted,
+    cycleRuleDescription,
+  };
+}
+
 export async function fetchLiveBcvRate(): Promise<{
   rate: number;
   officialDate: string;
   source: string;
+  isWeekendRate: boolean;
+  effectiveMondayDate?: string;
+  currentDayName?: string;
+  cycleRuleDescription?: string;
 }> {
+  const { isWeekend, dayName, mondayFormatted, cycleRuleDescription } = getWeekendMondayEffectiveDate();
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 8000);
 
@@ -55,10 +121,19 @@ export async function fetchLiveBcvRate(): Promise<{
       throw new Error('Formato de tasa inválido devuelto por la API del BCV');
     }
 
+    const rate = Number(data.promedio.toFixed(2));
+    const source = isWeekend
+      ? `BCV Oficial: Tasa del Lunes (${mondayFormatted}) válida para Viernes, Sábado y Domingo`
+      : 'Banco Central de Venezuela (vía DolarApi)';
+
     return {
-      rate: Number(data.promedio.toFixed(2)),
+      rate,
       officialDate: data.fechaActualizacion || new Date().toISOString(),
-      source: 'Banco Central de Venezuela (vía DolarApi)',
+      source,
+      isWeekendRate: isWeekend,
+      effectiveMondayDate: isWeekend ? mondayFormatted : undefined,
+      currentDayName: dayName,
+      cycleRuleDescription,
     };
   } catch (err: unknown) {
     clearTimeout(timeoutId);
@@ -76,10 +151,19 @@ export async function fetchLiveBcvRate(): Promise<{
           : null;
 
         if (oficialItem && typeof oficialItem.promedio === 'number' && oficialItem.promedio > 0) {
+          const rate = Number(oficialItem.promedio.toFixed(2));
+          const source = isWeekend
+            ? `BCV Oficial: Tasa del Lunes (${mondayFormatted}) válida para Viernes, Sábado y Domingo (Respaldo)`
+            : 'Banco Central de Venezuela (vía DolarApi Respaldo)';
+
           return {
-            rate: Number(oficialItem.promedio.toFixed(2)),
+            rate,
             officialDate: oficialItem.fechaActualizacion || new Date().toISOString(),
-            source: 'Banco Central de Venezuela (vía DolarApi Respaldo)',
+            source,
+            isWeekendRate: isWeekend,
+            effectiveMondayDate: isWeekend ? mondayFormatted : undefined,
+            currentDayName: dayName,
+            cycleRuleDescription,
           };
         }
       }

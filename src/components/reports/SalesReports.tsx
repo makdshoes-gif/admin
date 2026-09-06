@@ -16,7 +16,10 @@ import {
   RefreshCw,
   ShoppingBag,
   Percent,
-  ArrowUpRight
+  ArrowUpRight,
+  Edit2,
+  Check,
+  X
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { useStore } from '../../context/StoreContext';
@@ -26,7 +29,7 @@ import { DailySalesChart } from './DailySalesChart';
 import { GoogleSheetsSyncModal } from '../common/GoogleSheetsSyncModal';
 
 export const SalesReports: React.FC = () => {
-  const { sales, exchangeRate, products, bcvInfo, isBcvSyncing, syncBcvRate } = useStore();
+  const { sales, exchangeRate, products, bcvInfo, isBcvSyncing, syncBcvRate, updateSaleDate } = useStore();
 
   const [period, setPeriod] = useState<ReportPeriod>('este_mes');
   const [customStartDate, setCustomStartDate] = useState('');
@@ -34,6 +37,8 @@ export const SalesReports: React.FC = () => {
   const [selectedSaleForReceipt, setSelectedSaleForReceipt] = useState<Sale | null>(null);
   const [lastGeneratedTime, setLastGeneratedTime] = useState<string>(new Date().toLocaleTimeString());
   const [isSheetsModalOpen, setIsSheetsModalOpen] = useState(false);
+  const [editingSaleDateId, setEditingSaleDateId] = useState<string | null>(null);
+  const [tempDateValue, setTempDateValue] = useState<string>('');
 
   // Filter sales by selected period
   const filteredSales = useMemo(() => {
@@ -626,12 +631,57 @@ export const SalesReports: React.FC = () => {
                     </td>
 
                     <td className="py-2.5 px-3 font-mono text-slate-500 text-[11px]">
-                      {new Date(sale.fecha).toLocaleString('es-VE', {
-                        month: 'short',
-                        day: 'numeric',
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })}
+                      {editingSaleDateId === sale.id ? (
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="datetime-local"
+                            value={tempDateValue}
+                            onChange={(e) => setTempDateValue(e.target.value)}
+                            className="px-1.5 py-0.5 text-[10px] border border-indigo-300 rounded bg-white text-slate-800 shadow-2xs font-mono"
+                          />
+                          <button
+                            onClick={() => {
+                              if (tempDateValue) {
+                                const newIso = new Date(tempDateValue).toISOString();
+                                updateSaleDate(sale.id, newIso);
+                              }
+                              setEditingSaleDateId(null);
+                            }}
+                            className="p-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded cursor-pointer"
+                            title="Confirmar cambio de fecha"
+                          >
+                            <Check className="w-3 h-3" />
+                          </button>
+                          <button
+                            onClick={() => setEditingSaleDateId(null)}
+                            className="p-1 text-slate-400 hover:text-slate-600 cursor-pointer"
+                            title="Cancelar"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-1.5 group">
+                          <span>
+                            {new Date(sale.fecha).toLocaleString('es-VE', {
+                              month: 'short',
+                              day: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })}
+                          </span>
+                          <button
+                            onClick={() => {
+                              setEditingSaleDateId(sale.id);
+                              setTempDateValue(sale.fecha ? sale.fecha.slice(0, 16) : '');
+                            }}
+                            className="opacity-0 group-hover:opacity-100 p-0.5 text-indigo-500 hover:text-indigo-700 hover:bg-indigo-50 rounded transition cursor-pointer"
+                            title="Cambiar fecha de venta (días anteriores)"
+                          >
+                            <Edit2 className="w-2.5 h-2.5" />
+                          </button>
+                        </div>
+                      )}
                     </td>
 
                     <td className="py-2.5 px-4">
