@@ -41,4 +41,5 @@
   }
 },
 "@google/genai": "^0.1.1"
-Añadir dependencia @google/genai
+  }
+},
