@@ -1,0 +1,53 @@
+import { GoogleGenAI } from '@google/genai';
+
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+
+// Ejemplo de función handler para tu servidor Express o ruta de Next.js
+export async function handleAnalyzeShoe(req, res) {
+  try {
+    // Recibimos la imagen en formato base64 desde el frontend
+    const { imageBase64 } = req.body;
+
+    if (!imageBase64) {
+      return res.status(400).json({ error: 'No se ha proporcionado ninguna imagen' });
+    }
+
+    // Limpiamos el prefijo data:image/... si lo trae el base64
+    const base64Data = imageBase64.replace(/^data:image\/\w+;base64,/, '');
+
+    const prompt = `
+      Analiza esta imagen de un calzado para un sistema de inventario de una tienda. 
+      Devuelve la respuesta estrictamente en formato JSON válido con las siguientes claves:
+      - "marcaModelo": Marca y silueta identificada (ej. Nike Dunk Low Panda).
+      - "estiloCategoria": Estilo (ej. Sneakers, Casual, Deportivo, etc.).
+      - "colores": Colores primarios y contrastes.
+      - "materiales": Acabados (cuero liso, gamuza, suela, etc.).
+      - "tituloComercial": Un título comercial atractivo para la tienda.
+      - "descripcionTienda": Una descripción comercial lista para compartir en WhatsApp o Instagram.
+    `;
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: [
+        {
+          inlineData: {
+            data: base64Data,
+            mimeType: 'image/jpeg',
+          },
+        },
+        prompt,
+      ],
+    });
+
+    // Parseamos la respuesta de la IA asegurando que devuelva el JSON estructurado
+    const textResponse = response.text;
+    // Limpiamos bloques de código markdown si los incluye
+    const cleanJson = textResponse.replace(/```json/g, '').replace(/```/g, '').trim();
+    const data = JSON.parse(cleanJson);
+
+    return res.json(data);
+  } catch (error) {
+    console.error('Error al analizar el zapato con Gemini:', error);
+    return res.status(500).json({ error: 'Error al procesar la imagen con IA' });
+  }
+}
