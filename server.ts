@@ -17,6 +17,7 @@ import {
   normalizeBankReconciliations,
 } from './server/db.js';
 import { verifyBdvPayment, getBdvApiConfig, getRecentVerifications } from './server/bdv.js';
+import { analyzeShoeImage } from './server/shoeAi.js';
 
 const DATA_DIR = path.join(process.cwd(), 'server', 'data');
 if (!fs.existsSync(DATA_DIR)) {
@@ -145,8 +146,9 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
-  // JSON middleware
-  app.use(express.json());
+  // JSON & URL-encoded middleware (25MB limit for high-res camera sneaker photos)
+  app.use(express.json({ limit: '25mb' }));
+  app.use(express.urlencoded({ extended: true, limit: '25mb' }));
 
   // 1. Health check
   app.get('/api/health', (req, res) => {
@@ -835,7 +837,30 @@ async function startServer() {
     }
   });
 
-  // 10. Vite Middleware for Development / Static serving for Production
+  // 10. Gemini AI Shoe Image Recognition & Merchandising API
+  app.post('/api/ai/analyze-shoe', async (req, res) => {
+    try {
+      const { imageBase64, userHint } = req.body;
+      if (!imageBase64 || typeof imageBase64 !== 'string') {
+        return res.status(400).json({
+          success: false,
+          error: 'Se requiere una imagen en formato Base64 para analizar el calzado.',
+        });
+      }
+
+      const analysis = await analyzeShoeImage(imageBase64, userHint);
+      res.json(analysis);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error('[API /api/ai/analyze-shoe error]:', msg);
+      res.status(500).json({
+        success: false,
+        error: msg,
+      });
+    }
+  });
+
+  // 11. Vite Middleware for Development / Static serving for Production
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
       server: { middlewareMode: true },

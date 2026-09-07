@@ -980,13 +980,11 @@ export const LayawaysManager: React.FC = () => {
                       onChange={(e) => setAbonoMetodo(e.target.value)}
                       className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-slate-900"
                     >
-                      {paymentAccounts.map((acc) => (
+                      {availableAccounts.map((acc) => (
                         <option key={acc.id} value={acc.nombre}>
-                          {acc.nombre} ({acc.tipo})
+                          {acc.nombre} ({acc.moneda})
                         </option>
                       ))}
-                      <option value="Efectivo $">Efectivo $</option>
-                      <option value="Efectivo Bs">Efectivo Bs</option>
                     </select>
                   </div>
 
@@ -1149,13 +1147,11 @@ export const LayawaysManager: React.FC = () => {
                   onChange={(e) => setNuevoAbonoMetodo(e.target.value)}
                   className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-slate-900"
                 >
-                  {paymentAccounts.map((acc) => (
+                  {availableAccounts.map((acc) => (
                     <option key={acc.id} value={acc.nombre}>
-                      {acc.nombre} ({acc.tipo})
+                      {acc.nombre} ({acc.moneda})
                     </option>
                   ))}
-                  <option value="Efectivo $">Efectivo $</option>
-                  <option value="Efectivo Bs">Efectivo Bs</option>
                 </select>
               </div>
 

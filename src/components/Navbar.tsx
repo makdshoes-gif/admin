@@ -22,14 +22,15 @@ import {
   Receipt,
   User,
   BookmarkCheck,
-  Calendar
+  Calendar,
+  Sparkles
 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { CloudIntegrationModal } from './common/CloudIntegrationModal';
 import { MakdLogo } from './common/MakdLogo';
 import { UserWindowModal } from './common/UserWindowModal';
 
-export type NavigationTab = 'pos' | 'inventory' | 'layaways' | 'reports' | 'cash' | 'expenses' | 'conciliacion';
+export type NavigationTab = 'pos' | 'inventory' | 'layaways' | 'catalogo' | 'reports' | 'cash' | 'expenses' | 'conciliacion';
 
 interface NavbarProps {
   activeTab: NavigationTab;
@@ -51,6 +52,7 @@ export const Sidebar: React.FC<{
     { id: 'pos' as const, label: 'Punto de Venta', icon: ShoppingCart, count: null },
     { id: 'inventory' as const, label: 'Gestión Inventario', icon: Boxes, count: criticalStockProducts.length },
     { id: 'layaways' as const, label: 'Sistema de Apartados', icon: BookmarkCheck, count: activeLayawaysCount > 0 ? activeLayawaysCount : null },
+    { id: 'catalogo' as const, label: 'Catálogo Redes (Adidas)', icon: Sparkles, count: 'DROP' },
     ...(userRole === 'admin'
       ? [{ id: 'reports' as const, label: 'Reportes de Ventas', icon: TrendingUp, count: null }]
       : []),
@@ -225,6 +227,8 @@ export const Header: React.FC<{
         return 'Gestión de Inventario y Almacén';
       case 'layaways':
         return 'Sistema de Apartados y Reservas';
+      case 'catalogo':
+        return 'Catálogo Streetwear Tipo Adidas (Redes Sociales)';
       case 'reports':
         return 'Reportes Automáticos de Ventas';
       case 'cash':

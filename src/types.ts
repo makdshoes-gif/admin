@@ -40,6 +40,8 @@ export interface ShoeProduct {
   stock_minimo: number;// Umbral de alerta para reposición
   activo: boolean;
   imagen?: string;
+  descripcion?: string;
+  genero?: string;
   created_at: string;
 }
 

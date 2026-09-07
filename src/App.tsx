@@ -13,6 +13,7 @@ import { CashClosure } from './components/cash/CashClosure';
 import { ExpensesManager } from './components/expenses/ExpensesManager';
 import { BankReconciliationView } from './components/banking/BankReconciliationView';
 import { LayawaysManager } from './components/layaways/LayawaysManager';
+import { AdidasCatalogView } from './components/catalog/AdidasCatalogView';
 
 function AppContent() {
   const [activeTab, setActiveTab] = useState<NavigationTab>('pos');
@@ -45,6 +46,7 @@ function AppContent() {
           {activeTab === 'pos' && <PointOfSale onNavigateToLayaways={() => setActiveTab('layaways')} />}
           {activeTab === 'inventory' && <InventoryManager />}
           {activeTab === 'layaways' && <LayawaysManager />}
+          {activeTab === 'catalogo' && <AdidasCatalogView />}
           {activeTab === 'reports' && userRole === 'admin' && <SalesReports />}
           {activeTab === 'cash' && <CashClosure />}
           {activeTab === 'expenses' && <ExpensesManager />}

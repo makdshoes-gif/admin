@@ -20,7 +20,8 @@ import {
   PackageCheck,
   Tag,
   Printer,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Sparkles
 } from 'lucide-react';
 import { useStore } from '../../context/StoreContext';
 import { ShoeProduct, ShoeType, MovementType, ProductCategory } from '../../types';
@@ -28,6 +29,8 @@ import { ProductFormModal } from './ProductFormModal';
 import { StockMovementModal } from './StockMovementModal';
 import { ShoeLabelModal } from './ShoeLabelModal';
 import { ExcelImportModal } from './ExcelImportModal';
+import { ShoeAiScannerModal } from './ShoeAiScannerModal';
+import { ShoeAiResult } from '../../services/aiShoeService';
 
 export const InventoryManager: React.FC = () => {
   const {
@@ -56,6 +59,9 @@ export const InventoryManager: React.FC = () => {
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<ShoeProduct | null>(null);
   const [isExcelModalOpen, setIsExcelModalOpen] = useState(false);
+  const [isAiScannerOpen, setIsAiScannerOpen] = useState(false);
+  const [initialAiData, setInitialAiData] = useState<ShoeAiResult | null>(null);
+  const [initialAiImage, setInitialAiImage] = useState<string | null>(null);
 
   const [isMovementModalOpen, setIsMovementModalOpen] = useState(false);
   const [movementTargetProduct, setMovementTargetProduct] = useState<ShoeProduct | null>(null);
@@ -166,8 +172,19 @@ export const InventoryManager: React.FC = () => {
           </p>
         </div>
 
-        {/* Action Buttons: Subir Excel and Nuevo Producto */}
+        {/* Action Buttons: Cámara IA, Subir Excel and Nuevo Producto */}
         <div className="flex items-center gap-2 self-start md:self-auto flex-wrap">
+          <button
+            id="open-ai-scanner-btn"
+            type="button"
+            onClick={() => setIsAiScannerOpen(true)}
+            className="px-3.5 py-2 bg-linear-to-r from-cyan-600 via-indigo-600 to-purple-600 hover:opacity-95 text-white font-semibold rounded-lg text-xs flex items-center gap-2 shadow-xs transition cursor-pointer"
+            title="Escanear calzado con cámara o imagen para autocompletar con IA Gemini"
+          >
+            <Sparkles className="w-4 h-4 text-cyan-200" />
+            <span>Cámara IA Escáner</span>
+          </button>
+
           <button
             id="import-excel-btn"
             type="button"
@@ -184,6 +201,8 @@ export const InventoryManager: React.FC = () => {
             type="button"
             onClick={() => {
               setEditingProduct(null);
+              setInitialAiData(null);
+              setInitialAiImage(null);
               setIsProductModalOpen(true);
             }}
             className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-semibold rounded-lg text-xs flex items-center gap-2 shadow-xs transition-colors cursor-pointer"
@@ -849,8 +868,14 @@ export const InventoryManager: React.FC = () => {
       {/* Modal: New / Edit Product */}
       <ProductFormModal
         isOpen={isProductModalOpen}
-        onClose={() => setIsProductModalOpen(false)}
+        onClose={() => {
+          setIsProductModalOpen(false);
+          setInitialAiData(null);
+          setInitialAiImage(null);
+        }}
         editingProduct={editingProduct}
+        initialAiData={initialAiData}
+        initialAiImage={initialAiImage}
         onSave={(data) => {
           if (editingProduct) {
             updateProduct(editingProduct.id, data);
@@ -860,6 +885,19 @@ export const InventoryManager: React.FC = () => {
         }}
         onSaveBulk={(bulk) => {
           addProductsBulk(bulk, false);
+        }}
+      />
+
+      {/* Modal: Shoe AI Scanner */}
+      <ShoeAiScannerModal
+        isOpen={isAiScannerOpen}
+        onClose={() => setIsAiScannerOpen(false)}
+        onSelectForProduct={(aiData, img) => {
+          setInitialAiData(aiData);
+          setInitialAiImage(img);
+          setEditingProduct(null);
+          setIsAiScannerOpen(false);
+          setIsProductModalOpen(true);
         }}
       />
 

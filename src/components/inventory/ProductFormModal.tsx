@@ -20,6 +20,7 @@ import {
   Smartphone
 } from 'lucide-react';
 import { ShoeProduct, ShoeType, ProductCategory } from '../../types';
+import { analyzeShoeWithAi, ShoeAiResult } from '../../services/aiShoeService';
 
 interface ProductFormModalProps {
   isOpen: boolean;
@@ -27,6 +28,8 @@ interface ProductFormModalProps {
   onSave: (productData: Omit<ShoeProduct, 'id' | 'created_at'>) => void;
   onSaveBulk?: (productsData: Omit<ShoeProduct, 'id' | 'created_at'>[]) => void;
   editingProduct?: ShoeProduct | null;
+  initialAiData?: ShoeAiResult | null;
+  initialAiImage?: string | null;
 }
 
 interface SizeStockItem {
@@ -40,6 +43,8 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
   onSave,
   onSaveBulk,
   editingProduct,
+  initialAiData,
+  initialAiImage,
 }) => {
   if (!isOpen) return null;
 
@@ -63,6 +68,13 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
   const [precio, setPrecio] = useState(editingProduct?.precio.toString() || '80.00');
   const [stockMinimo, setStockMinimo] = useState(editingProduct?.stock_minimo.toString() || '2');
   const [imagen, setImagen] = useState(editingProduct?.imagen || '');
+  const [descripcion, setDescripcion] = useState(editingProduct?.descripcion || '');
+  const [genero, setGenero] = useState(editingProduct?.genero || 'Unisex');
+
+  // AI Recognition State
+  const [isAiAnalyzing, setIsAiAnalyzing] = useState(false);
+  const [aiAnalysisSuccess, setAiAnalysisSuccess] = useState<ShoeAiResult | null>(null);
+  const [aiError, setAiError] = useState<string | null>(null);
 
   // Single Item Mode: single size & stock
   const [singleTalla, setSingleTalla] = useState(editingProduct?.talla || '38');
@@ -81,6 +93,33 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
   const [activeSizes, setActiveSizes] = useState<SizeStockItem[]>(defaultSizesForCalzado);
   const [bulkQtyToApply, setBulkQtyToApply] = useState<number>(4);
   const [customTallaInput, setCustomTallaInput] = useState<string>('');
+
+  // Auto-fill from initialAiData
+  useEffect(() => {
+    if (initialAiData) {
+      if (initialAiData.nombre) setNombre(initialAiData.nombre);
+      if (initialAiData.marca) setMarca(initialAiData.marca);
+      if (initialAiData.color) setColor(initialAiData.color);
+      if (initialAiData.tipo) setTipo(initialAiData.tipo as ShoeType);
+      if (initialAiData.genero) setGenero(initialAiData.genero);
+      if (initialAiData.precio_sugerido_usd) {
+        setPrecio(initialAiData.precio_sugerido_usd.toString());
+        setCosto(Math.round(initialAiData.precio_sugerido_usd * 0.55).toString());
+      }
+      if (initialAiData.descripcion_comercial) {
+        setDescripcion(
+          initialAiData.descripcion_comercial + (initialAiData.detalles_estilo ? '\n\n💡 ' + initialAiData.detalles_estilo : '')
+        );
+      }
+      if (initialAiData.tallas_sugeridas && initialAiData.tallas_sugeridas.length > 0) {
+        setActiveSizes(initialAiData.tallas_sugeridas.map((t) => ({ talla: t, stock: 4 })));
+      }
+      setAiAnalysisSuccess(initialAiData);
+    }
+    if (initialAiImage) {
+      setImagen(initialAiImage);
+    }
+  }, [initialAiData, initialAiImage]);
 
   // Camera & Image state
   const [imageMode, setImageMode] = useState<'camera' | 'upload' | 'url'>('camera');
@@ -318,6 +357,76 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
     }
   };
 
+  const handleAnalyzeWithAi = async (imageToAnalyze?: string) => {
+    const targetImage = imageToAnalyze || imagen;
+    if (!targetImage) {
+      alert('Primero debes tomar una foto o subir una imagen del calzado.');
+      return;
+    }
+
+    setIsAiAnalyzing(true);
+    setAiError(null);
+
+    try {
+      const res = await analyzeShoeWithAi(targetImage);
+      setAiAnalysisSuccess(res);
+
+      if (res.nombre) setNombre(res.nombre);
+      if (res.marca) setMarca(res.marca);
+      if (res.color) setColor(res.color);
+      if (res.tipo) setTipo(res.tipo as ShoeType);
+      if (res.genero) setGenero(res.genero);
+      if (res.precio_sugerido_usd) {
+        setPrecio(res.precio_sugerido_usd.toString());
+        setCosto(Math.round(res.precio_sugerido_usd * 0.55).toString());
+      }
+      if (res.descripcion_comercial) {
+        setDescripcion(
+          res.descripcion_comercial + (res.detalles_estilo ? '\n\n💡 ' + res.detalles_estilo : '')
+        );
+      }
+      if (!sku.trim() && res.marca && res.modelo) {
+        const brandCode = res.marca.substring(0, 3).toUpperCase();
+        const modelCode = res.modelo.replace(/[^a-zA-Z0-9]/g, '').substring(0, 4).toUpperCase();
+        const rand = Math.floor(100 + Math.random() * 900);
+        setSku(`${brandCode}-${modelCode}-${rand}`);
+      }
+      if (res.tallas_sugeridas && res.tallas_sugeridas.length > 0) {
+        setActiveSizes(res.tallas_sugeridas.map((t) => ({ talla: t, stock: 4 })));
+      }
+    } catch (err: any) {
+      console.error('Error analyzing shoe:', err);
+      setAiError(err.message || 'Error al conectar con el servicio de IA Gemini.');
+    } finally {
+      setIsAiAnalyzing(false);
+    }
+  };
+
+  const handleCaptureAndAnalyzeWithAi = () => {
+    if (!videoRef.current) return;
+    const video = videoRef.current;
+    const width = video.videoWidth || 640;
+    const height = video.videoHeight || 480;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    if (ctx) {
+      if (cameraFacing === 'user') {
+        ctx.translate(width, 0);
+        ctx.scale(-1, 1);
+      }
+      ctx.drawImage(video, 0, 0, width, height);
+      const photoDataUrl = canvas.toDataURL('image/jpeg', 0.88);
+      setImagen(photoDataUrl);
+      setCameraError(null);
+      stopCamera();
+      handleAnalyzeWithAi(photoDataUrl);
+    }
+  };
+
   const handleSwitchCamera = () => {
     const nextFacing = cameraFacing === 'environment' ? 'user' : 'environment';
     setCameraFacing(nextFacing);
@@ -391,6 +500,8 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
       precio: parsedPrecio,
       stock_minimo: parseInt(stockMinimo, 10) || 2,
       activo: true,
+      descripcion: descripcion.trim() || undefined,
+      genero: genero.trim() || undefined,
       imagen:
         imagen.trim() ||
         (categoria === 'Gorras'
@@ -640,6 +751,45 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
                 </span>
               )}
             </div>
+
+            <div>
+              <label className="block text-slate-700 font-bold mb-1">
+                Público / Género
+              </label>
+              <select
+                value={genero}
+                onChange={(e) => setGenero(e.target.value)}
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-indigo-500 focus:bg-white text-xs"
+              >
+                <option value="Unisex">Unisex</option>
+                <option value="Caballero">Caballero (Hombre)</option>
+                <option value="Dama">Dama (Mujer)</option>
+                <option value="Niño">Niño</option>
+                <option value="Niña">Niña</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Description & Social Media Copy */}
+          <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="text-slate-800 font-bold text-xs flex items-center gap-1.5">
+                <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
+                <span>Descripción Comercial & Redes Sociales (Catálogo)</span>
+              </label>
+              {aiAnalysisSuccess && (
+                <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                  ✓ Generado por Gemini AI
+                </span>
+              )}
+            </div>
+            <textarea
+              rows={3}
+              value={descripcion}
+              onChange={(e) => setDescripcion(e.target.value)}
+              placeholder="Descripción comercial atractiva, detalles de silueta, materiales y copy para redes sociales..."
+              className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-indigo-500 text-xs resize-none"
+            />
           </div>
 
           {/* Pricing & Cost Matrix */}
@@ -970,14 +1120,26 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
                         <span className="hidden sm:inline">Girar</span>
                       </button>
 
-                      <button
-                        type="button"
-                        onClick={handleCapturePhoto}
-                        className="px-5 py-2 rounded-full bg-rose-600 hover:bg-rose-700 active:bg-rose-800 text-white font-bold text-xs flex items-center gap-2 shadow-lg cursor-pointer transition transform active:scale-95"
-                      >
-                        <div className="w-2.5 h-2.5 rounded-full bg-white animate-pulse"></div>
-                        <span>Tomar Foto</span>
-                      </button>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={handleCapturePhoto}
+                          className="px-3 sm:px-4 py-2 rounded-full bg-rose-600 hover:bg-rose-700 active:bg-rose-800 text-white font-bold text-xs flex items-center gap-1.5 shadow-lg cursor-pointer transition transform active:scale-95"
+                        >
+                          <div className="w-2 h-2 rounded-full bg-white animate-pulse"></div>
+                          <span>Foto</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={handleCaptureAndAnalyzeWithAi}
+                          className="px-3 sm:px-4 py-2 rounded-full bg-linear-to-r from-cyan-500 via-indigo-600 to-purple-600 hover:opacity-90 text-white font-bold text-xs flex items-center gap-1.5 shadow-lg cursor-pointer transition transform active:scale-95"
+                          title="Tomar foto y reconocer calzado con IA Gemini"
+                        >
+                          <Sparkles className="w-3.5 h-3.5 text-cyan-200 animate-spin" />
+                          <span>Foto + IA</span>
+                        </button>
+                      </div>
 
                       <button
                         type="button"
@@ -1091,28 +1253,72 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
 
             {/* Image Preview Thumbnail */}
             {imagen && (
-              <div className="flex items-center space-x-3 p-2.5 bg-slate-50 border border-slate-200 rounded-xl">
-                <img
-                  src={imagen}
-                  alt="Vista previa"
-                  className="w-14 h-14 object-cover rounded-lg border border-slate-200 bg-white shrink-0"
-                />
-                <div className="flex-1 min-w-0">
-                  <span className="text-xs font-bold text-slate-800 block truncate">
-                    Foto asignada al producto
-                  </span>
-                  <span className="text-[10px] text-emerald-600 font-semibold block">
-                    ✓ Lista para catálogo y punto de venta
-                  </span>
+              <div className="space-y-2">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between p-3 bg-slate-50 border border-slate-200 rounded-xl gap-3">
+                  <div className="flex items-center space-x-3 min-w-0">
+                    <img
+                      src={imagen}
+                      alt="Vista previa"
+                      className="w-14 h-14 object-cover rounded-lg border border-slate-200 bg-white shrink-0 shadow-xs"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <span className="text-xs font-bold text-slate-800 block truncate">
+                        Foto lista para catálogo
+                      </span>
+                      <span className="text-[10px] text-emerald-600 font-semibold block">
+                        ✓ Asignada a este calzado
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    {/* Trigger Gemini AI Analysis */}
+                    <button
+                      type="button"
+                      onClick={() => handleAnalyzeWithAi()}
+                      disabled={isAiAnalyzing}
+                      className="px-3 py-1.5 bg-linear-to-r from-cyan-600 via-indigo-600 to-purple-600 hover:opacity-95 disabled:opacity-50 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-xs transition cursor-pointer"
+                    >
+                      <Sparkles className={`w-3.5 h-3.5 text-cyan-200 ${isAiAnalyzing ? 'animate-spin' : ''}`} />
+                      <span>{isAiAnalyzing ? 'Analizando con IA...' : '✨ Identificar Zapato con IA'}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setImagen('')}
+                      className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-slate-200 transition cursor-pointer"
+                      title="Eliminar foto"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setImagen('')}
-                  className="p-1 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-slate-200 transition cursor-pointer"
-                  title="Eliminar foto"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
+
+                {/* AI Detection Banner */}
+                {aiAnalysisSuccess && (
+                  <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-900 flex items-start justify-between gap-2">
+                    <div>
+                      <div className="font-bold flex items-center gap-1 text-emerald-700">
+                        <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
+                        <span>¡Calzado Reconocido con Éxito!</span>
+                      </div>
+                      <div className="text-[11px] text-emerald-800 mt-0.5">
+                        Marca: <strong>{aiAnalysisSuccess.marca}</strong> • Modelo: <strong>{aiAnalysisSuccess.modelo}</strong> • Tipo: <strong>{aiAnalysisSuccess.tipo}</strong>
+                      </div>
+                      <div className="text-[10px] text-emerald-600 mt-0.5">
+                        Campos de nombre, marca, color, precio sugerido (${aiAnalysisSuccess.precio_sugerido_usd}) y descripción completados.
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* AI Error */}
+                {aiError && (
+                  <div className="p-2.5 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    <span>{aiError}</span>
+                  </div>
+                )}
               </div>
             )}
           </div>
