@@ -838,7 +838,7 @@ async function startServer() {
   });
 
   // 10. Gemini AI Shoe Image Recognition & Merchandising API
-  app.post('/api/ai/analyze-shoe', async (req, res) => {
+  const handleShoeAnalysis = async (req: express.Request, res: express.Response) => {
     try {
       const { imageBase64, userHint } = req.body;
       if (!imageBase64 || typeof imageBase64 !== 'string') {
@@ -849,16 +849,31 @@ async function startServer() {
       }
 
       const analysis = await analyzeShoeImage(imageBase64, userHint);
-      res.json(analysis);
+
+      // Return unified response compatible with both frontend interfaces
+      res.json({
+        ...analysis,
+        // Also provide keys from user's custom prompt format
+        marcaModelo: `${analysis.marca} ${analysis.modelo}`.trim(),
+        estiloCategoria: analysis.tipo,
+        colores: analysis.color,
+        materiales: analysis.material,
+        tituloComercial: analysis.nombre,
+        descripcionTienda: analysis.descripcion_comercial,
+      });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      console.error('[API /api/ai/analyze-shoe error]:', msg);
+      console.error('[API analyze-shoe error]:', msg);
       res.status(500).json({
         success: false,
         error: msg,
       });
     }
-  });
+  };
+
+  // Support both endpoint paths: /api/ai/analyze-shoe and /api/analyze-shoe
+  app.post('/api/ai/analyze-shoe', handleShoeAnalysis);
+  app.post('/api/analyze-shoe', handleShoeAnalysis);
 
   // 11. Vite Middleware for Development / Static serving for Production
   if (process.env.NODE_ENV !== 'production') {
@@ -881,54 +896,3 @@ async function startServer() {
 }
 
 startServer();
-import { GoogleGenAI } from '@google/genai';
-
-// Inicializar el cliente de Gemini con la clave del entorno
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-
-// Endpoint para analizar el calzado mediante la cámara
-app.post('/api/analyze-shoe', async (req, res) => {
-  try {
-    const { imageBase64 } = req.body;
-
-    if (!imageBase64) {
-      return res.status(400).json({ error: 'No se ha proporcionado ninguna imagen' });
-    }
-
-    // Limpiar el prefijo de codificación base64 si lo trae
-    const base64Data = imageBase64.replace(/^data:image\/\w+;base64,/, '');
-
-    const prompt = `
-      Analiza esta imagen de un calzado para el sistema de inventario de Makd Shop. 
-      Devuelve la respuesta estrictamente en formato JSON válido (sin bloques de código markdown como \`\`\`json) con las siguientes claves exactas:
-      - "marcaModelo": Marca y silueta identificada (ej. Nike Dunk Low Panda).
-      - "estiloCategoria": Estilo (ej. Sneakers, Casual, Deportivo, etc.).
-      - "colores": Colores primarios y contrastes.
-      - "materiales": Acabados (cuero liso, gamuza, suela, etc.).
-      - "tituloComercial": Un título comercial atractivo para la tienda.
-      - "descripcionTienda": Una descripción comercial lista para compartir en WhatsApp o Instagram.
-    `;
-
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: [
-        {
-          inlineData: {
-            data: base64Data,
-            mimeType: 'image/jpeg',
-          },
-        },
-        prompt,
-      ],
-    });
-
-    const textResponse = response.text || '';
-    const cleanJson = textResponse.replace(/```json/g, '').replace(/```/g, '').trim();
-    const data = JSON.parse(cleanJson);
-
-    res.json(data);
-  } catch (error) {
-    console.error('Error al analizar el zapato con Gemini:', error);
-    res.status(500).json({ error: 'Error al procesar la imagen con IA' });
-  }
-});
