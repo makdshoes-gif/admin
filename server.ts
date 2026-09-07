@@ -839,8 +839,18 @@ async function startServer() {
 
   // 10. Gemini AI Shoe Image Recognition & Merchandising API
   const handleShoeAnalysis = async (req: express.Request, res: express.Response) => {
+    // Enable CORS & Preflight headers
+    res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept');
+    res.header('Access-Control-Allow-Credentials', 'true');
+
+    if (req.method === 'OPTIONS') {
+      return res.status(200).end();
+    }
+
     try {
-      const { imageBase64, userHint } = req.body;
+      const { imageBase64, userHint } = req.body || {};
       if (!imageBase64 || typeof imageBase64 !== 'string') {
         return res.status(400).json({
           success: false,
@@ -871,9 +881,9 @@ async function startServer() {
     }
   };
 
-  // Support both endpoint paths: /api/ai/analyze-shoe and /api/analyze-shoe
-  app.post('/api/ai/analyze-shoe', handleShoeAnalysis);
-  app.post('/api/analyze-shoe', handleShoeAnalysis);
+  // Support both endpoint paths and any HTTP verb: /api/ai/analyze-shoe and /api/analyze-shoe
+  app.all('/api/ai/analyze-shoe', handleShoeAnalysis);
+  app.all('/api/analyze-shoe', handleShoeAnalysis);
 
   // 11. Vite Middleware for Development / Static serving for Production
   if (process.env.NODE_ENV !== 'production') {

@@ -29,7 +29,14 @@ function getGenAI(): GoogleGenAI | null {
     return null;
   }
   if (!aiClient) {
-    aiClient = new GoogleGenAI({ apiKey: key });
+    aiClient = new GoogleGenAI({
+      apiKey: key,
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build',
+        },
+      },
+    });
   }
   return aiClient;
 }
@@ -87,7 +94,7 @@ export async function analyzeShoeImage(
     };
   }
 
-  const modelsToTry = ['gemini-2.5-flash', 'gemini-flash-latest', 'gemini-3.1-flash-lite', 'gemini-3.8-flash'];
+  const modelsToTry = ['gemini-3.1-flash-lite', 'gemini-flash-latest', 'gemini-3.8-flash'];
 
   const prompt = `Eres el mayor experto mundial en zapatillas (sneakers), calzado deportivo y moda urbana para la tienda "MAKD SHOP".
 Analiza minuciosamente la fotografía adjunta del calzado o zapato para identificar con precisión su marca, silueta o modelo icónico (por ejemplo siluetas tipo Adidas Forum, Adidas Samba, Adidas Campus, Adidas Superstar, Nike Air Force 1, Dunk Low, Jordan 1, Puma Suede, New Balance 550, etc.).
@@ -124,24 +131,19 @@ Si la foto no parece ser un zapato o prenda, identifica lo más cercano posible 
   for (const model of modelsToTry) {
     try {
       console.log(`[Gemini Shoe AI] Analizando imagen con modelo: ${model}...`);
+      const imagePart = {
+        inlineData: {
+          mimeType: mimeType.includes('png') ? 'image/png' : mimeType.includes('webp') ? 'image/webp' : 'image/jpeg',
+          data,
+        },
+      };
+      const textPart = {
+        text: prompt,
+      };
+
       const response = await ai.models.generateContent({
         model,
-        contents: [
-          {
-            role: 'user',
-            parts: [
-              {
-                inlineData: {
-                  mimeType: mimeType.includes('png') ? 'image/png' : mimeType.includes('webp') ? 'image/webp' : 'image/jpeg',
-                  data,
-                },
-              },
-              {
-                text: prompt,
-              },
-            ],
-          },
-        ],
+        contents: { parts: [imagePart, textPart] },
         config: {
           responseMimeType: 'application/json',
         },
