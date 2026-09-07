@@ -881,9 +881,11 @@ async function startServer() {
     }
   };
 
-  // Support both endpoint paths and any HTTP verb: /api/ai/analyze-shoe and /api/analyze-shoe
+  // Support multiple endpoint paths and any HTTP verb to ensure maximum compatibility
   app.all('/api/ai/analyze-shoe', handleShoeAnalysis);
   app.all('/api/analyze-shoe', handleShoeAnalysis);
+  app.all('/api/shoe-ai', handleShoeAnalysis);
+  app.all('/api/ai/shoe', handleShoeAnalysis);
 
   // 11. Vite Middleware for Development / Static serving for Production
   if (process.env.NODE_ENV !== 'production') {
