@@ -80,14 +80,15 @@ export async function analyzeShoeWithAi(
   // Optimize image size first for snappy API response (< 1000px, quality 0.85)
   const optimizedImage = await optimizeImageForAi(imageBase64);
 
-  // Use clean relative endpoints without auth query parameters.
-  // In reverse proxies, passing auth query params on POST requests causes 302 redirects to static error pages (HTTP 405).
-  const endpoints = ['/api/ai/analyze-shoe', '/api/analyze-shoe', '/api/shoe-ai', '/api/ai/shoe'];
+  // In AI Studio iframe environments, window.location.search contains auth/session params
+  const authQuery = typeof window !== 'undefined' && window.location.search ? window.location.search : '';
+  const endpoints = ['/api/ai/analyze-shoe', '/api/analyze-shoe'];
   let lastErrorMsg = '';
 
   for (const endpoint of endpoints) {
     try {
-      const response = await fetch(endpoint, {
+      const fullUrl = `${endpoint}${authQuery}`;
+      const response = await fetch(fullUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
