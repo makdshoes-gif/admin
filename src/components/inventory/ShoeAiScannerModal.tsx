@@ -427,7 +427,7 @@ export const ShoeAiScannerModal: React.FC<ShoeAiScannerModalProps> = ({
                 </label>
                 <input
                   type="text"
-                  placeholder="Ej: Adidas Forum, Talla 41, Retro..."
+                  placeholder="Ej: Nike Dunk, Jordan 4, Samba OG, New Balance 550..."
                   value={userHint}
                   onChange={(e) => setUserHint(e.target.value)}
                   className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white placeholder:text-slate-500 focus:outline-hidden focus:border-indigo-500"

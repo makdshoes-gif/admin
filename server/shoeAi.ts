@@ -72,65 +72,55 @@ export async function analyzeShoeImage(
 
   const ai = getGenAI();
   if (!ai) {
-    console.warn('[Gemini Shoe AI] GEMINI_API_KEY no detectada. Retornando plantilla estándar editable.');
-    return {
-      success: true,
-      marca: 'Adidas',
-      modelo: 'Forum Low',
-      nombre: 'Adidas Forum Low Classic',
-      categoria: 'Calzado',
-      tipo: 'Casual',
-      genero: 'Unisex',
-      color: 'Blanco / Negro',
-      material: 'Cuero sintético y suela de goma',
-      descripcion_comercial: 'Calzado urbano contemporáneo con diseño clásico de silueta sneaker, ideal para uso casual diario.',
-      copy_social: '🔥 ¡Disponibles nuevos Sneakers en Makd Shop! 👟 Calidad premium y tallas disponibles. Escríbenos para apartar los tuyos.',
-      hashtags: ['#Sneakers', '#ModaUrbana', '#MakdShop', '#Calzado'],
-      precio_sugerido_usd: 55.0,
-      caracteristicas_clave: ['Diseño urbano versátil', 'Suela de goma resistente', 'Ajuste cómodo'],
-      tallas_sugeridas: ['38', '39', '40', '41', '42', '43'],
-      modelo_ia_usado: 'plantilla-local',
-      detalles_estilo: 'Luce perfecto con joggers o jeans rectos.',
-    };
+    throw new Error('Servicio de IA no disponible: GEMINI_API_KEY no está configurada.');
   }
 
-  const modelsToTry = ['gemini-3.1-flash-lite', 'gemini-flash-latest', 'gemini-3.8-flash'];
+  const modelsToTry = ['gemini-3.1-flash-lite', 'gemini-3.8-flash'];
 
-  const prompt = `Eres el mayor experto mundial en zapatillas (sneakers), calzado deportivo y moda urbana para la tienda "MAKD SHOP".
-Analiza minuciosamente la fotografía adjunta del calzado o zapato para identificar con precisión su marca, silueta o modelo icónico (por ejemplo siluetas tipo Adidas Forum, Adidas Samba, Adidas Campus, Adidas Superstar, Nike Air Force 1, Dunk Low, Jordan 1, Puma Suede, New Balance 550, etc.).
+  const prompt = `Eres el mayor experto en calzado, zapatillas urbanas (sneakers) y autenticación visual para el catálogo de "MAKD SHOP".
+Examina atentamente la fotografía adjunta y analiza cada detalle visual del calzado:
+1. SILUETA Y MARCA:
+   - Identifica con máxima precisión la silueta o modelo exacto. Revisa logotipos, paneles y costuras distintivas:
+     * Nike: Swoosh, perforaciones de puntera, paneles de Dunk Low / High, Air Force 1, siluetas Air Jordan (Jordan 1, 3, 4, 11), Cortez, Air Max 90/97/Plus.
+     * Adidas: Tres rayas laterales, trifolio Trefoil, puntera en T de Samba/Gazelle, puntera de concha de Superstar, tiras de Forum Low, silueta ancha acolchada de Campus 00s, Stan Smith.
+     * Puma: Formstrip lateral curvado, silueta Suede Classic, Palermo con suela de goma, Slipstream, Mayze.
+     * New Balance: Letra 'N' lateral, silueta vintage 550, estilo retro running 530, suela segmentada 9060 o 2002R.
+     * Converse: Parche circular de estrella o silueta Chuck Taylor All Star / Chuck 70, suela con puntera de diamante.
+     * Vans: Raya lateral Jazz Stripe, suela tipo waffle de Old Skool, Sk8-Hi, Authentic, Era o estampado checkerboard.
+     * Asics: Franjas entrecruzadas Tiger Stripes, siluetas Gel-Kayano, Gel-NYC.
+     * Reebok: Logotipo vectorial y silueta Club C 85 o Classic Leather.
+     * Otras marcas o calzado genérico: Si es bota, mocasín, tacón, sandalia o no tiene marca visible reconocida, indica la marca real visible o "Genérica" / "Marca Local" y describe fielmente su silueta.
+2. COLORWAY REAL:
+   - Describe con exactitud los colores reales que ves en la imagen (por ejemplo: "Blanco Triple", "Negro y Blanco (Panda)", "Rojo y Blanco", "Gris con suela crema", etc.).
+3. MATERIALES VISIBLES:
+   - Cuero liso, gamuza / serraje, lona textil, malla transpirable, suela de goma vulcanizada o entresuela de espuma EVA.
 
-${userHint ? `Pista o información adicional del usuario: "${userHint}"` : ''}
+${userHint ? `INFORMACIÓN O PISTA ADICIONAL PROPORCIONADA POR EL USUARIO: "${userHint}". Úsala para afinar el modelo exacto si coincide con lo visible.` : ''}
 
-Debes responder ÚNICAMENTE con un objeto JSON válido (sin bloques de código markdown, sin \`\`\`json, texto plano JSON) con los siguientes campos exactos:
+IMPORTANTE: Responde ÚNICAMENTE con un objeto JSON válido (sin formato markdown \`\`\`json, solo las llaves JSON {...}) con esta estructura:
 {
-  "marca": "Nombre de la marca (ej: Adidas, Nike, Jordan, Puma, New Balance, Converse, Vans, Skechers, Asics, Reebok o Genérica)",
-  "modelo": "Silueta o modelo específico (ej: Forum Low, Samba OG, Campus 00s, Superstar, Air Force 1, Dunk Low, Suede Classic)",
-  "nombre": "Título comercial atractivo y completo para tienda de calzado (ej: Adidas Forum Low Classic White & Black)",
+  "marca": "Marca exacta identificada (ej: Nike, Adidas, Jordan, Puma, New Balance, Converse, Vans, Asics, Reebok, o Genérica)",
+  "modelo": "Nombre exacto del modelo o silueta (ej: Dunk Low, Air Force 1 07, Samba OG, Campus 00s, Forum Low, 550, Suede Classic, Chuck 70, Old Skool, etc.)",
+  "nombre": "Nombre comercial completo y atractivo para MAKD SHOP que combine marca, modelo y color (ej: Nike Dunk Low Black & White Panda)",
   "categoria": "Calzado",
   "tipo": "Deportivo" | "Casual" | "Botas" | "Tacones" | "Sandalias" | "Mocasines" | "Infantil",
   "genero": "Unisex" | "Caballero" | "Dama" | "Niño" | "Niña",
-  "color": "Combinación de colores visible (ej: Blanco con detalles en Negro y suela Gum)",
-  "material": "Materiales visibles de fabricación (ej: Cuero sintético suave con detalles en gamuza y suela de goma vulcanizada)",
+  "color": "Colorway visible real (ej: Blanco y Negro, Azul Marino con detalles en Blanco, etc.)",
+  "material": "Materiales reales visibles (ej: Cuero sintético suave con puntera reforzada y suela de caucho)",
   "precio_sugerido_usd": 45.00,
-  "descripcion_comercial": "Descripción comercial atractiva de 1 o 2 párrafos redactada para vender en tienda de calzado. Destaca su comodidad para uso diario, amortiguación, durabilidad y combinaciones con ropa urbana casual o deportiva.",
-  "copy_social": "Texto listo para publicar en Instagram / WhatsApp con emojis elegantes, estructura de venta, tallas disponibles recomendadas y llamado a la acción directo.",
-  "hashtags": ["#Adidas", "#SneakersVenezuela", "#MakdShop", "#ZapatosVenezuela", "#ModaUrbana", "#CalzadoDeportivo", "#OutfitUrbano"],
-  "caracteristicas_clave": [
-    "Suela antideslizante con tracción superior",
-    "Plantilla acolchada para confort diario prolongado",
-    "Silueta icónica de alta tendencia urbana"
-  ],
+  "descripcion_comercial": "Descripción comercial atractiva de 1-2 párrafos para la tienda MAKD SHOP describiendo la silueta real identificada, su confort, versatilidad para el día a día y estilo urbano.",
+  "copy_social": "Texto listo para Instagram/WhatsApp con emojis atractivos, llamado a la acción y mención a MAKD SHOP.",
+  "hashtags": ["#Sneakers", "#ModaUrbana", "#MakdShop", "#ZapatosVenezuela"],
+  "caracteristicas_clave": ["Característica 1", "Característica 2", "Característica 3"],
   "tallas_sugeridas": ["38", "39", "40", "41", "42", "43", "44"],
-  "detalles_estilo": "Consejo rápido de combinación de outfit (ej: Luce perfecto con joggers oversized, jeans rectos o shorts deportivos)."
-}
-
-Si la foto no parece ser un zapato o prenda, identifica lo más cercano posible e indícalo en descripcion_comercial. Asegúrate de que el JSON sea estrictamente sintáctico y parseable.`;
+  "detalles_estilo": "Consejo breve de combinación con ropa urbana o casual."
+}`;
 
   let lastError: any = null;
 
   for (const model of modelsToTry) {
     try {
-      console.log(`[Gemini Shoe AI] Analizando imagen con modelo: ${model}...`);
+      console.log(`[Gemini Shoe AI] Analizando imagen de calzado con modelo: ${model}...`);
       const imagePart = {
         inlineData: {
           mimeType: mimeType.includes('png') ? 'image/png' : mimeType.includes('webp') ? 'image/webp' : 'image/jpeg',
@@ -146,6 +136,7 @@ Si la foto no parece ser un zapato o prenda, identifica lo más cercano posible 
         contents: { parts: [imagePart, textPart] },
         config: {
           responseMimeType: 'application/json',
+          temperature: 0.15,
         },
       });
 
@@ -161,24 +152,35 @@ Si la foto no parece ser un zapato o prenda, identifica lo más cercano posible 
 
       const parsed = JSON.parse(cleaned);
 
+      const marca = (parsed.marca && parsed.marca !== 'null') ? parsed.marca.trim() : 'Genérica';
+      const modelo = (parsed.modelo && parsed.modelo !== 'null') ? parsed.modelo.trim() : 'Silueta Urbana';
+      const nombre = (parsed.nombre && parsed.nombre !== 'null') ? parsed.nombre.trim() : `${marca} ${modelo}`.trim();
+      const color = parsed.color || 'Multicolor';
+
       return {
         success: true,
-        marca: parsed.marca || 'Adidas',
-        modelo: parsed.modelo || 'Urbano Classic',
-        nombre: parsed.nombre || `${parsed.marca || 'Calzado'} ${parsed.modelo || 'Deportivo'}`,
+        marca,
+        modelo,
+        nombre,
         categoria: 'Calzado',
         tipo: validateTipo(parsed.tipo),
         genero: validateGenero(parsed.genero),
-        color: parsed.color || 'Multicolor',
-        material: parsed.material || 'Material sintético y suela de goma',
-        descripcion_comercial: parsed.descripcion_comercial || 'Calzado de alta calidad y diseño moderno para uso diario.',
-        copy_social: parsed.copy_social || `🔥 ¡Llegaron los nuevos ${parsed.nombre || 'Sneakers'}! 👟 Disponibles en varias tallas. ¡Escríbenos al WhatsApp para apartar los tuyos!`,
-        hashtags: Array.isArray(parsed.hashtags) && parsed.hashtags.length > 0 ? parsed.hashtags : ['#Zapatos', '#ModaUrbana', '#MakdShop'],
-        precio_sugerido_usd: Number(parsed.precio_sugerido_usd) || 45.0,
-        caracteristicas_clave: Array.isArray(parsed.caracteristicas_clave) ? parsed.caracteristicas_clave : ['Comodidad garantizada', 'Diseño moderno'],
-        tallas_sugeridas: Array.isArray(parsed.tallas_sugeridas) ? parsed.tallas_sugeridas : ['38', '39', '40', '41', '42'],
+        color,
+        material: parsed.material || 'Material sintético con suela vulcanizada',
+        descripcion_comercial: parsed.descripcion_comercial || `${nombre}. Calzado en tendencia con excelente amortiguación y estilo urbano para el uso diario en MAKD SHOP.`,
+        copy_social: parsed.copy_social || `🔥 ¡Llegaron los nuevos ${nombre}! 👟 Calidad garantizada. ¡Escríbenos al WhatsApp de MAKD SHOP para apartar tu talla! 📦🚀`,
+        hashtags: Array.isArray(parsed.hashtags) && parsed.hashtags.length > 0 
+          ? parsed.hashtags 
+          : [`#${marca.replace(/\s+/g, '')}`, '#SneakersVenezuela', '#MakdShop', '#ModaUrbana'],
+        precio_sugerido_usd: Number(parsed.precio_sugerido_usd) > 0 ? Number(parsed.precio_sugerido_usd) : 45.0,
+        caracteristicas_clave: Array.isArray(parsed.caracteristicas_clave) && parsed.caracteristicas_clave.length > 0 
+          ? parsed.caracteristicas_clave 
+          : ['Suela antideslizante con agarre firme', 'Plantilla anatómica de alta comodidad', 'Diseño icónico urbano'],
+        tallas_sugeridas: Array.isArray(parsed.tallas_sugeridas) && parsed.tallas_sugeridas.length > 0 
+          ? parsed.tallas_sugeridas 
+          : ['38', '39', '40', '41', '42', '43', '44'],
         modelo_ia_usado: model,
-        detalles_estilo: parsed.detalles_estilo || 'Ideal para combinar con tu outfit favorito.',
+        detalles_estilo: parsed.detalles_estilo || 'Combina excelente con jeans rectos, joggers o bermudas deportivas.',
       };
     } catch (err: any) {
       console.warn(`[Gemini Shoe AI] Falló modelo ${model}:`, err.message || err);
@@ -186,28 +188,10 @@ Si la foto no parece ser un zapato o prenda, identifica lo más cercano posible 
     }
   }
 
-  // If all models failed, provide structured graceful fallback so user can still continue
-  console.warn('[Gemini Shoe AI] Fallo en modelos de Gemini, aplicando plantilla de respaldo:', lastError?.message);
-  return {
-    success: true,
-    marca: 'Adidas',
-    modelo: 'Forum Low',
-    nombre: 'Adidas Forum Low Classic',
-    categoria: 'Calzado',
-    tipo: 'Casual',
-    genero: 'Unisex',
-    color: 'Blanco / Negro',
-    material: 'Cuero sintético con detalles en gamuza y suela de goma',
-    descripcion_comercial: 'Calzado icónico estilo sneaker urbano para uso diario con amortiguación y diseño contemporáneo.',
-    copy_social: '🔥 ¡Nuevos sneakers disponibles en Makd Shop! 👟 Calidad garantizada. ¡Escríbenos al WhatsApp para apartar los tuyos!',
-    hashtags: ['#Adidas', '#SneakersVenezuela', '#MakdShop', '#ModaUrbana'],
-    precio_sugerido_usd: 50.0,
-    caracteristicas_clave: ['Suela antideslizante', 'Plantilla acolchada', 'Silueta urbana'],
-    tallas_sugeridas: ['38', '39', '40', '41', '42'],
-    modelo_ia_usado: 'respaldo-inteligente',
-    detalles_estilo: 'Combina perfectamente con jeans o joggers.',
-    error: lastError?.message,
-  };
+  // If both models fail, throw clear error with details so user gets real feedback
+  const errorDetails = lastError?.message || 'Error desconocido al procesar la imagen con Gemini.';
+  console.error('[Gemini Shoe AI] No se pudo analizar la imagen con los modelos disponibles:', errorDetails);
+  throw new Error(`No se pudo reconocer la zapatilla: ${errorDetails}`);
 }
 
 function validateTipo(val: string): 'Deportivo' | 'Casual' | 'Botas' | 'Tacones' | 'Sandalias' | 'Mocasines' | 'Infantil' | 'Otros' {
