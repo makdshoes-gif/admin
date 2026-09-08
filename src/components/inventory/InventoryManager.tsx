@@ -21,7 +21,9 @@ import {
   Tag,
   Printer,
   FileSpreadsheet,
-  Sparkles
+  Sparkles,
+  Globe,
+  UploadCloud
 } from 'lucide-react';
 import { useStore } from '../../context/StoreContext';
 import { ShoeProduct, ShoeType, MovementType, ProductCategory } from '../../types';
@@ -30,6 +32,7 @@ import { StockMovementModal } from './StockMovementModal';
 import { ShoeLabelModal } from './ShoeLabelModal';
 import { ExcelImportModal } from './ExcelImportModal';
 import { ShoeAiScannerModal } from './ShoeAiScannerModal';
+import { GitHubSyncModal } from '../catalog/GitHubSyncModal';
 import { ShoeAiResult } from '../../services/aiShoeService';
 
 export const InventoryManager: React.FC = () => {
@@ -69,6 +72,9 @@ export const InventoryManager: React.FC = () => {
   // Shoe Label Printing Modal state
   const [isLabelModalOpen, setIsLabelModalOpen] = useState(false);
   const [labelProduct, setLabelProduct] = useState<ShoeProduct | null>(null);
+
+  // GitHub Catalog Sync Modal state
+  const [isGitHubSyncOpen, setIsGitHubSyncOpen] = useState(false);
 
   const handleOpenLabelModal = (p: ShoeProduct) => {
     setLabelProduct(p);
@@ -194,6 +200,18 @@ export const InventoryManager: React.FC = () => {
           >
             <FileSpreadsheet className="w-4 h-4" />
             <span>Subir Excel / CSV</span>
+          </button>
+
+          <button
+            id="sync-github-catalog-btn"
+            type="button"
+            onClick={() => setIsGitHubSyncOpen(true)}
+            className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 active:bg-black text-white font-semibold rounded-lg text-xs flex items-center gap-2 shadow-xs transition-colors cursor-pointer border border-slate-700"
+            title="Sincronizar inventario con el catálogo web en GitHub (makdshoes-gif/makd)"
+          >
+            <Globe className="w-4 h-4 text-indigo-400" />
+            <span>Sincronizar Catálogo Web</span>
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
           </button>
 
           <button
@@ -929,6 +947,12 @@ export const InventoryManager: React.FC = () => {
         onClose={() => setIsLabelModalOpen(false)}
         product={labelProduct}
         exchangeRate={exchangeRate}
+      />
+
+      {/* Modal: GitHub Catalog Synchronization (makdshoes-gif/makd) */}
+      <GitHubSyncModal
+        isOpen={isGitHubSyncOpen}
+        onClose={() => setIsGitHubSyncOpen(false)}
       />
 
     </div>

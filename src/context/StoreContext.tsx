@@ -117,6 +117,7 @@ interface StoreContextType {
   deleteCurrencyPurchase: (id: string) => void;
   markNotificationsAsRead: () => void;
   clearNotification: (id: string) => void;
+  addNotification: (title: string, message: string, type?: 'warning' | 'success' | 'info' | 'critical') => void;
   resetToDemoData: () => void;
   adminPin: string;
   setAdminPin: (pin: string) => void;
@@ -1987,6 +1988,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         deleteCurrencyPurchase,
         markNotificationsAsRead,
         clearNotification,
+        addNotification,
         resetToDemoData,
         adminPin,
         setAdminPin,

@@ -21,11 +21,14 @@ import {
   SlidersHorizontal,
   Grid,
   Check,
-  Smartphone
+  Smartphone,
+  Globe,
+  UploadCloud
 } from 'lucide-react';
 import { useStore } from '../../context/StoreContext';
 import { ShoeProduct } from '../../types';
 import { ShoeAiScannerModal } from '../inventory/ShoeAiScannerModal';
+import { GitHubSyncModal } from './GitHubSyncModal';
 
 export const AdidasCatalogView: React.FC = () => {
   const { products, exchangeRate, userRole } = useStore();
@@ -41,6 +44,9 @@ export const AdidasCatalogView: React.FC = () => {
 
   // Scanner modal
   const [isScannerOpen, setIsScannerOpen] = useState(false);
+
+  // GitHub Sync modal
+  const [isGitHubSyncOpen, setIsGitHubSyncOpen] = useState(false);
 
   // Social Story/Post Preview Modal
   const [selectedShoeForSocial, setSelectedShoeForSocial] = useState<ShoeProduct | null>(null);
@@ -267,6 +273,18 @@ export const AdidasCatalogView: React.FC = () => {
             >
               <Sparkles className="w-4 h-4 text-cyan-200 animate-spin" />
               <span>Cámara IA Escáner</span>
+            </button>
+
+            {/* GitHub Sync Button */}
+            <button
+              type="button"
+              onClick={() => setIsGitHubSyncOpen(true)}
+              className="px-4 py-2.5 rounded-2xl bg-slate-900 border border-slate-700 hover:bg-slate-800 text-white text-xs font-black uppercase tracking-wider shadow-md flex items-center gap-2 transition-transform active:scale-95 cursor-pointer"
+              title="Sincronizar inventario con el catálogo online en GitHub Pages (makdshoes-gif/makd)"
+            >
+              <Globe className="w-4 h-4 text-indigo-400" />
+              <span>Sincronizar Web GitHub</span>
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
             </button>
 
             {/* Customer Mode Toggle */}
@@ -955,6 +973,12 @@ export const AdidasCatalogView: React.FC = () => {
       <ShoeAiScannerModal
         isOpen={isScannerOpen}
         onClose={() => setIsScannerOpen(false)}
+      />
+
+      {/* MODAL 3: GITHUB WEB CATALOG SYNCHRONIZATION */}
+      <GitHubSyncModal
+        isOpen={isGitHubSyncOpen}
+        onClose={() => setIsGitHubSyncOpen(false)}
       />
 
       {/* Copied Notification Toast */}

@@ -887,6 +887,167 @@ async function startServer() {
   app.all('/api/shoe-ai', handleShoeAnalysis);
   app.all('/api/ai/shoe', handleShoeAnalysis);
 
+  // 10. Catálogo Público & Sincronización GitHub (makdshoes-gif/makd)
+  app.get('/api/catalog/products', async (_req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+    const sql = getNeonSql();
+    if (sql) {
+      try {
+        const rows = await sql`SELECT * FROM shoe_products WHERE stock > 0 ORDER BY nombre ASC`;
+        const products = normalizeProducts(rows as any[]);
+        return res.json({
+          success: true,
+          count: products.length,
+          actualizado: new Date().toISOString(),
+          products,
+        });
+      } catch (err) {
+        console.error('Error obteniendo productos de Neon para catálogo:', err);
+      }
+    }
+    const localProducts = readLocalProducts().filter((p) => Number(p.stock) > 0);
+    res.json({ success: true, count: localProducts.length, products: localProducts });
+  });
+
+  app.post('/api/catalog/sync-github', async (req, res) => {
+    try {
+      const {
+        token,
+        owner = 'makdshoes-gif',
+        repo = 'makd',
+        branch = 'main',
+        htmlContent,
+        jsonContent,
+        commitMessage,
+      } = req.body || {};
+
+      if (!token || typeof token !== 'string' || !token.trim()) {
+        return res.status(400).json({
+          success: false,
+          error: 'Se requiere un Token Personal de Acceso (PAT) de GitHub con permisos de escritura.',
+        });
+      }
+
+      if (!htmlContent || typeof htmlContent !== 'string') {
+        return res.status(400).json({
+          success: false,
+          error: 'No se recibió el contenido HTML del catálogo a sincronizar.',
+        });
+      }
+
+      const cleanToken = token.trim();
+      const targetOwner = owner.trim() || 'makdshoes-gif';
+      const targetRepo = repo.trim() || 'makd';
+      const targetBranch = branch.trim() || 'main';
+
+      const githubHeaders = {
+        Accept: 'application/vnd.github+json',
+        Authorization: `Bearer ${cleanToken}`,
+        'X-GitHub-Api-Version': '2022-11-28',
+        'User-Agent': 'MAKD-SHOP-App',
+        'Content-Type': 'application/json',
+      };
+
+      // 1. Obtener SHA actual de catalogo.html
+      let htmlSha: string | undefined = undefined;
+      try {
+        const shaRes = await fetch(
+          `https://api.github.com/repos/${targetOwner}/${targetRepo}/contents/catalogo.html?ref=${targetBranch}`,
+          { headers: githubHeaders }
+        );
+        if (shaRes.ok) {
+          const shaData: any = await shaRes.json();
+          htmlSha = shaData.sha;
+        }
+      } catch (shaErr) {
+        console.warn('No se pudo obtener SHA previo de catalogo.html:', shaErr);
+      }
+
+      // 2. Commit de catalogo.html
+      const nowStr = new Date().toLocaleString('es-VE');
+      const msg = commitMessage || `Actualizar catálogo oficial desde MAKD SHOP - ${nowStr}`;
+      const base64Html = Buffer.from(htmlContent, 'utf-8').toString('base64');
+
+      const putRes = await fetch(
+        `https://api.github.com/repos/${targetOwner}/${targetRepo}/contents/catalogo.html`,
+        {
+          method: 'PUT',
+          headers: githubHeaders,
+          body: JSON.stringify({
+            message: msg,
+            content: base64Html,
+            sha: htmlSha,
+            branch: targetBranch,
+          }),
+        }
+      );
+
+      if (!putRes.ok) {
+        const errBody: any = await putRes.json().catch(() => ({}));
+        return res.status(putRes.status).json({
+          success: false,
+          error: `Error de GitHub (${putRes.status}): ${errBody.message || putRes.statusText}`,
+        });
+      }
+
+      const putData: any = await putRes.json();
+
+      // 3. Commit de products.json
+      if (jsonContent && typeof jsonContent === 'string') {
+        try {
+          let jsonSha: string | undefined = undefined;
+          const jsonShaRes = await fetch(
+            `https://api.github.com/repos/${targetOwner}/${targetRepo}/contents/products.json?ref=${targetBranch}`,
+            { headers: githubHeaders }
+          );
+          if (jsonShaRes.ok) {
+            const jsonShaData: any = await jsonShaRes.json();
+            jsonSha = jsonShaData.sha;
+          }
+
+          const base64Json = Buffer.from(jsonContent, 'utf-8').toString('base64');
+          await fetch(
+            `https://api.github.com/repos/${targetOwner}/${targetRepo}/contents/products.json`,
+            {
+              method: 'PUT',
+              headers: githubHeaders,
+              body: JSON.stringify({
+                message: `Actualizar datos JSON del catálogo MAKD SHOP - ${nowStr}`,
+                content: base64Json,
+                sha: jsonSha,
+                branch: targetBranch,
+              }),
+            }
+          );
+        } catch (jsonErr) {
+          console.warn('Error no crítico actualizando products.json:', jsonErr);
+        }
+      }
+
+      const commitUrl =
+        putData?.commit?.html_url ||
+        `https://github.com/${targetOwner}/${targetRepo}/commits/${targetBranch}`;
+      const catalogUrl = `https://${targetOwner}.github.io/${targetRepo}/catalogo.html`;
+
+      return res.json({
+        success: true,
+        message: 'Catálogo sincronizado exitosamente en GitHub.',
+        commitUrl,
+        catalogUrl,
+        sha: putData?.content?.sha,
+      });
+    } catch (err: any) {
+      console.error('Error sincronizando con GitHub:', err);
+      return res.status(500).json({
+        success: false,
+        error: err?.message || 'Error interno del servidor al sincronizar con GitHub.',
+      });
+    }
+  });
+
   // 11. Vite Middleware for Development / Static serving for Production
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
