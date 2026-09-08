@@ -10,9 +10,30 @@ import {
   normalizeExpenses,
   normalizeBankReconciliations,
 } from './db.js';
+import { analyzeShoeImage } from './shoeAi.js';
 
 export const app = express();
-app.use(express.json());
+// límite ampliado: las fotos del escáner de calzado llegan como base64 (~1-4mb)
+app.use(express.json({ limit: '12mb' }));
+
+// API: Escáner de calzado con IA (Gemini Vision)
+const handleShoeAnalysis = async (req: express.Request, res: express.Response) => {
+  try {
+    const { imageBase64, userHint } = req.body || {};
+    if (!imageBase64 || typeof imageBase64 !== 'string') {
+      return res.status(400).json({ error: 'No se recibió ninguna imagen.' });
+    }
+    const result = await analyzeShoeImage(imageBase64, userHint);
+    res.json(result);
+  } catch (error: any) {
+    console.error('Error al analizar el zapato con Gemini:', error);
+    res.status(500).json({
+      error: error?.message || 'No se pudo analizar la imagen con IA.',
+    });
+  }
+};
+app.post('/api/ai/analyze-shoe', handleShoeAnalysis);
+app.post('/api/analyze-shoe', handleShoeAnalysis);
 
 // API Store State
 app.get('/api/store/state', async (_req, res) => {
