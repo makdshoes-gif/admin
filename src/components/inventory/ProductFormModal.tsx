@@ -64,9 +64,9 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
   const [marca, setMarca] = useState(editingProduct?.marca || 'Nike');
   const [tipo, setTipo] = useState<ShoeType>(editingProduct?.tipo || 'Deportivo');
   const [color, setColor] = useState(editingProduct?.color || 'Blanco');
-  const [costo, setCosto] = useState(editingProduct?.costo.toString() || '40.00');
-  const [precio, setPrecio] = useState(editingProduct?.precio.toString() || '80.00');
-  const [stockMinimo, setStockMinimo] = useState(editingProduct?.stock_minimo.toString() || '2');
+  const [costo, setCosto] = useState(editingProduct?.costo?.toString() || '40.00');
+  const [precio, setPrecio] = useState(editingProduct?.precio?.toString() || '80.00');
+  const [stockMinimo, setStockMinimo] = useState(editingProduct?.stock_minimo?.toString() || '2');
   const [imagen, setImagen] = useState(editingProduct?.imagen || '');
   const [descripcion, setDescripcion] = useState(editingProduct?.descripcion || '');
   const [genero, setGenero] = useState(editingProduct?.genero || 'Unisex');
@@ -78,7 +78,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
 
   // Single Item Mode: single size & stock
   const [singleTalla, setSingleTalla] = useState(editingProduct?.talla || '38');
-  const [singleStock, setSingleStock] = useState(editingProduct?.stock.toString() || '5');
+  const [singleStock, setSingleStock] = useState(editingProduct?.stock?.toString() || '5');
 
   // Multi-Sizes Mode: Matrix of sizes & stocks
   const defaultSizesForCalzado: SizeStockItem[] = [

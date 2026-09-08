@@ -515,13 +515,13 @@ export const InventoryManager: React.FC = () => {
 
                           {/* Cost */}
                           <td className="py-3 px-3 text-right font-mono text-slate-500">
-                            ${p.costo.toFixed(2)}
+                            ${(p.costo ?? 0).toFixed(2)}
                           </td>
 
                           {/* Sale Price */}
                           <td className="py-3 px-3 text-right font-mono">
-                            <div className="font-bold text-slate-900">${p.precio.toFixed(2)}</div>
-                            <div className="text-[10px] text-slate-400">{(p.precio * exchangeRate).toFixed(0)} Bs</div>
+                            <div className="font-bold text-slate-900">${(p.precio ?? 0).toFixed(2)}</div>
+                            <div className="text-[10px] text-slate-400">{((p.precio ?? 0) * exchangeRate).toFixed(0)} Bs</div>
                           </td>
 
                           {/* Margin */}
