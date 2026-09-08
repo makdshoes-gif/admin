@@ -95,6 +95,130 @@ app.get('/api/products', async (_req, res) => {
   res.json({ source: 'local_fallback', data: [] });
 });
 
+// Guardar (crear o actualizar) un producto individual
+app.post('/api/products', async (req, res) => {
+  const p = req.body;
+  if (!p || !p.id) {
+    return res.status(400).json({ saved: false, error: 'Datos de producto inválidos' });
+  }
+
+  const sql = getNeonSql();
+  if (!sql) {
+    return res.status(503).json({
+      saved: false,
+      error: 'DATABASE_URL no configurada en Vercel: no se puede persistir el producto.',
+    });
+  }
+
+  try {
+    await initDatabaseSchema();
+    await sql`
+      INSERT INTO shoe_products (
+        id, nombre, marca, modelo, color, genero, categoria,
+        talla, sku, precio, costo, stock, stock_minimo, stock_maximo,
+        imagen_url, ubicacion, descripcion
+      ) VALUES (
+        ${p.id}, ${p.nombre}, ${p.marca}, ${p.modelo || ''}, ${p.color || ''},
+        ${p.genero || 'Unisex'}, ${p.categoria || 'Casual'}, ${p.talla}, ${p.sku},
+        ${p.precio}, ${p.costo}, ${p.stock}, ${p.stock_minimo || 3}, ${p.stock_maximo || 30},
+        ${p.imagen_url || p.imagen || null}, ${p.ubicacion || 'Almacén'}, ${p.descripcion || ''}
+      )
+      ON CONFLICT (id) DO UPDATE SET
+        nombre = EXCLUDED.nombre,
+        marca = EXCLUDED.marca,
+        modelo = EXCLUDED.modelo,
+        color = EXCLUDED.color,
+        genero = EXCLUDED.genero,
+        categoria = EXCLUDED.categoria,
+        talla = EXCLUDED.talla,
+        sku = EXCLUDED.sku,
+        precio = EXCLUDED.precio,
+        costo = EXCLUDED.costo,
+        stock = EXCLUDED.stock,
+        stock_minimo = EXCLUDED.stock_minimo,
+        stock_maximo = EXCLUDED.stock_maximo,
+        imagen_url = EXCLUDED.imagen_url,
+        ubicacion = EXCLUDED.ubicacion,
+        descripcion = EXCLUDED.descripcion;
+    `;
+    res.json({ saved: true, id: p.id, product: p });
+  } catch (err) {
+    console.error('Error guardando producto en Neon:', err);
+    res.status(500).json({ saved: false, error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// Eliminar un producto
+app.delete('/api/products/:id', async (req, res) => {
+  const { id } = req.params;
+  const sql = getNeonSql();
+  if (!sql) {
+    return res.status(503).json({ success: false, error: 'DATABASE_URL no configurada en Vercel.' });
+  }
+  try {
+    await sql`DELETE FROM shoe_products WHERE id = ${id}`;
+    res.json({ success: true, id });
+  } catch (err) {
+    console.error('Error eliminando producto en Neon:', err);
+    res.status(500).json({ success: false, error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// Importación / carga masiva de productos (Excel, o crear modelo multi-talla)
+app.post('/api/products/bulk', async (req, res) => {
+  const { products, replaceExisting } = req.body || {};
+  if (!Array.isArray(products)) {
+    return res.status(400).json({ success: false, error: 'Se esperaba un arreglo de productos' });
+  }
+
+  const sql = getNeonSql();
+  if (!sql) {
+    return res.status(503).json({ success: false, error: 'DATABASE_URL no configurada en Vercel.' });
+  }
+
+  try {
+    await initDatabaseSchema();
+    if (replaceExisting) {
+      await sql`DELETE FROM shoe_products`;
+    }
+    for (const p of products) {
+      await sql`
+        INSERT INTO shoe_products (
+          id, nombre, marca, modelo, color, genero, categoria,
+          talla, sku, precio, costo, stock, stock_minimo, stock_maximo,
+          imagen_url, ubicacion, descripcion
+        ) VALUES (
+          ${p.id}, ${p.nombre}, ${p.marca}, ${p.modelo || ''}, ${p.color || ''},
+          ${p.genero || 'Unisex'}, ${p.categoria || 'Casual'}, ${p.talla}, ${p.sku},
+          ${p.precio}, ${p.costo}, ${p.stock}, ${p.stock_minimo || 3}, ${p.stock_maximo || 30},
+          ${p.imagen_url || p.imagen || null}, ${p.ubicacion || 'Almacén'}, ${p.descripcion || ''}
+        )
+        ON CONFLICT (id) DO UPDATE SET
+          nombre = EXCLUDED.nombre,
+          marca = EXCLUDED.marca,
+          modelo = EXCLUDED.modelo,
+          color = EXCLUDED.color,
+          genero = EXCLUDED.genero,
+          categoria = EXCLUDED.categoria,
+          talla = EXCLUDED.talla,
+          sku = EXCLUDED.sku,
+          precio = EXCLUDED.precio,
+          costo = EXCLUDED.costo,
+          stock = EXCLUDED.stock,
+          stock_minimo = EXCLUDED.stock_minimo,
+          stock_maximo = EXCLUDED.stock_maximo,
+          imagen_url = EXCLUDED.imagen_url,
+          ubicacion = EXCLUDED.ubicacion,
+          descripcion = EXCLUDED.descripcion;
+      `;
+    }
+    res.json({ success: true, count: products.length });
+  } catch (err) {
+    console.error('Error en importación masiva a Neon:', err);
+    res.status(500).json({ success: false, error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
 // Sales
 app.get('/api/sales', async (_req, res) => {
   const sql = getNeonSql();

@@ -772,7 +772,26 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(newProduct),
-    }).catch((e) => console.log('Backend sync info:', e));
+    })
+      .then((r) => {
+        if (!r.ok) {
+          return r.json().catch(() => ({})).then((body: any) => {
+            addNotification(
+              'No se pudo guardar en el servidor',
+              `${newProduct.nombre} solo quedó guardado en este navegador. Error: ${body.error || r.status}. Revisa que DATABASE_URL esté configurada en Vercel.`,
+              'critical'
+            );
+          });
+        }
+      })
+      .catch((e) => {
+        addNotification(
+          'Sin conexión con el servidor',
+          `${newProduct.nombre} solo quedó guardado en este navegador (no se sincronizó).`,
+          'warning'
+        );
+        console.log('Backend sync info:', e);
+      });
 
     if (currentUser) {
       setDoc(doc(db, 'products', newProduct.id), newProduct).catch((err) =>
