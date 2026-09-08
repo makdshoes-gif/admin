@@ -22,6 +22,12 @@ import {
 import { analyzeShoeWithAi, ShoeAiResult } from '../../services/aiShoeService';
 import { useStore } from '../../context/StoreContext';
 import { ShoeProduct } from '../../types';
+import {
+  compressImageFile,
+  compressImageDataUrl,
+  formatFileSize,
+  CompressionResult,
+} from '../../utils/imageCompressor';
 
 interface ShoeAiScannerModalProps {
   isOpen: boolean;
@@ -44,6 +50,8 @@ export const ShoeAiScannerModal: React.FC<ShoeAiScannerModalProps> = ({
   const [userHint, setUserHint] = useState('');
 
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [isCompressing, setIsCompressing] = useState(false);
+  const [compressionInfo, setCompressionInfo] = useState<CompressionResult | null>(null);
   const [aiResult, setAiResult] = useState<ShoeAiResult | null>(null);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [copiedField, setCopiedField] = useState<string | null>(null);
@@ -114,8 +122,8 @@ export const ShoeAiScannerModal: React.FC<ShoeAiScannerModalProps> = ({
     };
   }, [isOpen, mode, capturedImage]);
 
-  // Capture frame from video
-  const capturePhoto = () => {
+  // Capture frame from video with automatic image compression
+  const capturePhoto = async () => {
     if (!videoRef.current) return;
     const video = videoRef.current;
     const width = video.videoWidth || 640;
@@ -132,16 +140,32 @@ export const ShoeAiScannerModal: React.FC<ShoeAiScannerModalProps> = ({
         ctx.scale(-1, 1);
       }
       ctx.drawImage(video, 0, 0, width, height);
-      const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
-      setCapturedImage(dataUrl);
+      const rawDataUrl = canvas.toDataURL('image/jpeg', 0.88);
       stopCamera();
-      // Auto analyze once captured
-      runAnalysis(dataUrl);
+
+      // Compress to optimal web weight (< 500 KB)
+      setIsCompressing(true);
+      try {
+        const compressed = await compressImageDataUrl(rawDataUrl, {
+          maxDimension: 1280,
+          quality: 0.82,
+          maxSizeBytes: 500 * 1024,
+        });
+        setCapturedImage(compressed.dataUrl);
+        setCompressionInfo(compressed);
+        runAnalysis(compressed.dataUrl);
+      } catch (err) {
+        console.warn('Compression error on photo capture:', err);
+        setCapturedImage(rawDataUrl);
+        runAnalysis(rawDataUrl);
+      } finally {
+        setIsCompressing(false);
+      }
     }
   };
 
-  // Handle image upload from file
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Handle image upload from file with automatic compression to < 500 KB
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -150,15 +174,31 @@ export const ShoeAiScannerModal: React.FC<ShoeAiScannerModalProps> = ({
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      if (typeof event.target?.result === 'string') {
-        const dataUrl = event.target.result;
-        setCapturedImage(dataUrl);
-        runAnalysis(dataUrl);
-      }
-    };
-    reader.readAsDataURL(file);
+    setIsCompressing(true);
+    try {
+      const compressed = await compressImageFile(file, {
+        maxDimension: 1280,
+        quality: 0.82,
+        maxSizeBytes: 500 * 1024,
+      });
+      setCapturedImage(compressed.dataUrl);
+      setCompressionInfo(compressed);
+      runAnalysis(compressed.dataUrl);
+    } catch (err) {
+      console.error('Error comprimiendo imagen subida:', err);
+      // Fallback
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        if (typeof event.target?.result === 'string') {
+          const dataUrl = event.target.result;
+          setCapturedImage(dataUrl);
+          runAnalysis(dataUrl);
+        }
+      };
+      reader.readAsDataURL(file);
+    } finally {
+      setIsCompressing(false);
+    }
   };
 
   // Trigger Gemini AI analysis
@@ -180,6 +220,8 @@ export const ShoeAiScannerModal: React.FC<ShoeAiScannerModalProps> = ({
 
   const resetAll = () => {
     setCapturedImage(null);
+    setCompressionInfo(null);
+    setIsCompressing(false);
     setAiResult(null);
     setAnalysisError(null);
     if (mode === 'camera') {
@@ -350,7 +392,7 @@ export const ShoeAiScannerModal: React.FC<ShoeAiScannerModalProps> = ({
                 )}
 
                 {/* 2. Upload Prompt */}
-                {mode === 'upload' && !capturedImage && (
+                {mode === 'upload' && !capturedImage && !isCompressing && (
                   <div
                     onClick={() => fileInputRef.current?.click()}
                     className="flex flex-col items-center justify-center p-6 text-center cursor-pointer hover:bg-slate-800/50 transition-colors w-full h-full"
@@ -358,6 +400,15 @@ export const ShoeAiScannerModal: React.FC<ShoeAiScannerModalProps> = ({
                     <Upload className="w-10 h-10 text-indigo-400 mb-2" />
                     <p className="text-xs font-semibold text-white">Haz clic para subir una foto de calzado</p>
                     <p className="text-[11px] text-slate-400 mt-1">Soporta JPG, PNG o WebP desde tu galería</p>
+                  </div>
+                )}
+
+                {/* 2.5 Compressing overlay */}
+                {isCompressing && (
+                  <div className="flex flex-col items-center justify-center p-6 text-center w-full h-full space-y-2 bg-slate-900/60">
+                    <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+                    <span className="text-xs font-bold text-white">Comprimiendo imagen...</span>
+                    <span className="text-[10px] text-slate-400">Optimizando peso a &lt; 500 KB para envío y catálogo</span>
                   </div>
                 )}
 
@@ -369,6 +420,16 @@ export const ShoeAiScannerModal: React.FC<ShoeAiScannerModalProps> = ({
                       alt="Calzado a analizar"
                       className="w-full h-full object-cover"
                     />
+
+                    {/* Compression indicator badge */}
+                    {compressionInfo && (
+                      <div className="absolute top-2.5 right-2.5 z-10 px-2 py-1 bg-slate-950/85 border border-indigo-500/40 rounded-lg text-[10px] font-bold text-indigo-300 backdrop-blur-xs flex items-center gap-1 shadow-lg">
+                        <span>Optimizado: {formatFileSize(compressionInfo.compressedSize)}</span>
+                        {compressionInfo.reductionPercentage > 0 && (
+                          <span className="text-emerald-400">(-{compressionInfo.reductionPercentage}%)</span>
+                        )}
+                      </div>
+                    )}
 
                     {/* Futuristic Laser Scanning Line when analyzing */}
                     {isAnalyzing && (

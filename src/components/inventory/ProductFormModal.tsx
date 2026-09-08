@@ -21,6 +21,13 @@ import {
 } from 'lucide-react';
 import { ShoeProduct, ShoeType, ProductCategory } from '../../types';
 import { analyzeShoeWithAi, ShoeAiResult } from '../../services/aiShoeService';
+import {
+  compressImageFile,
+  compressImageDataUrl,
+  formatFileSize,
+  estimateDataUrlSize,
+  CompressionResult,
+} from '../../utils/imageCompressor';
 
 interface ProductFormModalProps {
   isOpen: boolean;
@@ -70,6 +77,10 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
   const [imagen, setImagen] = useState(editingProduct?.imagen || '');
   const [descripcion, setDescripcion] = useState(editingProduct?.descripcion || '');
   const [genero, setGenero] = useState(editingProduct?.genero || 'Unisex');
+
+  // Image Compression State (ensures images stay < 500KB with high clarity)
+  const [isCompressingImage, setIsCompressingImage] = useState(false);
+  const [compressionInfo, setCompressionInfo] = useState<CompressionResult | null>(null);
 
   // AI Recognition State
   const [isAiAnalyzing, setIsAiAnalyzing] = useState(false);
@@ -351,9 +362,26 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
       }
 
       const photoDataUrl = canvas.toDataURL('image/jpeg', 0.88);
-      setImagen(photoDataUrl);
-      setCameraError(null);
       stopCamera();
+      setCameraError(null);
+
+      // Immediately compress image to optimize storage (< 500 KB)
+      setIsCompressingImage(true);
+      compressImageDataUrl(photoDataUrl, {
+        maxDimension: 1280,
+        quality: 0.82,
+        maxSizeBytes: 500 * 1024,
+      })
+        .then((res) => {
+          setImagen(res.dataUrl);
+          setCompressionInfo(res);
+        })
+        .catch(() => {
+          setImagen(photoDataUrl);
+        })
+        .finally(() => {
+          setIsCompressingImage(false);
+        });
     }
   };
 
@@ -402,7 +430,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
     }
   };
 
-  const handleCaptureAndAnalyzeWithAi = () => {
+  const handleCaptureAndAnalyzeWithAi = async () => {
     if (!videoRef.current) return;
     const video = videoRef.current;
     const width = video.videoWidth || 640;
@@ -420,10 +448,26 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
       }
       ctx.drawImage(video, 0, 0, width, height);
       const photoDataUrl = canvas.toDataURL('image/jpeg', 0.88);
-      setImagen(photoDataUrl);
-      setCameraError(null);
       stopCamera();
-      handleAnalyzeWithAi(photoDataUrl);
+      setCameraError(null);
+
+      setIsCompressingImage(true);
+      let targetForAi = photoDataUrl;
+      try {
+        const compressed = await compressImageDataUrl(photoDataUrl, {
+          maxDimension: 1280,
+          quality: 0.82,
+          maxSizeBytes: 500 * 1024,
+        });
+        setImagen(compressed.dataUrl);
+        setCompressionInfo(compressed);
+        targetForAi = compressed.dataUrl;
+      } catch {
+        setImagen(photoDataUrl);
+      } finally {
+        setIsCompressingImage(false);
+      }
+      handleAnalyzeWithAi(targetForAi);
     }
   };
 
@@ -435,18 +479,36 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
     }
   };
 
-  const processImageFile = (file: File) => {
+  const processImageFile = async (file: File) => {
     if (!file.type.startsWith('image/')) {
       alert('Por favor selecciona un archivo de imagen válido (JPG, PNG, WebP).');
       return;
     }
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      if (typeof e.target?.result === 'string') {
-        setImagen(e.target.result);
-      }
-    };
-    reader.readAsDataURL(file);
+
+    setIsCompressingImage(true);
+    try {
+      // Compress image file to lightweight size (< 500 KB, guaranteed < 10MB)
+      const res = await compressImageFile(file, {
+        maxDimension: 1280,
+        quality: 0.82,
+        maxSizeBytes: 500 * 1024,
+      });
+      setImagen(res.dataUrl);
+      setCompressionInfo(res);
+      setCameraError(null);
+    } catch (err) {
+      console.error('Error comprimiendo imagen:', err);
+      // Fallback
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        if (typeof e.target?.result === 'string') {
+          setImagen(e.target.result);
+        }
+      };
+      reader.readAsDataURL(file);
+    } finally {
+      setIsCompressingImage(false);
+    }
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -480,7 +542,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
       ? activeSizes.reduce((sum, s) => sum + s.stock, 0)
       : parseInt(singleStock, 10) || 0;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!nombre.trim() || !sku.trim()) {
       alert('Por favor ingresa el nombre y código SKU del producto.');
@@ -488,6 +550,21 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
     }
 
     stopCamera();
+
+    // Verify and compress image data URL before saving to guarantee low storage weight
+    let finalImagen = imagen.trim();
+    if (finalImagen.startsWith('data:image/')) {
+      try {
+        const compressed = await compressImageDataUrl(finalImagen, {
+          maxDimension: 1280,
+          quality: 0.82,
+          maxSizeBytes: 500 * 1024,
+        });
+        finalImagen = compressed.dataUrl;
+      } catch (err) {
+        console.warn('Image verification on submit:', err);
+      }
+    }
 
     const baseProductData = {
       nombre: nombre.trim(),
@@ -503,7 +580,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
       descripcion: descripcion.trim() || undefined,
       genero: genero.trim() || undefined,
       imagen:
-        imagen.trim() ||
+        finalImagen ||
         (categoria === 'Gorras'
           ? 'https://images.unsplash.com/photo-1588850561407-ed78c282e89b?w=400'
           : categoria === 'Medias'
@@ -1251,6 +1328,17 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
               className="hidden"
             />
 
+            {/* Compressing Indicator */}
+            {isCompressingImage && (
+              <div className="flex items-center gap-2 p-3 bg-indigo-50 border border-indigo-200 rounded-xl text-indigo-700 text-xs animate-pulse">
+                <span className="w-4 h-4 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin shrink-0" />
+                <div>
+                  <span className="font-semibold block">Optimizando y comprimiendo imagen...</span>
+                  <span className="text-[11px] text-indigo-600">Reduciendo peso a &lt; 500 KB manteniendo alta resolución para catálogo.</span>
+                </div>
+              </div>
+            )}
+
             {/* Image Preview Thumbnail */}
             {imagen && (
               <div className="space-y-2">
@@ -1265,9 +1353,25 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
                       <span className="text-xs font-bold text-slate-800 block truncate">
                         Foto lista para catálogo
                       </span>
-                      <span className="text-[10px] text-emerald-600 font-semibold block">
-                        ✓ Asignada a este calzado
-                      </span>
+                      <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
+                        <span className="text-[10px] text-emerald-600 font-semibold">
+                          ✓ Asignada
+                        </span>
+                        {compressionInfo ? (
+                          <span className="text-[10px] text-indigo-700 bg-indigo-50 border border-indigo-200 px-1.5 py-0.5 rounded font-medium">
+                            {formatFileSize(compressionInfo.compressedSize)}
+                            {compressionInfo.reductionPercentage > 0 && (
+                              <span className="text-emerald-700 ml-1 font-bold">
+                                (-{compressionInfo.reductionPercentage}%)
+                              </span>
+                            )}
+                          </span>
+                        ) : (
+                          <span className="text-[10px] text-slate-500 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded font-medium">
+                            {formatFileSize(estimateDataUrlSize(imagen))}
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
 

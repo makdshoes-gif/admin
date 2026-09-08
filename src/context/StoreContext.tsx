@@ -144,6 +144,29 @@ try {
   legacyKeys.forEach((k) => localStorage.removeItem(k));
 } catch {}
 
+/**
+ * Almacenamiento seguro en localStorage que previene errores de cuota (QuotaExceededError)
+ */
+function safeLocalStorageSet(key: string, value: string) {
+  try {
+    localStorage.setItem(key, value);
+  } catch (err: any) {
+    console.warn(`[StoreContext] Error al guardar en localStorage (${key}):`, err);
+    if (err?.name === 'QuotaExceededError' || err?.code === 22) {
+      try {
+        // Limpiar cachés secundarias para liberar espacio inmediato
+        const nonEssential = Object.keys(localStorage).filter(
+          (k) => k.includes('_closures') || k.includes('_bank_movements') || k.includes('_bcv_info')
+        );
+        nonEssential.slice(0, 3).forEach((k) => localStorage.removeItem(k));
+        localStorage.setItem(key, value);
+      } catch (innerErr) {
+        console.warn('[StoreContext] No se pudo liberar cuota de localStorage:', innerErr);
+      }
+    }
+  }
+}
+
 export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [products, setProducts] = useState<ShoeProduct[]>(() => {
     const saved = localStorage.getItem(`${STORAGE_KEY}_products`);
@@ -251,47 +274,47 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   // Persist whenever state changes
   useEffect(() => {
-    localStorage.setItem(`${STORAGE_KEY}_products`, JSON.stringify(products));
+    safeLocalStorageSet(`${STORAGE_KEY}_products`, JSON.stringify(products));
   }, [products]);
 
   useEffect(() => {
-    localStorage.setItem(`${STORAGE_KEY}_movements`, JSON.stringify(movements));
+    safeLocalStorageSet(`${STORAGE_KEY}_movements`, JSON.stringify(movements));
   }, [movements]);
 
   useEffect(() => {
-    localStorage.setItem(`${STORAGE_KEY}_sales`, JSON.stringify(sales));
+    safeLocalStorageSet(`${STORAGE_KEY}_sales`, JSON.stringify(sales));
   }, [sales]);
 
   useEffect(() => {
-    localStorage.setItem(`${STORAGE_KEY}_layaways`, JSON.stringify(layaways));
+    safeLocalStorageSet(`${STORAGE_KEY}_layaways`, JSON.stringify(layaways));
   }, [layaways]);
 
   useEffect(() => {
-    localStorage.setItem(`${STORAGE_KEY}_accounts`, JSON.stringify(accounts));
+    safeLocalStorageSet(`${STORAGE_KEY}_accounts`, JSON.stringify(accounts));
   }, [accounts]);
 
   useEffect(() => {
-    localStorage.setItem(`${STORAGE_KEY}_rate`, exchangeRate.toString());
+    safeLocalStorageSet(`${STORAGE_KEY}_rate`, exchangeRate.toString());
   }, [exchangeRate]);
 
   useEffect(() => {
-    localStorage.setItem(`${STORAGE_KEY}_closures`, JSON.stringify(cashClosures));
+    safeLocalStorageSet(`${STORAGE_KEY}_closures`, JSON.stringify(cashClosures));
   }, [cashClosures]);
 
   useEffect(() => {
-    localStorage.setItem(`${STORAGE_KEY}_expenses`, JSON.stringify(expenses));
+    safeLocalStorageSet(`${STORAGE_KEY}_expenses`, JSON.stringify(expenses));
   }, [expenses]);
 
   useEffect(() => {
-    localStorage.setItem(`${STORAGE_KEY}_bank_movements`, JSON.stringify(bankMovements));
+    safeLocalStorageSet(`${STORAGE_KEY}_bank_movements`, JSON.stringify(bankMovements));
   }, [bankMovements]);
 
   useEffect(() => {
-    localStorage.setItem(`${STORAGE_KEY}_currency_purchases`, JSON.stringify(currencyPurchases));
+    safeLocalStorageSet(`${STORAGE_KEY}_currency_purchases`, JSON.stringify(currencyPurchases));
   }, [currencyPurchases]);
 
   useEffect(() => {
-    localStorage.setItem(`${STORAGE_KEY}_bcv_info`, JSON.stringify(bcvInfo));
+    safeLocalStorageSet(`${STORAGE_KEY}_bcv_info`, JSON.stringify(bcvInfo));
   }, [bcvInfo]);
 
   // Master synchronization function from server store
