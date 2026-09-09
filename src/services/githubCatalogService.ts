@@ -597,42 +597,236 @@ export async function testGitHubRepoAccess(config: GitHubSyncConfig): Promise<{
 }
 
 /**
- * Obtener el SHA actual de un archivo en GitHub (si existe)
+ * Codificar texto UTF-8 a Base64 de forma segura en el navegador sin límite de tamaño
  */
-async function getFileSha(
+function utf8ToBase64(str: string): string {
+  try {
+    const bytes = new TextEncoder().encode(str);
+    let binary = '';
+    const len = bytes.byteLength;
+    const chunkSize = 0x8000; // 32KB chunks
+    for (let i = 0; i < len; i += chunkSize) {
+      binary += String.fromCharCode.apply(
+        null,
+        Array.from(bytes.subarray(i, Math.min(i + chunkSize, len)))
+      );
+    }
+    return window.btoa(binary);
+  } catch {
+    return window.btoa(
+      encodeURIComponent(str).replace(/%([0-9A-F]{2})/g, function toSolidBytes(_match, p1) {
+        return String.fromCharCode(parseInt(p1, 16));
+      })
+    );
+  }
+}
+
+/**
+ * Obtener el SHA canónico y actual de un archivo en GitHub.
+ * Evita la caché HTTP del navegador y resuelve retrasos de réplica mediante la API de árboles Git.
+ */
+async function getAuthoritativeFileSha(
   owner: string,
   repo: string,
   path: string,
   branch: string,
   token: string
 ): Promise<string | undefined> {
+  const cleanBranch = branch.trim() || 'main';
+  const cleanToken = token.trim();
+  const headers: Record<string, string> = {
+    Accept: 'application/vnd.github+json',
+    Authorization: `Bearer ${cleanToken}`,
+    'X-GitHub-Api-Version': '2022-11-28',
+    'Cache-Control': 'no-cache, no-store, must-revalidate',
+    Pragma: 'no-cache',
+  };
+
+  const timestamp = Date.now();
+
+  // Intento 1: Consultar Contents API con parámetro de cache-busting
   try {
-    const res = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents/${path}?ref=${branch}`, {
-      headers: {
-        Accept: 'application/vnd.github+json',
-        Authorization: `Bearer ${token.trim()}`,
-        'X-GitHub-Api-Version': '2022-11-28',
-      },
-    });
+    const res = await fetch(
+      `https://api.github.com/repos/${owner}/${repo}/contents/${path}?ref=${encodeURIComponent(cleanBranch)}&_cb=${timestamp}`,
+      {
+        cache: 'no-store',
+        headers,
+      }
+    );
+
     if (res.ok) {
       const data = await res.json();
-      return data.sha;
+      if (data && typeof data.sha === 'string') {
+        return data.sha;
+      }
+    } else if (res.status === 404) {
+      // El archivo no existe aún en el repositorio (nuevo)
+      return undefined;
     }
   } catch (err) {
-    console.warn(`Error getting SHA for ${path}:`, err);
+    console.warn(`[GitHubSync] Consulta directa de SHA para ${path}:`, err);
   }
+
+  // Intento 2: Consultar la API de árboles Git (Git Trees API) en la rama objetivo
+  try {
+    const treeRes = await fetch(
+      `https://api.github.com/repos/${owner}/${repo}/git/trees/${encodeURIComponent(cleanBranch)}?recursive=1&_cb=${timestamp}`,
+      {
+        cache: 'no-store',
+        headers,
+      }
+    );
+
+    if (treeRes.ok) {
+      const treeData = await treeRes.json();
+      if (Array.isArray(treeData?.tree)) {
+        const item = treeData.tree.find((t: any) => t.path === path);
+        if (item && item.sha) {
+          return item.sha;
+        }
+        return undefined;
+      }
+    }
+  } catch (treeErr) {
+    console.warn(`[GitHubSync] Consulta de Git Tree para ${path}:`, treeErr);
+  }
+
+  // Intento 3: Leer el último commit de la rama y su árbol canónico
+  try {
+    const commitRes = await fetch(
+      `https://api.github.com/repos/${owner}/${repo}/commits/${encodeURIComponent(cleanBranch)}?_cb=${timestamp}`,
+      {
+        cache: 'no-store',
+        headers,
+      }
+    );
+    if (commitRes.ok) {
+      const commitData = await commitRes.json();
+      const treeSha = commitData?.commit?.tree?.sha;
+      if (treeSha) {
+        const directTreeRes = await fetch(
+          `https://api.github.com/repos/${owner}/${repo}/git/trees/${treeSha}?recursive=1&_cb=${timestamp}`,
+          { cache: 'no-store', headers }
+        );
+        if (directTreeRes.ok) {
+          const directTreeData = await directTreeRes.json();
+          if (Array.isArray(directTreeData?.tree)) {
+            const item = directTreeData.tree.find((t: any) => t.path === path);
+            if (item && item.sha) {
+              return item.sha;
+            }
+            return undefined;
+          }
+        }
+      }
+    }
+  } catch (commitErr) {
+    console.warn(`[GitHubSync] Consulta de Commit Tree para ${path}:`, commitErr);
+  }
+
   return undefined;
 }
 
 /**
- * Codificar texto UTF-8 a Base64 de forma segura en el navegador
+ * Realizar commit de un archivo en GitHub manejando automáticamente conflictos 409 (SHA desactualizado)
  */
-function utf8ToBase64(str: string): string {
-  return window.btoa(
-    encodeURIComponent(str).replace(/%([0-9A-F]{2})/g, function toSolidBytes(_match, p1) {
-      return String.fromCharCode(parseInt(p1, 16));
-    })
-  );
+async function putFileToGitHubWithRetry(
+  owner: string,
+  repo: string,
+  path: string,
+  branch: string,
+  token: string,
+  contentBase64: string,
+  commitMessage: string,
+  maxAttempts: number = 3,
+  onProgress?: (msg: string) => void
+): Promise<{ ok: boolean; data?: any; error?: string; status?: number }> {
+  const cleanBranch = branch.trim() || 'main';
+  const cleanToken = token.trim();
+  const headers: Record<string, string> = {
+    Accept: 'application/vnd.github+json',
+    Authorization: `Bearer ${cleanToken}`,
+    'X-GitHub-Api-Version': '2022-11-28',
+    'Content-Type': 'application/json',
+    'Cache-Control': 'no-cache, no-store, must-revalidate',
+    Pragma: 'no-cache',
+  };
+
+  let lastError = '';
+  let lastStatus = 0;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    if (attempt > 1 && onProgress) {
+      onProgress(`Resolviendo sincronización con GitHub (intento ${attempt}/${maxAttempts})...`);
+    }
+
+    // Obtener el SHA canónico más reciente de GitHub
+    const currentSha = await getAuthoritativeFileSha(owner, repo, path, cleanBranch, cleanToken);
+
+    const body: Record<string, any> = {
+      message: commitMessage,
+      content: contentBase64,
+      branch: cleanBranch,
+    };
+    if (currentSha) {
+      body.sha = currentSha;
+    }
+
+    try {
+      const res = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents/${path}`, {
+        method: 'PUT',
+        cache: 'no-store',
+        headers,
+        body: JSON.stringify(body),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        return { ok: true, data };
+      }
+
+      const errBody: any = await res.json().catch(() => ({}));
+      lastStatus = res.status;
+      lastError = errBody.message || res.statusText || 'Error desconocido de GitHub';
+
+      // 409 Conflict: El SHA no coincide o la rama avanzó
+      if (res.status === 409 && attempt < maxAttempts) {
+        console.warn(
+          `[GitHubSync] Conflicto 409 en ${path} ("${lastError}"). Reobteniendo SHA fresco y reintentando (intento ${attempt}/${maxAttempts})...`
+        );
+        if (onProgress) {
+          onProgress(`Detectada actualización previa en ${path}. Obteniendo versión más reciente de GitHub...`);
+        }
+        // Espera con backoff progresivo para permitir la consistencia en GitHub
+        await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
+        continue;
+      }
+
+      return {
+        ok: false,
+        status: res.status,
+        error: `Error al actualizar ${path} en GitHub (${res.status}): ${lastError}`,
+      };
+    } catch (netErr: any) {
+      lastStatus = 0;
+      lastError = netErr?.message || String(netErr);
+      if (attempt < maxAttempts) {
+        await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
+        continue;
+      }
+      return {
+        ok: false,
+        status: 0,
+        error: `Error de red al conectar con GitHub para ${path}: ${lastError}`,
+      };
+    }
+  }
+
+  return {
+    ok: false,
+    status: lastStatus,
+    error: `Error al actualizar ${path} en GitHub (${lastStatus}): ${lastError}`,
+  };
 }
 
 /**
@@ -641,7 +835,8 @@ function utf8ToBase64(str: string): string {
 export async function pushCatalogToGitHub(
   config: GitHubSyncConfig,
   products: ShoeProduct[],
-  exchangeRate: number
+  exchangeRate: number,
+  onProgress?: (msg: string) => void
 ): Promise<{
   ok: boolean;
   message: string;
@@ -658,68 +853,66 @@ export async function pushCatalogToGitHub(
     };
   }
 
+  const cleanBranch = branch.trim() || 'main';
+  const cleanOwner = owner.trim() || 'makdshoes-gif';
+  const cleanRepo = repo.trim() || 'makd';
+
   try {
+    if (onProgress) onProgress('Compilando catálogo HTML y datos...');
     const htmlContent = generateCatalogHtml(products, exchangeRate);
     const jsonContent = generateProductsJson(products, exchangeRate);
 
-    // 1. Obtener SHA actual de catalogo.html
-    const htmlSha = await getFileSha(owner, repo, 'catalogo.html', branch, token);
-
-    // 2. Hacer commit de catalogo.html
     const nowStr = new Date().toLocaleString('es-VE');
-    const commitMsgHtml = `Actualizar catálogo web desde inventario MAKD SHOP (${products.length} productos) - ${nowStr}`;
+    const commitMsgHtml = `Actualizar catálogo web desde inventario MAKD SHOP (${products.length} modelos) - ${nowStr}`;
 
-    const resHtml = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents/catalogo.html`, {
-      method: 'PUT',
-      headers: {
-        Accept: 'application/vnd.github+json',
-        Authorization: `Bearer ${token.trim()}`,
-        'X-GitHub-Api-Version': '2022-11-28',
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        message: commitMsgHtml,
-        content: utf8ToBase64(htmlContent),
-        sha: htmlSha,
-        branch,
-      }),
-    });
+    // 1. Commit de catalogo.html con retry y resolución autoritativa de SHA
+    if (onProgress) onProgress('Publicando catalogo.html en GitHub...');
+    const base64Html = utf8ToBase64(htmlContent);
+    const htmlResult = await putFileToGitHubWithRetry(
+      cleanOwner,
+      cleanRepo,
+      'catalogo.html',
+      cleanBranch,
+      token,
+      base64Html,
+      commitMsgHtml,
+      3,
+      onProgress
+    );
 
-    if (!resHtml.ok) {
-      const errBody = await resHtml.json().catch(() => ({}));
+    if (!htmlResult.ok) {
       return {
         ok: false,
-        message: `Error al actualizar catalogo.html en GitHub (${resHtml.status}): ${errBody.message || resHtml.statusText}`,
-        error: errBody.message,
+        message: htmlResult.error || 'Error al actualizar catalogo.html en GitHub.',
+        error: htmlResult.error,
       };
     }
 
-    const htmlCommitData = await resHtml.json();
+    const htmlCommitData = htmlResult.data;
 
-    // 3. Obtener SHA y actualizar products.json
+    // 2. Commit de products.json con retry
+    if (onProgress) onProgress('Actualizando datos JSON en products.json...');
     try {
-      const jsonSha = await getFileSha(owner, repo, 'products.json', branch, token);
-      await fetch(`https://api.github.com/repos/${owner}/${repo}/contents/products.json`, {
-        method: 'PUT',
-        headers: {
-          Accept: 'application/vnd.github+json',
-          Authorization: `Bearer ${token.trim()}`,
-          'X-GitHub-Api-Version': '2022-11-28',
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          message: `Actualizar datos JSON del catálogo MAKD SHOP - ${nowStr}`,
-          content: utf8ToBase64(jsonContent),
-          sha: jsonSha,
-          branch,
-        }),
-      });
+      const base64Json = utf8ToBase64(jsonContent);
+      await putFileToGitHubWithRetry(
+        cleanOwner,
+        cleanRepo,
+        'products.json',
+        cleanBranch,
+        token,
+        base64Json,
+        `Actualizar datos JSON del catálogo MAKD SHOP - ${nowStr}`,
+        3,
+        onProgress
+      );
     } catch (jsonErr) {
-      console.warn('Could not update products.json (non-fatal):', jsonErr);
+      console.warn('[GitHubSync] Advertencia no crítica actualizando products.json:', jsonErr);
     }
 
-    const catalogUrl = `https://${owner}.github.io/${repo}/catalogo.html`;
-    const commitUrl = htmlCommitData?.commit?.html_url || `https://github.com/${owner}/${repo}/commits/${branch}`;
+    const catalogUrl = `https://${cleanOwner}.github.io/${cleanRepo}/catalogo.html`;
+    const commitUrl =
+      htmlCommitData?.commit?.html_url ||
+      `https://github.com/${cleanOwner}/${cleanRepo}/commits/${cleanBranch}`;
 
     return {
       ok: true,

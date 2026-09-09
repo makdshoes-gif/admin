@@ -131,19 +131,16 @@ interface StoreContextType {
   loginWithGoogleAction: () => Promise<void>;
   logoutUserAction: () => Promise<void>;
   pushAllToCloud: () => Promise<void>;
+  restoreFromBackup: () => { productsRestored: number; salesRestored: number };
+  exportStoreBackup: () => void;
+  importStoreBackup: (file: File) => Promise<boolean>;
 }
 
 const StoreContext = createContext<StoreContextType | undefined>(undefined);
 
 const STORAGE_KEY = 'makd_shop_store_v3';
-
-// Limpieza automática de versiones anteriores con datos de prueba
-try {
-  const legacyKeys = Object.keys(localStorage).filter(
-    (k) => k.startsWith('makd_shop_store_v1') || k.startsWith('makd_shop_store_v2')
-  );
-  legacyKeys.forEach((k) => localStorage.removeItem(k));
-} catch {}
+const BACKUP_KEY_PRODUCTS = 'makd_shop_backup_products';
+const BACKUP_KEY_SALES = 'makd_shop_backup_sales';
 
 /**
  * Almacenamiento seguro en localStorage que previene errores de cuota (QuotaExceededError)
@@ -155,11 +152,11 @@ function safeLocalStorageSet(key: string, value: string) {
     console.warn(`[StoreContext] Error al guardar en localStorage (${key}):`, err);
     if (err?.name === 'QuotaExceededError' || err?.code === 22) {
       try {
-        // Limpiar cachés secundarias para liberar espacio inmediato
+        // Limpiar cachés temporales secundarias para liberar espacio inmediato sin borrar inventario
         const nonEssential = Object.keys(localStorage).filter(
-          (k) => k.includes('_closures') || k.includes('_bank_movements') || k.includes('_bcv_info')
+          (k) => k.includes('_closures') || k.includes('_bcv_info')
         );
-        nonEssential.slice(0, 3).forEach((k) => localStorage.removeItem(k));
+        nonEssential.slice(0, 2).forEach((k) => localStorage.removeItem(k));
         localStorage.setItem(key, value);
       } catch (innerErr) {
         console.warn('[StoreContext] No se pudo liberar cuota de localStorage:', innerErr);
@@ -168,21 +165,93 @@ function safeLocalStorageSet(key: string, value: string) {
   }
 }
 
-export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [products, setProducts] = useState<ShoeProduct[]>(() => {
+/**
+ * Cargador inteligente con rescate automático de copias de seguridad y claves previas
+ */
+function loadInitialProducts(): ShoeProduct[] {
+  try {
+    // 1. Clave principal
     const saved = localStorage.getItem(`${STORAGE_KEY}_products`);
-    return saved ? JSON.parse(saved) : INITIAL_PRODUCTS;
-  });
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+    // 2. Respaldo local automático
+    const backup = localStorage.getItem(BACKUP_KEY_PRODUCTS);
+    if (backup) {
+      const parsed = JSON.parse(backup);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        console.info('[StoreContext] ¡Recuperados productos desde respaldo local automático!');
+        safeLocalStorageSet(`${STORAGE_KEY}_products`, backup);
+        return parsed;
+      }
+    }
+    // 3. Revisar versiones previas (v2, v1, legadas) para no perder nada
+    const legacyKeys = ['makd_shop_store_v2_products', 'makd_shop_store_v1_products', 'makd_shop_products'];
+    for (const k of legacyKeys) {
+      const leg = localStorage.getItem(k);
+      if (leg) {
+        try {
+          const parsed = JSON.parse(leg);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            console.info(`[StoreContext] ¡Recuperados productos desde versión previa (${k})!`);
+            safeLocalStorageSet(`${STORAGE_KEY}_products`, leg);
+            safeLocalStorageSet(BACKUP_KEY_PRODUCTS, leg);
+            return parsed;
+          }
+        } catch {}
+      }
+    }
+  } catch (e) {
+    console.warn('[StoreContext] Error al leer productos de almacenamiento:', e);
+  }
+  return INITIAL_PRODUCTS;
+}
+
+function loadInitialSales(): Sale[] {
+  try {
+    const saved = localStorage.getItem(`${STORAGE_KEY}_sales`);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+    const backup = localStorage.getItem(BACKUP_KEY_SALES);
+    if (backup) {
+      const parsed = JSON.parse(backup);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        safeLocalStorageSet(`${STORAGE_KEY}_sales`, backup);
+        return parsed;
+      }
+    }
+    const legacyKeys = ['makd_shop_store_v2_sales', 'makd_shop_store_v1_sales', 'makd_shop_sales'];
+    for (const k of legacyKeys) {
+      const leg = localStorage.getItem(k);
+      if (leg) {
+        try {
+          const parsed = JSON.parse(leg);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            safeLocalStorageSet(`${STORAGE_KEY}_sales`, leg);
+            safeLocalStorageSet(BACKUP_KEY_SALES, leg);
+            return parsed;
+          }
+        } catch {}
+      }
+    }
+  } catch (e) {
+    console.warn('[StoreContext] Error al leer ventas de almacenamiento:', e);
+  }
+  return INITIAL_SALES;
+}
+
+export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [products, setProducts] = useState<ShoeProduct[]>(() => loadInitialProducts());
 
   const [movements, setMovements] = useState<StockMovement[]>(() => {
     const saved = localStorage.getItem(`${STORAGE_KEY}_movements`);
     return saved ? JSON.parse(saved) : INITIAL_MOVEMENTS;
   });
 
-  const [sales, setSales] = useState<Sale[]>(() => {
-    const saved = localStorage.getItem(`${STORAGE_KEY}_sales`);
-    return saved ? JSON.parse(saved) : INITIAL_SALES;
-  });
+  const [sales, setSales] = useState<Sale[]>(() => loadInitialSales());
 
   const [layaways, setLayaways] = useState<Layaway[]>(() => {
     const saved = localStorage.getItem(`${STORAGE_KEY}_layaways`);
@@ -318,7 +387,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     safeLocalStorageSet(`${STORAGE_KEY}_bcv_info`, JSON.stringify(bcvInfo));
   }, [bcvInfo]);
 
-  // Master synchronization function from server store
+  // Master synchronization function from server store (Non-destructive Smart Merge)
   const syncFromServer = useCallback(async (silent = false) => {
     if (!silent) setSyncStatus('syncing');
     try {
@@ -333,8 +402,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       }
       if (json && json.data) {
         const d = json.data;
+
+        // --- 1. PRODUCTOS: PROTECCIÓN TOTAL CONTRA BORRADO ACCIDENTAL ---
         if (Array.isArray(d.products)) {
-          const mappedProducts: ShoeProduct[] = d.products.map((p: any) => ({
+          const mappedServerProducts: ShoeProduct[] = d.products.map((p: any) => ({
             id: p.id,
             nombre: p.nombre,
             sku: p.sku || `SKU-${p.id}`,
@@ -352,11 +423,39 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             imagen: p.imagen_url || p.imagen || '',
             created_at: p.created_at || new Date().toISOString(),
           }));
-          setProducts(mappedProducts);
-          try { localStorage.setItem(`${STORAGE_KEY}_products`, JSON.stringify(mappedProducts)); } catch {}
+
+          setProducts((currentLocal) => {
+            // Si el servidor devuelve vacío pero el navegador tiene productos:
+            // ¡NUNCA BORRAR! En su lugar, sembrar el servidor con los productos locales.
+            if (mappedServerProducts.length === 0) {
+              if (currentLocal.length > 0) {
+                fetch('/api/store/sync', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ products: currentLocal }),
+                }).catch(() => {});
+              }
+              return currentLocal;
+            }
+
+            // Si el servidor tiene productos, combinar inteligentemente sin perder los locales
+            const productMap = new Map<string, ShoeProduct>();
+            mappedServerProducts.forEach((p) => productMap.set(p.id, p));
+            currentLocal.forEach((p) => {
+              if (!productMap.has(p.id)) {
+                productMap.set(p.id, p);
+              }
+            });
+            const merged = Array.from(productMap.values());
+            safeLocalStorageSet(`${STORAGE_KEY}_products`, JSON.stringify(merged));
+            safeLocalStorageSet(BACKUP_KEY_PRODUCTS, JSON.stringify(merged));
+            return merged;
+          });
         }
+
+        // --- 2. VENTAS: FUSIÓN SEGURA SIN PÉRDIDAS ---
         if (Array.isArray(d.sales)) {
-          const mappedSales = d.sales.map((s: any) => ({
+          const mappedServerSales: Sale[] = d.sales.map((s: any) => ({
             ...s,
             total_usd: Number(s.total_usd) || 0,
             total_bs: Number(s.total_bs) || 0,
@@ -366,22 +465,87 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             ganancia_neta_usd: Number(s.ganancia_neta_usd) || 0,
             tasa_cambio: Number(s.tasa_cambio) || 0,
           }));
-          setSales(mappedSales);
-          try { localStorage.setItem(`${STORAGE_KEY}_sales`, JSON.stringify(mappedSales)); } catch {}
+
+          setSales((currentSales) => {
+            if (mappedServerSales.length === 0) {
+              if (currentSales.length > 0) {
+                fetch('/api/store/sync', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ sales: currentSales }),
+                }).catch(() => {});
+              }
+              return currentSales;
+            }
+            const salesMap = new Map<string, Sale>();
+            mappedServerSales.forEach((s) => salesMap.set(s.id, s));
+            currentSales.forEach((s) => {
+              if (!salesMap.has(s.id)) {
+                salesMap.set(s.id, s);
+              }
+            });
+            const merged = Array.from(salesMap.values()).sort(
+              (a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime()
+            );
+            safeLocalStorageSet(`${STORAGE_KEY}_sales`, JSON.stringify(merged));
+            safeLocalStorageSet(BACKUP_KEY_SALES, JSON.stringify(merged));
+            return merged;
+          });
         }
+
+        // --- 3. APARTADOS ---
         if (Array.isArray(d.layaways)) {
-          setLayaways(d.layaways);
-          try { localStorage.setItem(`${STORAGE_KEY}_layaways`, JSON.stringify(d.layaways)); } catch {}
+          setLayaways((currentLayaways) => {
+            if (d.layaways.length === 0) {
+              if (currentLayaways.length > 0) {
+                fetch('/api/store/sync', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ layaways: currentLayaways }),
+                }).catch(() => {});
+              }
+              return currentLayaways;
+            }
+            const layawayMap = new Map<string, Layaway>();
+            d.layaways.forEach((l: Layaway) => layawayMap.set(l.id, l));
+            currentLayaways.forEach((l) => {
+              if (!layawayMap.has(l.id)) layawayMap.set(l.id, l);
+            });
+            const merged = Array.from(layawayMap.values());
+            safeLocalStorageSet(`${STORAGE_KEY}_layaways`, JSON.stringify(merged));
+            return merged;
+          });
         }
+
+        // --- 4. MOVIMIENTOS KARDEX ---
         if (Array.isArray(d.movements)) {
-          setMovements(d.movements);
-          try { localStorage.setItem(`${STORAGE_KEY}_movements`, JSON.stringify(d.movements)); } catch {}
+          setMovements((currentMovs) => {
+            if (d.movements.length === 0) {
+              if (currentMovs.length > 0) {
+                fetch('/api/store/sync', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ movements: currentMovs }),
+                }).catch(() => {});
+              }
+              return currentMovs;
+            }
+            const movMap = new Map<string, StockMovement>();
+            d.movements.forEach((m: StockMovement) => movMap.set(m.id, m));
+            currentMovs.forEach((m) => {
+              if (!movMap.has(m.id)) movMap.set(m.id, m);
+            });
+            const merged = Array.from(movMap.values());
+            safeLocalStorageSet(`${STORAGE_KEY}_movements`, JSON.stringify(merged));
+            return merged;
+          });
         }
+
         if (Array.isArray(d.accounts) && d.accounts.length > 0) {
           setAccounts(d.accounts);
           try { localStorage.setItem(`${STORAGE_KEY}_accounts`, JSON.stringify(d.accounts)); } catch {}
         }
-        if (Array.isArray(d.cashClosures)) {
+        if (Array.isArray(d.cashClosures) && d.cashClosures.length > 0) {
           setCashClosures(d.cashClosures);
           try { localStorage.setItem(`${STORAGE_KEY}_closures`, JSON.stringify(d.cashClosures)); } catch {}
         }
@@ -1931,15 +2095,173 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         expenses: [],
         cashClosures: [],
         accounts: INITIAL_ACCOUNTS.map((a) => ({ ...a, saldo: 0 })),
+        allowEmpty: true,
       }),
     }).catch(() => {});
 
-    addNotification('Datos Limpios', 'Se han vaciado los datos de prueba para iniciar la operación real.', 'info');
+    addNotification('Datos Limpios', 'Se han vaciado los datos de trabajo. Tienes copias de seguridad disponibles si deseas recuperarlos.', 'info');
   };
 
   const resetToDemoData = () => {
     clearAllData();
   };
+
+  // Rescate de emergencia desde respaldos locales y claves legadas
+  const restoreFromBackup = useCallback(() => {
+    let restoredProductsCount = 0;
+    let restoredSalesCount = 0;
+
+    // Buscar calzados en respaldos y claves anteriores
+    const prodKeys = [
+      BACKUP_KEY_PRODUCTS,
+      `${STORAGE_KEY}_products`,
+      'makd_shop_store_v2_products',
+      'makd_shop_store_v1_products',
+      'makd_shop_products',
+    ];
+    for (const k of prodKeys) {
+      const raw = localStorage.getItem(k);
+      if (raw) {
+        try {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setProducts(parsed);
+            safeLocalStorageSet(`${STORAGE_KEY}_products`, raw);
+            safeLocalStorageSet(BACKUP_KEY_PRODUCTS, raw);
+            restoredProductsCount = parsed.length;
+            fetch('/api/store/sync', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ products: parsed }),
+            }).catch(() => {});
+            break;
+          }
+        } catch {}
+      }
+    }
+
+    // Buscar ventas en respaldos
+    const salesKeys = [
+      BACKUP_KEY_SALES,
+      `${STORAGE_KEY}_sales`,
+      'makd_shop_store_v2_sales',
+      'makd_shop_store_v1_sales',
+      'makd_shop_sales',
+    ];
+    for (const k of salesKeys) {
+      const raw = localStorage.getItem(k);
+      if (raw) {
+        try {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setSales(parsed);
+            safeLocalStorageSet(`${STORAGE_KEY}_sales`, raw);
+            safeLocalStorageSet(BACKUP_KEY_SALES, raw);
+            restoredSalesCount = parsed.length;
+            fetch('/api/store/sync', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ sales: parsed }),
+            }).catch(() => {});
+            break;
+          }
+        } catch {}
+      }
+    }
+
+    if (restoredProductsCount > 0 || restoredSalesCount > 0) {
+      addNotification(
+        'Respaldo Restaurado',
+        `Se recuperaron con éxito ${restoredProductsCount} calzados y ${restoredSalesCount} ventas de tu copia local.`,
+        'success'
+      );
+    } else {
+      addNotification(
+        'Sin Respaldos Previos',
+        'No se encontraron datos anteriores en la memoria de este navegador.',
+        'info'
+      );
+    }
+
+    return { productsRestored: restoredProductsCount, salesRestored: restoredSalesCount };
+  }, [addNotification]);
+
+  // Exportar respaldo completo como archivo .json
+  const exportStoreBackup = useCallback(() => {
+    const backupData = {
+      version: 'makd_shop_backup_v1',
+      exportedAt: new Date().toISOString(),
+      products,
+      sales,
+      layaways,
+      movements,
+      accounts,
+      expenses,
+      cashClosures,
+      exchangeRate,
+    };
+    const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `makd_shop_respaldo_${new Date().toISOString().split('T')[0]}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    addNotification('Respaldo Descargado', 'Archivo JSON generado y guardado en tu equipo.', 'success');
+  }, [products, sales, layaways, movements, accounts, expenses, cashClosures, exchangeRate, addNotification]);
+
+  // Importar respaldo desde archivo .json
+  const importStoreBackup = useCallback(async (file: File): Promise<boolean> => {
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+      if (data && typeof data === 'object') {
+        if (Array.isArray(data.products) && data.products.length > 0) {
+          setProducts(data.products);
+          safeLocalStorageSet(`${STORAGE_KEY}_products`, JSON.stringify(data.products));
+          safeLocalStorageSet(BACKUP_KEY_PRODUCTS, JSON.stringify(data.products));
+        }
+        if (Array.isArray(data.sales) && data.sales.length > 0) {
+          setSales(data.sales);
+          safeLocalStorageSet(`${STORAGE_KEY}_sales`, JSON.stringify(data.sales));
+          safeLocalStorageSet(BACKUP_KEY_SALES, JSON.stringify(data.sales));
+        }
+        if (Array.isArray(data.layaways)) {
+          setLayaways(data.layaways);
+          safeLocalStorageSet(`${STORAGE_KEY}_layaways`, JSON.stringify(data.layaways));
+        }
+        if (Array.isArray(data.movements)) {
+          setMovements(data.movements);
+          safeLocalStorageSet(`${STORAGE_KEY}_movements`, JSON.stringify(data.movements));
+        }
+        if (Array.isArray(data.expenses)) {
+          setExpenses(data.expenses);
+          safeLocalStorageSet(`${STORAGE_KEY}_expenses`, JSON.stringify(data.expenses));
+        }
+        if (typeof data.exchangeRate === 'number') {
+          setExchangeRateState(data.exchangeRate);
+        }
+
+        // Sincronizar en servidor
+        fetch('/api/store/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data),
+        }).catch(() => {});
+
+        addNotification(
+          'Importación Exitosa',
+          `Se cargaron ${(data.products || []).length} calzados y ${(data.sales || []).length} ventas desde el archivo.`,
+          'success'
+        );
+        return true;
+      }
+      return false;
+    } catch (e: any) {
+      addNotification('Error al Importar', 'El archivo no tiene el formato JSON válido de respaldo.', 'critical');
+      return false;
+    }
+  }, [addNotification]);
 
   return (
     <StoreContext.Provider
@@ -2002,6 +2324,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         loginWithGoogleAction,
         logoutUserAction,
         pushAllToCloud,
+        restoreFromBackup,
+        exportStoreBackup,
+        importStoreBackup,
       }}
     >
       {children}

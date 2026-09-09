@@ -12,7 +12,11 @@ import {
   Check, 
   ExternalLink,
   Shield,
-  ArrowRight
+  ArrowRight,
+  Download,
+  Upload,
+  RotateCcw,
+  FileText
 } from 'lucide-react';
 import { checkNeonDbStatus, syncDataToNeon, getBdvConfig } from '../../services/api';
 import { NeonDbStatus } from '../../types';
@@ -39,6 +43,9 @@ export const CloudIntegrationModal: React.FC<CloudIntegrationModalProps> = ({
     pushAllToCloud,
     syncStatus,
     lastSyncedAt,
+    restoreFromBackup,
+    exportStoreBackup,
+    importStoreBackup,
   } = useStore();
   const [activeTab, setActiveTab] = useState<'firestore' | 'bdv' | 'neon' | 'vercel'>(defaultTab);
 
@@ -308,6 +315,58 @@ export const CloudIntegrationModal: React.FC<CloudIntegrationModalProps> = ({
                   <li>Inicia sesión con la misma cuenta de Google en esa segunda computadora.</li>
                   <li>¡Listo! Los calzados, existencias por talla, ventas y facturas aparecerán de inmediato en ambas pantallas y cualquier cambio se actualizará en vivo.</li>
                 </ol>
+              </div>
+
+              {/* Respaldo y Recuperación de Datos Local y en Archivo */}
+              <div className="border border-slate-200 rounded-xl p-4 bg-slate-50/80 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Shield className="w-4 h-4 text-indigo-600" />
+                    <h4 className="font-bold text-slate-900 text-xs">
+                      Copias de Seguridad & Protección Anti-Pérdida
+                    </h4>
+                  </div>
+                  <span className="text-[10px] text-slate-500 font-medium">Archivos JSON y Local</span>
+                </div>
+
+                <p className="text-slate-600 text-xs leading-relaxed">
+                  Tus datos cuentan con un respaldo local permanente. Si en algún momento no ves tus calzados guardados, puedes recuperarlos con un solo clic o exportar una copia física a tu computadora.
+                </p>
+
+                <div className="flex flex-wrap gap-2 pt-1">
+                  <button
+                    id="restore-local-backup-btn"
+                    onClick={() => restoreFromBackup()}
+                    className="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg text-xs flex items-center gap-2 transition cursor-pointer shadow-2xs"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span>Restaurar Copia de Seguridad Local</span>
+                  </button>
+
+                  <button
+                    id="export-backup-json-btn"
+                    onClick={() => exportStoreBackup()}
+                    className="px-3 py-2 bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 font-semibold rounded-lg text-xs flex items-center gap-2 transition cursor-pointer"
+                  >
+                    <Download className="w-3.5 h-3.5 text-slate-500" />
+                    <span>Descargar Respaldo JSON</span>
+                  </button>
+
+                  <label className="px-3 py-2 bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 font-semibold rounded-lg text-xs flex items-center gap-2 transition cursor-pointer">
+                    <Upload className="w-3.5 h-3.5 text-slate-500" />
+                    <span>Importar Archivo JSON</span>
+                    <input
+                      type="file"
+                      accept=".json"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) importStoreBackup(file);
+                        e.target.value = '';
+                      }}
+                    />
+                  </label>
+                </div>
               </div>
             </div>
           )}

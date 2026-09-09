@@ -144,10 +144,15 @@ export const GitHubSyncModal: React.FC<GitHubSyncModalProps> = ({ isOpen, onClos
         console.warn('Backend sync failed, falling back to client-side push:', backendErr);
       }
 
-      // Si el backend no respondió, ejecutar push directo desde el cliente
+      // Si el backend no respondió o no tuvo éxito, ejecutar push directo desde el cliente
       if (!resData || !resData.success) {
-        setSyncStatus('Enviando commit directo a GitHub...');
-        const clientRes = await pushCatalogToGitHub(config, products, exchangeRate);
+        setSyncStatus('Sincronizando directamente con GitHub...');
+        const clientRes = await pushCatalogToGitHub(
+          config,
+          products,
+          exchangeRate,
+          (msg) => setSyncStatus(msg)
+        );
         if (!clientRes.ok) {
           throw new Error(clientRes.message || clientRes.error || 'Fallo al sincronizar con GitHub');
         }

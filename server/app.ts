@@ -324,85 +324,142 @@ app.post('/api/catalog/sync-github', async (req, res) => {
     const targetRepo = repo.trim() || 'makd';
     const targetBranch = branch.trim() || 'main';
 
-    const githubHeaders = {
+    const githubHeaders: Record<string, string> = {
       Accept: 'application/vnd.github+json',
       Authorization: `Bearer ${cleanToken}`,
       'X-GitHub-Api-Version': '2022-11-28',
       'User-Agent': 'MAKD-SHOP-App',
       'Content-Type': 'application/json',
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      Pragma: 'no-cache',
     };
 
-    // 1. Obtener SHA actual de catalogo.html (si existe)
-    let htmlSha: string | undefined = undefined;
-    try {
-      const shaRes = await fetch(
-        `https://api.github.com/repos/${targetOwner}/${targetRepo}/contents/catalogo.html?ref=${targetBranch}`,
-        { headers: githubHeaders }
-      );
-      if (shaRes.ok) {
-        const shaData: any = await shaRes.json();
-        htmlSha = shaData.sha;
+    // Función auxiliar para obtener el SHA canónico de un archivo en GitHub
+    const getAuthoritativeSha = async (filePath: string): Promise<string | undefined> => {
+      const timestamp = Date.now();
+      try {
+        const shaRes = await fetch(
+          `https://api.github.com/repos/${targetOwner}/${targetRepo}/contents/${filePath}?ref=${encodeURIComponent(targetBranch)}&_cb=${timestamp}`,
+          { headers: githubHeaders }
+        );
+        if (shaRes.ok) {
+          const shaData: any = await shaRes.json();
+          if (shaData && typeof shaData.sha === 'string') return shaData.sha;
+        } else if (shaRes.status === 404) {
+          return undefined;
+        }
+      } catch (e) {
+        console.warn(`[ServerAppGitHub] Error en consulta de SHA para ${filePath}:`, e);
       }
-    } catch (shaErr) {
-      console.warn('No se pudo obtener SHA previo de catalogo.html:', shaErr);
-    }
 
-    // 2. Commit de catalogo.html
+      try {
+        const treeRes = await fetch(
+          `https://api.github.com/repos/${targetOwner}/${targetRepo}/git/trees/${encodeURIComponent(targetBranch)}?recursive=1&_cb=${timestamp}`,
+          { headers: githubHeaders }
+        );
+        if (treeRes.ok) {
+          const treeData: any = await treeRes.json();
+          if (Array.isArray(treeData?.tree)) {
+            const item = treeData.tree.find((t: any) => t.path === filePath);
+            if (item && item.sha) return item.sha;
+            return undefined;
+          }
+        }
+      } catch (e) {
+        console.warn(`[ServerAppGitHub] Error en Git Tree para ${filePath}:`, e);
+      }
+
+      return undefined;
+    };
+
+    // Función auxiliar para enviar commit con reintento ante conflictos 409
+    const putFileWithRetry = async (
+      filePath: string,
+      base64Content: string,
+      msg: string,
+      maxRetries = 3
+    ): Promise<{ ok: boolean; data?: any; status: number; error?: string }> => {
+      let lastErr = '';
+      let lastStat = 0;
+
+      for (let i = 1; i <= maxRetries; i++) {
+        const currentSha = await getAuthoritativeSha(filePath);
+        const putBody: Record<string, any> = {
+          message: msg,
+          content: base64Content,
+          branch: targetBranch,
+        };
+        if (currentSha) {
+          putBody.sha = currentSha;
+        }
+
+        try {
+          const putRes = await fetch(
+            `https://api.github.com/repos/${targetOwner}/${targetRepo}/contents/${filePath}`,
+            {
+              method: 'PUT',
+              headers: githubHeaders,
+              body: JSON.stringify(putBody),
+            }
+          );
+
+          if (putRes.ok) {
+            const data = await putRes.json();
+            return { ok: true, data, status: putRes.status };
+          }
+
+          const errBody: any = await putRes.json().catch(() => ({}));
+          lastStat = putRes.status;
+          lastErr = errBody.message || putRes.statusText || 'Error desconocido';
+
+          if (putRes.status === 409 && i < maxRetries) {
+            console.warn(
+              `[ServerAppGitHub] Conflicto 409 en ${filePath}. Reintentando con SHA fresco (intento ${i}/${maxRetries})...`
+            );
+            await new Promise((r) => setTimeout(r, 1000 * i));
+            continue;
+          }
+
+          return { ok: false, status: putRes.status, error: lastErr };
+        } catch (netErr: any) {
+          lastStat = 0;
+          lastErr = netErr?.message || String(netErr);
+          if (i < maxRetries) {
+            await new Promise((r) => setTimeout(r, 1000 * i));
+            continue;
+          }
+          return { ok: false, status: 0, error: lastErr };
+        }
+      }
+
+      return { ok: false, status: lastStat, error: lastErr };
+    };
+
+    // 1. Commit de catalogo.html
     const nowStr = new Date().toLocaleString('es-VE');
     const msg = commitMessage || `Actualizar catálogo oficial desde MAKD SHOP - ${nowStr}`;
-
     const base64Html = Buffer.from(htmlContent, 'utf-8').toString('base64');
 
-    const putRes = await fetch(
-      `https://api.github.com/repos/${targetOwner}/${targetRepo}/contents/catalogo.html`,
-      {
-        method: 'PUT',
-        headers: githubHeaders,
-        body: JSON.stringify({
-          message: msg,
-          content: base64Html,
-          sha: htmlSha,
-          branch: targetBranch,
-        }),
-      }
-    );
+    const htmlCommitResult = await putFileWithRetry('catalogo.html', base64Html, msg, 3);
 
-    if (!putRes.ok) {
-      const errBody: any = await putRes.json().catch(() => ({}));
-      return res.status(putRes.status).json({
+    if (!htmlCommitResult.ok) {
+      return res.status(htmlCommitResult.status || 500).json({
         success: false,
-        error: `Error de GitHub (${putRes.status}): ${errBody.message || putRes.statusText}`,
+        error: `Error de GitHub (${htmlCommitResult.status}): ${htmlCommitResult.error}`,
       });
     }
 
-    const putData: any = await putRes.json();
+    const putData = htmlCommitResult.data;
 
-    // 3. Commit opcional de products.json si fue enviado
+    // 2. Commit opcional de products.json si fue enviado
     if (jsonContent && typeof jsonContent === 'string') {
       try {
-        let jsonSha: string | undefined = undefined;
-        const jsonShaRes = await fetch(
-          `https://api.github.com/repos/${targetOwner}/${targetRepo}/contents/products.json?ref=${targetBranch}`,
-          { headers: githubHeaders }
-        );
-        if (jsonShaRes.ok) {
-          const jsonShaData: any = await jsonShaRes.json();
-          jsonSha = jsonShaData.sha;
-        }
-
         const base64Json = Buffer.from(jsonContent, 'utf-8').toString('base64');
-        await fetch(
-          `https://api.github.com/repos/${targetOwner}/${targetRepo}/contents/products.json`,
-          {
-            method: 'PUT',
-            headers: githubHeaders,
-            body: JSON.stringify({
-              message: `Actualizar datos JSON del catálogo MAKD SHOP - ${nowStr}`,
-              content: base64Json,
-              sha: jsonSha,
-              branch: targetBranch,
-            }),
-          }
+        await putFileWithRetry(
+          'products.json',
+          base64Json,
+          `Actualizar datos JSON del catálogo MAKD SHOP - ${nowStr}`,
+          3
         );
       } catch (jsonErr) {
         console.warn('Error no crítico actualizando products.json en GitHub:', jsonErr);

@@ -346,6 +346,36 @@ export const Header: React.FC<{
           />
         </button>
 
+        {/* Cloud Firestore & Backup Status Button */}
+        <button
+          id="cloud-sync-header-btn"
+          onClick={() => setShowCloudModal(true)}
+          title={
+            isFirebaseConnected
+              ? `Nube Firestore Activa (${currentUser?.email || 'Conectado'}). Haz clic para ver estado o respaldos.`
+              : 'Sincronizar con Nube Firestore / Ver Respaldos'
+          }
+          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-semibold transition cursor-pointer shadow-2xs ${
+            isFirebaseConnected
+              ? 'bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100'
+              : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100 hover:border-slate-300'
+          }`}
+        >
+          <Cloud className={`w-3.5 h-3.5 ${isFirebaseConnected ? 'text-emerald-600' : 'text-slate-500'}`} />
+          <span className="hidden md:inline font-bold">
+            {isFirebaseConnected ? 'Nube Activa' : 'Nube'}
+          </span>
+          <span
+            className={`w-2 h-2 rounded-full ${
+              isFirebaseConnected
+                ? 'bg-emerald-500'
+                : syncStatus === 'syncing'
+                ? 'bg-amber-400 animate-pulse'
+                : 'bg-slate-400'
+            }`}
+          />
+        </button>
+
         {/* Notification Bell */}
         <div className="relative">
           <button
