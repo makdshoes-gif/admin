@@ -108,6 +108,11 @@ export interface Sale {
   fecha: string;          // ISO string
   usuario: string;
   notas?: string;
+  estado?: 'completada' | 'anulada' | 'modificada';
+  anulada_at?: string;
+  anulada_motivo?: string;
+  modificada_at?: string;
+  motivo_modificacion?: string;
   created_at: string;
 }
 

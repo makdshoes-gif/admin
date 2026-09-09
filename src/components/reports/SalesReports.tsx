@@ -19,7 +19,13 @@ import {
   ArrowUpRight,
   Edit2,
   Check,
-  X
+  X,
+  Wrench,
+  Search,
+  Ban,
+  CheckCircle2,
+  AlertCircle,
+  Filter
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { useStore } from '../../context/StoreContext';
@@ -27,6 +33,7 @@ import { Sale, ReportPeriod } from '../../types';
 import { ReceiptModal } from '../common/ReceiptModal';
 import { DailySalesChart } from './DailySalesChart';
 import { GoogleSheetsSyncModal } from '../common/GoogleSheetsSyncModal';
+import { EditInvoiceModal } from '../sales/EditInvoiceModal';
 
 export const SalesReports: React.FC = () => {
   const { sales, exchangeRate, products, bcvInfo, isBcvSyncing, syncBcvRate, updateSaleDate } = useStore();
@@ -35,6 +42,9 @@ export const SalesReports: React.FC = () => {
   const [customStartDate, setCustomStartDate] = useState('');
   const [customEndDate, setCustomEndDate] = useState('');
   const [selectedSaleForReceipt, setSelectedSaleForReceipt] = useState<Sale | null>(null);
+  const [selectedSaleForEdit, setSelectedSaleForEdit] = useState<Sale | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'todos' | 'completadas' | 'anuladas'>('todos');
   const [lastGeneratedTime, setLastGeneratedTime] = useState<string>(new Date().toLocaleTimeString());
   const [isSheetsModalOpen, setIsSheetsModalOpen] = useState(false);
   const [editingSaleDateId, setEditingSaleDateId] = useState<string | null>(null);
@@ -92,35 +102,62 @@ export const SalesReports: React.FC = () => {
     });
   }, [sales, period, customStartDate, customEndDate]);
 
-  // Aggregate Metrics
-  const totalRevenueUsd = useMemo(() => {
-    return filteredSales.reduce((acc, s) => acc + s.total_usd, 0);
+  // Active Sales (excluding annulled sales for truthful financial metrics)
+  const activeSales = useMemo(() => {
+    return filteredSales.filter((s) => s.estado !== 'anulada');
   }, [filteredSales]);
+
+  // Filtered sales for the historical table (with search query & status filter)
+  const tableSales = useMemo(() => {
+    return filteredSales.filter((sale) => {
+      if (statusFilter === 'completadas' && sale.estado === 'anulada') return false;
+      if (statusFilter === 'anuladas' && sale.estado !== 'anulada') return false;
+
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        const numMatch = (sale.numero_factura || '').toLowerCase().includes(q);
+        const nameMatch = `${sale.cliente_nombre || ''} ${sale.cliente_apellido || ''}`.toLowerCase().includes(q);
+        const rifMatch = (sale.cliente_rif || '').toLowerCase().includes(q);
+        const phoneMatch = (sale.cliente_telefono || '').toLowerCase().includes(q);
+        const itemMatch = sale.items.some(
+          (it) => it.nombre_producto.toLowerCase().includes(q) || (it.sku || '').toLowerCase().includes(q)
+        );
+        return numMatch || nameMatch || rifMatch || phoneMatch || itemMatch;
+      }
+
+      return true;
+    });
+  }, [filteredSales, statusFilter, searchQuery]);
+
+  // Aggregate Metrics (Calculated on active, non-anulled sales)
+  const totalRevenueUsd = useMemo(() => {
+    return activeSales.reduce((acc, s) => acc + s.total_usd, 0);
+  }, [activeSales]);
 
   const totalRevenueBs = useMemo(() => {
-    return filteredSales.reduce((acc, s) => acc + s.total_bs, 0);
-  }, [filteredSales]);
+    return activeSales.reduce((acc, s) => acc + s.total_bs, 0);
+  }, [activeSales]);
 
   const totalCostUsd = useMemo(() => {
-    return filteredSales.reduce((acc, s) => acc + s.costo_total_usd, 0);
-  }, [filteredSales]);
+    return activeSales.reduce((acc, s) => acc + s.costo_total_usd, 0);
+  }, [activeSales]);
 
   const netProfitUsd = totalRevenueUsd - totalCostUsd;
   const profitMarginPercent = totalRevenueUsd > 0 ? (netProfitUsd / totalRevenueUsd) * 100 : 0;
 
   const totalPairsSold = useMemo(() => {
-    return filteredSales.reduce(
+    return activeSales.reduce(
       (acc, s) => acc + s.items.reduce((sum, item) => sum + item.cantidad, 0),
       0
     );
-  }, [filteredSales]);
+  }, [activeSales]);
 
-  const averageTicketUsd = filteredSales.length > 0 ? totalRevenueUsd / filteredSales.length : 0;
+  const averageTicketUsd = activeSales.length > 0 ? totalRevenueUsd / activeSales.length : 0;
 
   // Breakdown by Size (Curva de Tallas)
   const sizeDistribution = useMemo(() => {
     const map: Record<string, number> = {};
-    filteredSales.forEach((s) => {
+    activeSales.forEach((s) => {
       s.items.forEach((it) => {
         map[it.talla] = (map[it.talla] || 0) + it.cantidad;
       });
@@ -129,12 +166,12 @@ export const SalesReports: React.FC = () => {
     return Object.entries(map)
       .map(([talla, pares]) => ({ talla, pares }))
       .sort((a, b) => a.talla.localeCompare(b.talla));
-  }, [filteredSales]);
+  }, [activeSales]);
 
   // Top Selling Shoes
   const topSellingShoes = useMemo(() => {
     const map: Record<string, { nombre: string; marca: string; pares: number; totalUsd: number }> = {};
-    filteredSales.forEach((s) => {
+    activeSales.forEach((s) => {
       s.items.forEach((it) => {
         if (!map[it.nombre_producto]) {
           map[it.nombre_producto] = {
@@ -150,12 +187,12 @@ export const SalesReports: React.FC = () => {
     });
 
     return Object.values(map).sort((a, b) => b.totalUsd - a.totalUsd);
-  }, [filteredSales]);
+  }, [activeSales]);
 
   // Breakdown by Payment Method
   const paymentMethodBreakdown = useMemo(() => {
     const map: Record<string, { count: number; montoUsd: number }> = {};
-    filteredSales.forEach((s) => {
+    activeSales.forEach((s) => {
       s.pagos.forEach((p) => {
         if (!map[p.cuenta]) {
           map[p.cuenta] = { count: 0, montoUsd: 0 };
@@ -170,7 +207,7 @@ export const SalesReports: React.FC = () => {
       montoUsd: data.montoUsd,
       porcentaje: totalRevenueUsd > 0 ? (data.montoUsd / totalRevenueUsd) * 100 : 0,
     }));
-  }, [filteredSales, totalRevenueUsd]);
+  }, [activeSales, totalRevenueUsd]);
 
   // Automatic Executive Summary Text
   const executiveSummary = useMemo(() => {
@@ -588,155 +625,279 @@ export const SalesReports: React.FC = () => {
 
       {/* Detailed Sales History Table */}
       <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-xs">
-        <div className="p-3.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+        <div className="p-3.5 bg-slate-50 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <TrendingUp className="w-4 h-4 text-indigo-600" />
             <h3 className="font-bold text-sm text-slate-900">
-              Historial de Ventas del Período ({filteredSales.length})
+              Historial de Facturas del Período ({tableSales.length})
             </h3>
           </div>
-          <span className="text-xs text-slate-500">
-            Total recaudado: <span className="font-bold text-indigo-600 font-mono">${totalRevenueUsd.toFixed(2)}</span>
-          </span>
+
+          {/* Quick Search & Status Filter */}
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative">
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Buscar # factura, cliente, zapato..."
+                className="pl-8 pr-3 py-1 text-xs border border-slate-300 rounded-lg bg-white text-slate-800 w-48 sm:w-56 focus:outline-hidden focus:ring-1 focus:ring-indigo-500 shadow-2xs"
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              )}
+            </div>
+
+            {/* Status Filter Buttons */}
+            <div className="inline-flex rounded-lg border border-slate-300 bg-white p-0.5 text-[11px] font-medium">
+              <button
+                onClick={() => setStatusFilter('todos')}
+                className={`px-2 py-0.5 rounded cursor-pointer transition-colors ${
+                  statusFilter === 'todos' ? 'bg-indigo-600 text-white font-bold' : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Todas
+              </button>
+              <button
+                onClick={() => setStatusFilter('completadas')}
+                className={`px-2 py-0.5 rounded cursor-pointer transition-colors ${
+                  statusFilter === 'completadas' ? 'bg-emerald-600 text-white font-bold' : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Válidas
+              </button>
+              <button
+                onClick={() => setStatusFilter('anuladas')}
+                className={`px-2 py-0.5 rounded cursor-pointer transition-colors ${
+                  statusFilter === 'anuladas' ? 'bg-rose-600 text-white font-bold' : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Anuladas
+              </button>
+            </div>
+          </div>
         </div>
 
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
             <thead className="bg-slate-50 text-slate-500 uppercase tracking-wider text-[10px] border-b border-slate-200">
               <tr>
-                <th className="py-2.5 px-4 font-semibold">Factura #</th>
+                <th className="py-2.5 px-3 font-semibold">Factura #</th>
                 <th className="py-2.5 px-3 font-semibold">Fecha</th>
-                <th className="py-2.5 px-4 font-semibold">Cliente</th>
-                <th className="py-2.5 px-4 font-semibold">Calzado Comprado</th>
+                <th className="py-2.5 px-3 font-semibold">Cliente</th>
+                <th className="py-2.5 px-3 font-semibold">Calzado Comprado</th>
                 <th className="py-2.5 px-3 text-right font-semibold">Total ($)</th>
                 <th className="py-2.5 px-3 text-right font-semibold">Total (Bs)</th>
                 <th className="py-2.5 px-3 text-right font-semibold">Ganancia ($)</th>
                 <th className="py-2.5 px-3 font-semibold">Forma de Pago</th>
-                <th className="py-2.5 px-4 text-center font-semibold">Recibo</th>
+                <th className="py-2.5 px-2 text-center font-semibold">Estado</th>
+                <th className="py-2.5 px-3 text-center font-semibold">Acciones</th>
               </tr>
             </thead>
 
             <tbody className="divide-y divide-slate-100">
-              {filteredSales.length === 0 ? (
+              {tableSales.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="py-12 text-center text-slate-400">
-                    No hay ventas registradas en el período seleccionado.
+                  <td colSpan={10} className="py-12 text-center text-slate-400">
+                    No hay facturas que coincidan con la búsqueda o filtro seleccionado.
                   </td>
                 </tr>
               ) : (
-                filteredSales.map((sale) => (
-                  <tr key={sale.id} className="hover:bg-slate-50/80 transition-colors">
-                    <td className="py-2.5 px-4 font-mono font-bold text-indigo-600">
-                      #{sale.numero_factura}
-                    </td>
+                tableSales.map((sale) => {
+                  const isAnulada = sale.estado === 'anulada';
+                  const isModificada = sale.estado === 'modificada';
 
-                    <td className="py-2.5 px-3 font-mono text-slate-500 text-[11px]">
-                      {editingSaleDateId === sale.id ? (
-                        <div className="flex items-center gap-1">
-                          <input
-                            type="datetime-local"
-                            value={tempDateValue}
-                            onChange={(e) => setTempDateValue(e.target.value)}
-                            className="px-1.5 py-0.5 text-[10px] border border-indigo-300 rounded bg-white text-slate-800 shadow-2xs font-mono"
-                          />
-                          <button
-                            onClick={() => {
-                              if (tempDateValue) {
-                                const newIso = new Date(tempDateValue).toISOString();
-                                updateSaleDate(sale.id, newIso);
-                              }
-                              setEditingSaleDateId(null);
-                            }}
-                            className="p-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded cursor-pointer"
-                            title="Confirmar cambio de fecha"
-                          >
-                            <Check className="w-3 h-3" />
-                          </button>
-                          <button
-                            onClick={() => setEditingSaleDateId(null)}
-                            className="p-1 text-slate-400 hover:text-slate-600 cursor-pointer"
-                            title="Cancelar"
-                          >
-                            <X className="w-3 h-3" />
-                          </button>
-                        </div>
-                      ) : (
-                        <div className="flex items-center gap-1.5 group">
-                          <span>
-                            {new Date(sale.fecha).toLocaleString('es-VE', {
-                              month: 'short',
-                              day: 'numeric',
-                              hour: '2-digit',
-                              minute: '2-digit',
-                            })}
-                          </span>
-                          <button
-                            onClick={() => {
-                              setEditingSaleDateId(sale.id);
-                              setTempDateValue(sale.fecha ? sale.fecha.slice(0, 16) : '');
-                            }}
-                            className="opacity-0 group-hover:opacity-100 p-0.5 text-indigo-500 hover:text-indigo-700 hover:bg-indigo-50 rounded transition cursor-pointer"
-                            title="Cambiar fecha de venta (días anteriores)"
-                          >
-                            <Edit2 className="w-2.5 h-2.5" />
-                          </button>
-                        </div>
-                      )}
-                    </td>
-
-                    <td className="py-2.5 px-4">
-                      <div className="font-medium text-slate-900">
-                        {sale.cliente_nombre} {sale.cliente_apellido || ''}
-                      </div>
-                      {sale.cliente_rif && (
-                        <div className="text-[10px] text-slate-400">{sale.cliente_rif}</div>
-                      )}
-                    </td>
-
-                    <td className="py-2.5 px-4">
-                      <div className="space-y-0.5">
-                        {sale.items.map((it, i) => (
-                          <div key={i} className="text-[11px] text-slate-700">
-                            {it.cantidad}x {it.nombre_producto} <span className="text-slate-400">(T:{it.talla})</span>
-                          </div>
-                        ))}
-                      </div>
-                    </td>
-
-                    <td className="py-2.5 px-3 text-right font-mono font-bold text-slate-900">
-                      ${sale.total_usd.toFixed(2)}
-                    </td>
-
-                    <td className="py-2.5 px-3 text-right font-mono text-slate-500 text-[11px]">
-                      {sale.total_bs.toFixed(0)} Bs
-                    </td>
-
-                    <td className="py-2.5 px-3 text-right font-mono font-semibold text-emerald-600">
-                      +${sale.ganancia_neta_usd.toFixed(2)}
-                    </td>
-
-                    <td className="py-2.5 px-3 text-[11px]">
-                      {sale.pagos.map((p, idx) => (
-                        <span
-                          key={idx}
-                          className="inline-block px-1.5 py-0.5 rounded bg-slate-100 border border-slate-200 mr-1 mb-0.5 font-mono text-[10px] text-slate-700"
-                        >
-                          {p.cuenta}
+                  return (
+                    <tr
+                      key={sale.id}
+                      className={`transition-colors ${
+                        isAnulada
+                          ? 'bg-rose-50/40 text-slate-400 hover:bg-rose-50/60'
+                          : 'hover:bg-slate-50/80'
+                      }`}
+                    >
+                      <td className="py-2.5 px-3 font-mono font-bold">
+                        <span className={isAnulada ? 'line-through text-rose-500' : 'text-indigo-600'}>
+                          #{sale.numero_factura}
                         </span>
-                      ))}
-                    </td>
+                        {sale.motivo_modificacion && !isAnulada && (
+                          <div className="text-[9px] text-amber-600 font-sans font-normal truncate max-w-[120px]" title={sale.motivo_modificacion}>
+                            {sale.motivo_modificacion}
+                          </div>
+                        )}
+                        {sale.anulada_motivo && isAnulada && (
+                          <div className="text-[9px] text-rose-600 font-sans font-normal truncate max-w-[120px]" title={sale.anulada_motivo}>
+                            {sale.anulada_motivo}
+                          </div>
+                        )}
+                      </td>
 
-                    <td className="py-2.5 px-4 text-center">
-                      <button
-                        onClick={() => setSelectedSaleForReceipt(sale)}
-                        className="p-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-900 transition-colors cursor-pointer"
-                        title="Ver Comprobante / Imprimir"
-                      >
-                        <Eye className="w-3.5 h-3.5" />
-                      </button>
-                    </td>
-                  </tr>
-                ))
+                      <td className="py-2.5 px-3 font-mono text-slate-500 text-[11px]">
+                        {editingSaleDateId === sale.id ? (
+                          <div className="flex items-center gap-1">
+                            <input
+                              type="datetime-local"
+                              value={tempDateValue}
+                              onChange={(e) => setTempDateValue(e.target.value)}
+                              className="px-1.5 py-0.5 text-[10px] border border-indigo-300 rounded bg-white text-slate-800 shadow-2xs font-mono"
+                            />
+                            <button
+                              onClick={() => {
+                                if (tempDateValue) {
+                                  const newIso = new Date(tempDateValue).toISOString();
+                                  updateSaleDate(sale.id, newIso);
+                                }
+                                setEditingSaleDateId(null);
+                              }}
+                              className="p-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded cursor-pointer"
+                              title="Confirmar cambio de fecha"
+                            >
+                              <Check className="w-3 h-3" />
+                            </button>
+                            <button
+                              onClick={() => setEditingSaleDateId(null)}
+                              className="p-1 text-slate-400 hover:text-slate-600 cursor-pointer"
+                              title="Cancelar"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-1.5 group">
+                            <span>
+                              {new Date(sale.fecha).toLocaleString('es-VE', {
+                                month: 'short',
+                                day: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              })}
+                            </span>
+                            {!isAnulada && (
+                              <button
+                                onClick={() => {
+                                  setEditingSaleDateId(sale.id);
+                                  setTempDateValue(sale.fecha ? sale.fecha.slice(0, 16) : '');
+                                }}
+                                className="opacity-0 group-hover:opacity-100 p-0.5 text-indigo-500 hover:text-indigo-700 hover:bg-indigo-50 rounded transition cursor-pointer"
+                                title="Cambiar fecha de venta rápida"
+                              >
+                                <Edit2 className="w-2.5 h-2.5" />
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </td>
+
+                      <td className="py-2.5 px-3">
+                        <div className={`font-medium ${isAnulada ? 'line-through text-slate-500' : 'text-slate-900'}`}>
+                          {sale.cliente_nombre} {sale.cliente_apellido || ''}
+                        </div>
+                        {sale.cliente_rif && (
+                          <div className="text-[10px] text-slate-400">{sale.cliente_rif}</div>
+                        )}
+                        {sale.cliente_telefono && (
+                          <div className="text-[10px] text-slate-400">{sale.cliente_telefono}</div>
+                        )}
+                      </td>
+
+                      <td className="py-2.5 px-3">
+                        <div className="space-y-0.5">
+                          {sale.items.map((it, i) => (
+                            <div key={i} className={`text-[11px] ${isAnulada ? 'line-through text-slate-400' : 'text-slate-700'}`}>
+                              {it.cantidad}x {it.nombre_producto} <span className="text-slate-400">(T:{it.talla})</span>
+                            </div>
+                          ))}
+                        </div>
+                      </td>
+
+                      <td className="py-2.5 px-3 text-right font-mono font-bold">
+                        <span className={isAnulada ? 'line-through text-slate-400' : 'text-slate-900'}>
+                          ${sale.total_usd.toFixed(2)}
+                        </span>
+                      </td>
+
+                      <td className="py-2.5 px-3 text-right font-mono text-[11px]">
+                        <span className={isAnulada ? 'line-through text-slate-400' : 'text-slate-500'}>
+                          {sale.total_bs.toFixed(0)} Bs
+                        </span>
+                      </td>
+
+                      <td className="py-2.5 px-3 text-right font-mono font-semibold">
+                        {isAnulada ? (
+                          <span className="text-slate-400 text-[11px]">—</span>
+                        ) : (
+                          <span className="text-emerald-600">+${sale.ganancia_neta_usd.toFixed(2)}</span>
+                        )}
+                      </td>
+
+                      <td className="py-2.5 px-3 text-[11px]">
+                        {sale.pagos.map((p, idx) => (
+                          <span
+                            key={idx}
+                            className={`inline-block px-1.5 py-0.5 rounded border mr-1 mb-0.5 font-mono text-[10px] ${
+                              isAnulada
+                                ? 'bg-slate-100 border-slate-200 text-slate-400'
+                                : 'bg-slate-100 border-slate-200 text-slate-700'
+                            }`}
+                          >
+                            {p.cuenta}
+                          </span>
+                        ))}
+                      </td>
+
+                      {/* Status badge */}
+                      <td className="py-2.5 px-2 text-center">
+                        {isAnulada ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-700 border border-rose-200">
+                            <Ban className="w-2.5 h-2.5" />
+                            ANULADA
+                          </span>
+                        ) : isModificada ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                            <AlertCircle className="w-2.5 h-2.5" />
+                            MODIFICADA
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                            <CheckCircle2 className="w-2.5 h-2.5" />
+                            COMPLETADA
+                          </span>
+                        )}
+                      </td>
+
+                      {/* Action buttons */}
+                      <td className="py-2.5 px-3 text-center">
+                        <div className="flex items-center justify-center gap-1.5">
+                          <button
+                            onClick={() => setSelectedSaleForReceipt(sale)}
+                            className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-900 transition-colors cursor-pointer"
+                            title="Ver Comprobante / Imprimir"
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                          </button>
+
+                          <button
+                            onClick={() => setSelectedSaleForEdit(sale)}
+                            className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                              isAnulada
+                                ? 'bg-slate-100 text-slate-400 hover:bg-slate-200 hover:text-slate-600'
+                                : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-700'
+                            }`}
+                            title="Corregir / Modificar / Anular Factura"
+                          >
+                            <Wrench className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
@@ -747,6 +908,12 @@ export const SalesReports: React.FC = () => {
       <ReceiptModal
         sale={selectedSaleForReceipt}
         onClose={() => setSelectedSaleForReceipt(null)}
+      />
+
+      {/* Edit / Correct Invoice Modal */}
+      <EditInvoiceModal
+        sale={selectedSaleForEdit}
+        onClose={() => setSelectedSaleForEdit(null)}
       />
 
       {/* Google Sheets Sync Modal */}

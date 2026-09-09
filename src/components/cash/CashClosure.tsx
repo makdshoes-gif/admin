@@ -33,11 +33,37 @@ export const CashClosure: React.FC = () => {
   const [notes, setNotes] = useState('');
   const [selectedClosureForPrint, setSelectedClosureForPrint] = useState<DailyCashClosure | null>(null);
 
-  // Today's Sales Calculation
-  const todayStr = new Date().toISOString().split('T')[0];
+  // Selected Date Calculation (default today in local Venezuela time YYYY-MM-DD)
+  const [selectedDate, setSelectedDate] = useState<string>(() => {
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  });
+
+  const isMatchingDate = (saleFecha: string, targetDate: string) => {
+    if (!saleFecha) return false;
+    if (saleFecha.startsWith(targetDate)) return true;
+    try {
+      const d = new Date(saleFecha);
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${y}-${m}-${day}` === targetDate;
+    } catch {
+      return false;
+    }
+  };
+
+  // Sales Calculation for Selected Date (excluding annulled sales!)
   const todaySales = useMemo(() => {
-    return sales.filter((s) => s.fecha.startsWith(todayStr));
-  }, [sales, todayStr]);
+    return sales.filter((s) => s.estado !== 'anulada' && isMatchingDate(s.fecha, selectedDate));
+  }, [sales, selectedDate]);
+
+  const existingClosureForDate = useMemo(() => {
+    return cashClosures.find((c) => c.fecha === selectedDate);
+  }, [cashClosures, selectedDate]);
 
   const todayTotalUsd = useMemo(() => {
     return todaySales.reduce((acc, s) => acc + s.total_usd, 0);
@@ -77,12 +103,12 @@ export const CashClosure: React.FC = () => {
 
   const handleExecuteClosure = () => {
     if (todaySales.length === 0) {
-      if (!confirm('No se han registrado ventas hoy. ¿Deseas guardar el arqueo con saldo cero?')) {
+      if (!confirm(`No se han registrado ventas activas para la fecha ${selectedDate}. ¿Deseas guardar el arqueo con saldo cero?`)) {
         return;
       }
     }
 
-    const closure = recordCashClosure(notes);
+    const closure = recordCashClosure(notes, selectedDate);
     setNotes('');
     setSelectedClosureForPrint(closure);
   };
@@ -113,12 +139,38 @@ export const CashClosure: React.FC = () => {
           </p>
         </div>
 
-        <div className="flex items-center gap-2 text-xs font-mono bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-200">
-          <Calendar className="w-4 h-4 text-indigo-600" />
-          <span className="text-slate-500">Fecha Actual:</span>
-          <span className="font-bold text-slate-900">{new Date().toLocaleDateString('es-VE', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</span>
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-1.5 bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-200 text-xs">
+            <Calendar className="w-4 h-4 text-indigo-600" />
+            <span className="text-slate-500 font-medium">Fecha de Corte:</span>
+            <input
+              type="date"
+              value={selectedDate}
+              onChange={(e) => setSelectedDate(e.target.value)}
+              className="font-bold text-slate-900 bg-white border border-slate-300 rounded px-2 py-0.5 font-mono text-xs focus:ring-1 focus:ring-indigo-500"
+            />
+          </div>
         </div>
       </div>
+
+      {/* Existing Closure Notice if already closed for this date */}
+      {existingClosureForDate && (
+        <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center justify-between text-xs text-emerald-800">
+          <div className="flex items-center gap-2">
+            <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span>
+              <strong>Arqueo registrado previamente:</strong> Ya existe un cierre de caja para el {selectedDate} por{' '}
+              <strong>${existingClosureForDate.total_ventas_usd.toFixed(2)}</strong> ({existingClosureForDate.cantidad_transacciones} ventas) cerrado por {existingClosureForDate.usuario}.
+            </span>
+          </div>
+          <button
+            onClick={() => setSelectedClosureForPrint(existingClosureForDate)}
+            className="px-2.5 py-1 bg-white border border-emerald-300 text-emerald-700 font-bold rounded-lg hover:bg-emerald-100 transition cursor-pointer"
+          >
+            Ver Comprobante
+          </button>
+        </div>
+      )}
 
       {/* Account Balances Grid */}
       <div>
@@ -161,10 +213,12 @@ export const CashClosure: React.FC = () => {
           <div className="flex items-center justify-between pb-3 border-b border-slate-100">
             <div className="flex items-center gap-2">
               <ShieldCheck className="w-4 h-4 text-emerald-600" />
-              <h2 className="text-sm font-bold text-slate-900">Corte del Día en Curso</h2>
+              <h2 className="text-sm font-bold text-slate-900">
+                {selectedDate === new Date().toISOString().split('T')[0] ? 'Corte del Día en Curso' : `Corte de Fecha: ${selectedDate}`}
+              </h2>
             </div>
             <span className="text-xs font-mono text-slate-500">
-              {todaySales.length} {todaySales.length === 1 ? 'venta realizada' : 'ventas realizadas'}
+              {todaySales.length} {todaySales.length === 1 ? 'venta activa' : 'ventas activas'}
             </span>
           </div>
 

@@ -52,10 +52,8 @@ export const Sidebar: React.FC<{
     { id: 'pos' as const, label: 'Punto de Venta', icon: ShoppingCart, count: null },
     { id: 'inventory' as const, label: 'Gestión Inventario', icon: Boxes, count: criticalStockProducts.length },
     { id: 'layaways' as const, label: 'Sistema de Apartados', icon: BookmarkCheck, count: activeLayawaysCount > 0 ? activeLayawaysCount : null },
+    { id: 'reports' as const, label: 'Facturas & Reportes', icon: Receipt, count: null },
     { id: 'catalogo' as const, label: 'Catálogo Redes (Adidas)', icon: Sparkles, count: 'DROP' },
-    ...(userRole === 'admin'
-      ? [{ id: 'reports' as const, label: 'Reportes de Ventas', icon: TrendingUp, count: null }]
-      : []),
     { id: 'cash' as const, label: 'Caja & Arqueo', icon: Wallet, count: null },
     { id: 'expenses' as const, label: 'Gastos & Fin de Mes', icon: TrendingDown, count: null },
     { id: 'conciliacion' as const, label: 'Conciliación Bancaria', icon: Landmark, count: null },

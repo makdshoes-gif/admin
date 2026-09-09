@@ -47,7 +47,7 @@ function AppContent() {
           {activeTab === 'inventory' && <InventoryManager />}
           {activeTab === 'layaways' && <LayawaysManager />}
           {activeTab === 'catalogo' && <AdidasCatalogView />}
-          {activeTab === 'reports' && userRole === 'admin' && <SalesReports />}
+          {activeTab === 'reports' && <SalesReports />}
           {activeTab === 'cash' && <CashClosure />}
           {activeTab === 'expenses' && <ExpensesManager />}
           {activeTab === 'conciliacion' && <BankReconciliationView />}

@@ -90,6 +90,8 @@ interface StoreContextType {
     saleData: Omit<Sale, 'id' | 'created_at' | 'costo_total_usd' | 'ganancia_neta_usd'>
   ) => Sale;
   updateSaleDate: (saleId: string, newDateIso: string) => boolean;
+  updateSale: (saleId: string, updatedFields: Partial<Sale>, reason?: string) => boolean;
+  annulSale: (saleId: string, reason?: string) => boolean;
   layaways: Layaway[];
   createLayaway: (
     layawayData: Omit<Layaway, 'id' | 'codigo_apartado' | 'created_at' | 'updated_at' | 'saldo_pendiente_usd' | 'saldo_pendiente_bs'>
@@ -102,7 +104,8 @@ interface StoreContextType {
   deliverLayaway: (layawayId: string) => boolean;
   updateLayaway: (layawayId: string, updates: Partial<Layaway>) => boolean;
   recordCashClosure: (
-    notas?: string
+    notas?: string,
+    customDateStr?: string
   ) => DailyCashClosure;
   expenses: Expense[];
   bankMovements: BankMovement[];
@@ -659,9 +662,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   }, [addNotification]);
 
-  // Real-time Firestore sync via onSnapshot when currentUser is logged in
+  // Real-time Firestore sync via onSnapshot across all connected PCs and devices
   useEffect(() => {
-    if (!currentUser) return;
     setSyncStatus('syncing');
 
     const unsubProducts = onSnapshot(
@@ -679,7 +681,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           new Date().toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
         );
       },
-      (err) => handleFirestoreError(err, OperationType.GET, 'products')
+      (err) => console.warn('Firestore products onSnapshot:', err)
     );
 
     const unsubSales = onSnapshot(
@@ -694,7 +696,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           } catch {}
         }
       },
-      (err) => handleFirestoreError(err, OperationType.GET, 'sales')
+      (err) => console.warn('Firestore sales onSnapshot:', err)
     );
 
     const unsubLayaways = onSnapshot(
@@ -709,7 +711,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           } catch {}
         }
       },
-      (err) => handleFirestoreError(err, OperationType.GET, 'layaways')
+      (err) => console.warn('Firestore layaways onSnapshot:', err)
     );
 
     const unsubMovements = onSnapshot(
@@ -724,7 +726,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           } catch {}
         }
       },
-      (err) => handleFirestoreError(err, OperationType.GET, 'movements')
+      (err) => console.warn('Firestore movements onSnapshot:', err)
     );
 
     const unsubExpenses = onSnapshot(
@@ -738,7 +740,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           } catch {}
         }
       },
-      (err) => handleFirestoreError(err, OperationType.GET, 'expenses')
+      (err) => console.warn('Firestore expenses onSnapshot:', err)
     );
 
     const unsubClosures = onSnapshot(
@@ -746,13 +748,14 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       (snap) => {
         if (!snap.empty) {
           const cloudClosures = snap.docs.map((d) => d.data() as DailyCashClosure);
+          cloudClosures.sort((a, b) => new Date(b.cerrado_at || b.fecha).getTime() - new Date(a.cerrado_at || a.fecha).getTime());
           setCashClosures(cloudClosures);
           try {
             localStorage.setItem(`${STORAGE_KEY}_closures`, JSON.stringify(cloudClosures));
           } catch {}
         }
       },
-      (err) => handleFirestoreError(err, OperationType.GET, 'cash_closures')
+      (err) => console.warn('Firestore cash_closures onSnapshot:', err)
     );
 
     const unsubConfig = onSnapshot(
@@ -768,7 +771,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           }
         }
       },
-      (err) => handleFirestoreError(err, OperationType.GET, 'store_config/main')
+      (err) => console.warn('Firestore store_config onSnapshot:', err)
     );
 
     return () => {
@@ -780,7 +783,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       unsubClosures();
       unsubConfig();
     };
-  }, [currentUser]);
+  }, []);
 
   const pushAllToCloud = useCallback(async () => {
     if (!auth.currentUser) {
@@ -1348,26 +1351,25 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       body: JSON.stringify(completedSale),
     }).catch((e) => console.log('Backend sale sync info:', e));
 
-    if (currentUser) {
-      try {
-        const batch = writeBatch(db);
-        batch.set(doc(db, 'sales', completedSale.id), completedSale);
-        saleMovements.forEach((m) => {
-          batch.set(doc(db, 'movements', m.id), m);
-        });
-        saleData.items.forEach((item) => {
-          const prod = products.find((p) => p.id === item.producto_id);
-          if (prod) {
-            const newStock = Math.max(0, prod.stock - item.cantidad);
-            batch.update(doc(db, 'products', prod.id), { stock: newStock });
-          }
-        });
-        batch.commit().catch((err) =>
-          handleFirestoreError(err, OperationType.WRITE, `sales/${completedSale.id}`)
-        );
-      } catch (err) {
-        console.warn('Firestore sale write warning:', err);
-      }
+    // Real-time Firestore sync
+    try {
+      const batch = writeBatch(db);
+      batch.set(doc(db, 'sales', completedSale.id), completedSale);
+      saleMovements.forEach((m) => {
+        batch.set(doc(db, 'movements', m.id), m);
+      });
+      saleData.items.forEach((item) => {
+        const prod = products.find((p) => p.id === item.producto_id);
+        if (prod) {
+          const newStock = Math.max(0, prod.stock - item.cantidad);
+          batch.update(doc(db, 'products', prod.id), { stock: newStock });
+        }
+      });
+      batch.commit().catch((err) =>
+        console.warn('Firestore sale batch commit warning:', err)
+      );
+    } catch (err) {
+      console.warn('Firestore sale write warning:', err);
     }
 
     addNotification(
@@ -1379,20 +1381,93 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return completedSale;
   };
 
-  // Update Sale Date (e.g., historical sales backdating or retroactive invoice date change)
+  // Update Sale Date
   const updateSaleDate = (saleId: string, newDateIso: string): boolean => {
+    return updateSale(saleId, { fecha: newDateIso }, 'Cambio de fecha de factura');
+  };
+
+  // Update Sale (Full invoice correction: client, date, shoes/stock, payments)
+  const updateSale = (saleId: string, updatedFields: Partial<Sale>, reason?: string): boolean => {
     const saleIndex = sales.findIndex((s) => s.id === saleId);
     if (saleIndex === -1) return false;
 
     const currentSale = sales[saleIndex];
-    const updatedSale: Sale = {
+
+    // 1. Stock adjustments if items changed
+    if (Array.isArray(updatedFields.items)) {
+      const oldItemMap = new Map<string, number>();
+      currentSale.items.forEach((it) => {
+        oldItemMap.set(it.producto_id, (oldItemMap.get(it.producto_id) || 0) + it.cantidad);
+      });
+
+      const newItemMap = new Map<string, number>();
+      updatedFields.items.forEach((it) => {
+        newItemMap.set(it.producto_id, (newItemMap.get(it.producto_id) || 0) + it.cantidad);
+      });
+
+      setProducts((prevProducts) => {
+        const updated = prevProducts.map((p) => {
+          const oldQty = oldItemMap.get(p.id) || 0;
+          const newQty = newItemMap.get(p.id) || 0;
+          const diff = oldQty - newQty; // If positive, fewer shoes sold -> return to stock
+          if (diff !== 0) {
+            const nextStock = Math.max(0, p.stock + diff);
+            try {
+              setDoc(doc(db, 'products', p.id), { stock: nextStock }, { merge: true }).catch(() => {});
+            } catch {}
+            return { ...p, stock: nextStock };
+          }
+          return p;
+        });
+        try {
+          localStorage.setItem(`${STORAGE_KEY}_products`, JSON.stringify(updated));
+        } catch {}
+        return updated;
+      });
+    }
+
+    // 2. Account balance corrections if payments changed
+    if (Array.isArray(updatedFields.pagos)) {
+      setAccounts((prevAccounts) => {
+        const updatedAccs = [...prevAccounts];
+        // Revert old payments
+        currentSale.pagos.forEach((p) => {
+          const idx = updatedAccs.findIndex((a) => a.nombre === p.cuenta);
+          if (idx >= 0) {
+            updatedAccs[idx] = {
+              ...updatedAccs[idx],
+              saldo: Math.max(0, updatedAccs[idx].saldo - p.monto),
+            };
+          }
+        });
+        // Apply new payments
+        updatedFields.pagos!.forEach((p) => {
+          const idx = updatedAccs.findIndex((a) => a.nombre === p.cuenta);
+          if (idx >= 0) {
+            updatedAccs[idx] = {
+              ...updatedAccs[idx],
+              saldo: updatedAccs[idx].saldo + p.monto,
+            };
+          }
+        });
+        try {
+          localStorage.setItem(`${STORAGE_KEY}_accounts`, JSON.stringify(updatedAccs));
+        } catch {}
+        return updatedAccs;
+      });
+    }
+
+    const mergedSale: Sale = {
       ...currentSale,
-      fecha: newDateIso,
+      ...updatedFields,
+      estado: currentSale.estado === 'anulada' ? 'anulada' : 'modificada',
+      modificada_at: new Date().toISOString(),
+      motivo_modificacion: reason || currentSale.motivo_modificacion || 'Ajuste de factura',
     };
 
     setSales((prev) => {
       const updated = [...prev];
-      updated[saleIndex] = updatedSale;
+      updated[saleIndex] = mergedSale;
       try {
         localStorage.setItem(`${STORAGE_KEY}_sales`, JSON.stringify(updated));
       } catch {}
@@ -1403,19 +1478,141 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     fetch(`/api/sales/${saleId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fecha: newDateIso }),
+      body: JSON.stringify(mergedSale),
     }).catch(() => {});
 
     // Sync to Firestore
-    if (currentUser) {
-      setDoc(doc(db, 'sales', saleId), { fecha: newDateIso }, { merge: true }).catch((err) =>
-        handleFirestoreError(err, OperationType.UPDATE, `sales/${saleId}`)
+    try {
+      setDoc(doc(db, 'sales', saleId), mergedSale, { merge: true }).catch((err) =>
+        console.warn('Firestore updateSale warning:', err)
       );
+    } catch (e) {
+      console.warn('Firestore updateSale error:', e);
     }
 
     addNotification(
-      'Fecha Actualizada',
-      `La fecha de la factura #${updatedSale.numero_factura} fue modificada a ${new Date(newDateIso).toLocaleDateString('es-VE')}.`,
+      'Factura Actualizada',
+      `La factura #${mergedSale.numero_factura} fue corregida y sincronizada.`,
+      'success'
+    );
+    return true;
+  };
+
+  // Annul Sale (Returns stock to shoes, deducts payment balances, excludes from sales report)
+  const annulSale = (saleId: string, reason?: string): boolean => {
+    const saleIndex = sales.findIndex((s) => s.id === saleId);
+    if (saleIndex === -1) return false;
+
+    const currentSale = sales[saleIndex];
+    if (currentSale.estado === 'anulada') {
+      addNotification('Aviso', 'Esta factura ya se encuentra anulada.', 'warning');
+      return false;
+    }
+
+    const nowIso = new Date().toISOString();
+
+    // 1. Restore all shoe items to product stock
+    const restorationMovements: StockMovement[] = [];
+    setProducts((prevProducts) => {
+      const updated = [...prevProducts];
+      currentSale.items.forEach((item) => {
+        const prodIndex = updated.findIndex((p) => p.id === item.producto_id);
+        if (prodIndex >= 0) {
+          const currentProd = updated[prodIndex];
+          const restoredStock = currentProd.stock + item.cantidad;
+          updated[prodIndex] = { ...currentProd, stock: restoredStock };
+
+          restorationMovements.push({
+            id: `mov-annul-${Date.now()}-${item.producto_id}`,
+            producto_id: currentProd.id,
+            producto_nombre: currentProd.nombre,
+            sku: currentProd.sku,
+            talla: currentProd.talla,
+            marca: currentProd.marca,
+            tipo: 'entrada',
+            cantidad: item.cantidad,
+            stock_anterior: currentProd.stock,
+            stock_nuevo: restoredStock,
+            motivo: `Anulación Factura #${currentSale.numero_factura}: ${reason || 'Error en factura'}`,
+            fecha: nowIso,
+            usuario: userRole === 'admin' ? 'Administrador' : 'Cajera',
+          });
+
+          // Sync product stock to Firestore
+          try {
+            setDoc(doc(db, 'products', currentProd.id), { stock: restoredStock }, { merge: true }).catch(() => {});
+          } catch {}
+        }
+      });
+      try {
+        localStorage.setItem(`${STORAGE_KEY}_products`, JSON.stringify(updated));
+      } catch {}
+      return updated;
+    });
+
+    if (restorationMovements.length > 0) {
+      setMovements((prev) => [...restorationMovements, ...prev]);
+      restorationMovements.forEach((m) => {
+        try {
+          setDoc(doc(db, 'movements', m.id), m).catch(() => {});
+        } catch {}
+      });
+    }
+
+    // 2. Revert payments from accounts
+    setAccounts((prevAccounts) => {
+      const updatedAccs = [...prevAccounts];
+      currentSale.pagos.forEach((p) => {
+        const accIndex = updatedAccs.findIndex((a) => a.nombre === p.cuenta);
+        if (accIndex >= 0) {
+          updatedAccs[accIndex] = {
+            ...updatedAccs[accIndex],
+            saldo: Math.max(0, updatedAccs[accIndex].saldo - p.monto),
+          };
+        }
+      });
+      try {
+        localStorage.setItem(`${STORAGE_KEY}_accounts`, JSON.stringify(updatedAccs));
+      } catch {}
+      return updatedAccs;
+    });
+
+    // 3. Mark sale as anulada
+    const annulledSale: Sale = {
+      ...currentSale,
+      estado: 'anulada',
+      anulada_at: nowIso,
+      anulada_motivo: reason || 'Anulación por error en factura',
+    };
+
+    setSales((prev) => {
+      const updated = [...prev];
+      updated[saleIndex] = annulledSale;
+      try {
+        localStorage.setItem(`${STORAGE_KEY}_sales`, JSON.stringify(updated));
+      } catch {}
+      return updated;
+    });
+
+    // Sync to backend
+    fetch(`/api/sales/${saleId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(annulledSale),
+    }).catch(() => {});
+
+    // Sync to Firestore
+    try {
+      setDoc(doc(db, 'sales', saleId), annulledSale, { merge: true }).catch((err) =>
+        console.warn('Firestore annulSale warning:', err)
+      );
+    } catch (e) {
+      console.warn('Firestore annulSale error:', e);
+    }
+
+    addNotification(
+      'Factura Anulada',
+      `Factura #${currentSale.numero_factura} anulada. ${currentSale.items.reduce((s, i) => s + i.cantidad, 0)} pares fueron devueltos al inventario.`,
       'success'
     );
     return true;
@@ -1752,9 +1949,33 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   // Record Cash Register Closure (Arqueo de caja diario)
-  const recordCashClosure = (notas?: string): DailyCashClosure => {
-    const todayStr = new Date().toISOString().split('T')[0];
-    const todaySales = sales.filter((s) => s.fecha.startsWith(todayStr));
+  const recordCashClosure = (notas?: string, customDateStr?: string): DailyCashClosure => {
+    // Determine target closure date (Venezuela local date YYYY-MM-DD)
+    let targetDate = customDateStr;
+    if (!targetDate) {
+      const d = new Date();
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      targetDate = `${y}-${m}-${day}`;
+    }
+
+    const isMatchingDate = (saleFecha: string, target: string) => {
+      if (!saleFecha) return false;
+      if (saleFecha.startsWith(target)) return true;
+      try {
+        const d = new Date(saleFecha);
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${y}-${m}-${day}` === target;
+      } catch {
+        return false;
+      }
+    };
+
+    // Filter valid sales for the closure date (exclude annulled sales!)
+    const todaySales = sales.filter((s) => s.estado !== 'anulada' && isMatchingDate(s.fecha, targetDate!));
 
     const totalUsd = todaySales.reduce((sum, s) => sum + s.total_usd, 0);
     const totalBs = todaySales.reduce((sum, s) => sum + s.total_bs, 0);
@@ -1789,7 +2010,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     const closure: DailyCashClosure = {
       id: `close-${Date.now()}`,
-      fecha: todayStr,
+      fecha: targetDate,
       usuario: userRole === 'admin' ? 'Administrador' : 'Cajera',
       total_ventas_usd: totalUsd,
       total_ventas_bs: totalBs,
@@ -1808,15 +2029,18 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       body: JSON.stringify(closure),
     }).catch(() => {});
 
-    if (currentUser) {
+    // Sync to Firestore in real-time
+    try {
       setDoc(doc(db, 'cash_closures', closure.id), closure).catch((err) =>
-        handleFirestoreError(err, OperationType.WRITE, `cash_closures/${closure.id}`)
+        console.warn('Firestore cash_closures sync warning:', err)
       );
+    } catch (e) {
+      console.warn('Firestore cash closure write error:', e);
     }
 
     addNotification(
       'Cierre de Caja Guardado',
-      `Arqueo de ${todayStr} registrado con $${totalUsd.toFixed(2)} en ${todaySales.length} ventas.`,
+      `Arqueo de ${targetDate} registrado con $${totalUsd.toFixed(2)} en ${todaySales.length} ventas.`,
       'success'
     );
 
@@ -2290,6 +2514,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         deleteProduct,
         recordSale,
         updateSaleDate,
+        updateSale,
+        annulSale,
         layaways,
         createLayaway,
         addLayawayPayment,
