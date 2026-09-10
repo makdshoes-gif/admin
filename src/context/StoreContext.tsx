@@ -175,7 +175,22 @@ function safeLocalStorageSet(key: string, value: string) {
 export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [products, setProducts] = useState<ShoeProduct[]>(() => {
     const saved = localStorage.getItem(`${STORAGE_KEY}_products`);
-    return saved ? JSON.parse(saved) : INITIAL_PRODUCTS;
+    if (!saved) return INITIAL_PRODUCTS;
+    try {
+      const parsed = JSON.parse(saved);
+      if (!Array.isArray(parsed)) return INITIAL_PRODUCTS;
+      return parsed.map((p: any) => ({
+        ...p,
+        nombre: p.nombre || '',
+        sku: p.sku || `SKU-${p.id || ''}`,
+        color: p.color || 'Estándar',
+        marca: p.marca || 'Genérica',
+        talla: String(p.talla || '38'),
+        categoria: p.categoria || 'Calzado',
+      }));
+    } catch {
+      return INITIAL_PRODUCTS;
+    }
   });
 
   const [movements, setMovements] = useState<StockMovement[]>(() => {
@@ -508,7 +523,28 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       collection(db, 'products'),
       (snap) => {
         if (!snap.empty) {
-          const cloudProducts = snap.docs.map((d) => d.data() as ShoeProduct);
+          const cloudProducts = snap.docs.map((d) => {
+            const data = d.data() as any;
+            return {
+              ...data,
+              id: data.id || d.id,
+              nombre: data.nombre || '',
+              sku: data.sku || `SKU-${data.id || d.id}`,
+              categoria: data.categoria || 'Calzado',
+              marca: data.marca || 'Genérica',
+              tipo: data.tipo || 'Deportivo',
+              talla: String(data.talla || '38'),
+              color: data.color || 'Estándar',
+              moneda: data.moneda || 'USD',
+              precio: Number(data.precio) || 0,
+              costo: Number(data.costo) || 0,
+              stock: Number(data.stock) || 0,
+              stock_minimo: Number(data.stock_minimo) || 2,
+              activo: data.activo !== false,
+              imagen: data.imagen_url || data.imagen || '',
+              created_at: data.created_at || new Date().toISOString(),
+            } as ShoeProduct;
+          });
           setProducts(cloudProducts);
           try {
             localStorage.setItem(`${STORAGE_KEY}_products`, JSON.stringify(cloudProducts));

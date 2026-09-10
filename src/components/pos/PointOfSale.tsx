@@ -89,7 +89,7 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
 
   // Extract unique brands and types
   const brands = useMemo(() => {
-    const list = Array.from(new Set(products.map((p) => p.marca))).sort();
+    const list = Array.from(new Set(products.map((p) => p.marca).filter(Boolean))).sort();
     return ['Todas', ...list];
   }, [products]);
 
@@ -98,20 +98,30 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
 
   // Filtered Products
   const filteredProducts = useMemo(() => {
+    const query = (searchQuery || '').toLowerCase().trim();
     return products.filter((p) => {
-      if (!p.activo) return false;
+      if (!p || !p.activo) return false;
+
+      const nombre = (p.nombre || '').toLowerCase();
+      const sku = (p.sku || '').toLowerCase();
+      const color = (p.color || '').toLowerCase();
+      const marca = (p.marca || '').toLowerCase();
+      const talla = String(p.talla || '');
+
       const matchSearch =
-        p.nombre.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        p.sku.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        p.color.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        p.talla.includes(searchQuery);
+        !query ||
+        nombre.includes(query) ||
+        sku.includes(query) ||
+        color.includes(query) ||
+        marca.includes(query) ||
+        talla.toLowerCase().includes(query);
 
       const matchCategory =
         selectedCategory === 'Todas' || (p.categoria || 'Calzado') === selectedCategory;
 
-      const matchBrand = selectedBrand === 'Todas' || p.marca === selectedBrand;
-      const matchType = selectedType === 'Todos' || p.tipo === selectedType;
-      const matchSize = selectedSize === 'Todas' || p.talla === selectedSize;
+      const matchBrand = selectedBrand === 'Todas' || (p.marca || '') === selectedBrand;
+      const matchType = selectedType === 'Todos' || (p.tipo || '') === selectedType;
+      const matchSize = selectedSize === 'Todas' || talla === selectedSize;
 
       return matchCategory && matchSearch && matchBrand && matchType && matchSize;
     });
@@ -293,7 +303,7 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
           monto: isBs ? totalBs : totalUsd,
           tasa: isBs ? exchangeRate : 1,
           monto_equivalente_usd: totalUsd,
-          referencia: singlePaymentAccount.includes('Pago Móvil') && bdvVerifiedData ? bdvVerifiedData.referencia : undefined,
+          referencia: (singlePaymentAccount || '').includes('Pago Móvil') && bdvVerifiedData ? bdvVerifiedData.referencia : undefined,
         },
       ];
     }
@@ -1068,7 +1078,7 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
               )}
 
               {/* BDV Pago Móvil Live Verification Callout */}
-              {(singlePaymentAccount.includes('Pago Móvil') || isMixedPaymentOpen) && (
+              {((singlePaymentAccount || '').includes('Pago Móvil') || isMixedPaymentOpen) && (
                 <div className="p-3 bg-red-50/70 border border-red-200 rounded-xl space-y-2">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-1.5 text-red-700 font-bold text-xs">

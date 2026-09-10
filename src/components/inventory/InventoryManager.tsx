@@ -106,7 +106,7 @@ export const InventoryManager: React.FC = () => {
 
   // Unique brands & types
   const brands = useMemo(() => {
-    const list = Array.from(new Set(products.map((p) => p.marca))).sort();
+    const list = Array.from(new Set(products.map((p) => p.marca).filter(Boolean))).sort();
     return ['Todas', ...list];
   }, [products]);
 
@@ -115,21 +115,30 @@ export const InventoryManager: React.FC = () => {
 
   // Filtered Products
   const filteredProducts = useMemo(() => {
+    const query = (searchQuery || '').toLowerCase().trim();
     return products.filter((p) => {
-      if (!p.activo) return false;
+      if (!p || !p.activo) return false;
 
       const matchCategory =
         selectedCategory === 'Todas' || (p.categoria || 'Calzado') === selectedCategory;
 
-      const matchSearch =
-        p.nombre.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        p.sku.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        p.color.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        p.talla.includes(searchQuery);
+      const nombre = (p.nombre || '').toLowerCase();
+      const sku = (p.sku || '').toLowerCase();
+      const color = (p.color || '').toLowerCase();
+      const marca = (p.marca || '').toLowerCase();
+      const talla = String(p.talla || '');
 
-      const matchBrand = selectedBrand === 'Todas' || p.marca === selectedBrand;
-      const matchType = selectedType === 'Todos' || p.tipo === selectedType;
-      const matchSize = selectedSize === 'Todas' || p.talla === selectedSize;
+      const matchSearch =
+        !query ||
+        nombre.includes(query) ||
+        sku.includes(query) ||
+        color.includes(query) ||
+        marca.includes(query) ||
+        talla.toLowerCase().includes(query);
+
+      const matchBrand = selectedBrand === 'Todas' || (p.marca || '') === selectedBrand;
+      const matchType = selectedType === 'Todos' || (p.tipo || '') === selectedType;
+      const matchSize = selectedSize === 'Todas' || talla === selectedSize;
 
       let matchStock = true;
       if (selectedStockStatus === 'critico') {
