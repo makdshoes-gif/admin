@@ -481,8 +481,8 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
                   onChange={(e) => setSelectedBrand(e.target.value)}
                   className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 focus:outline-none focus:border-indigo-500 focus:bg-white"
                 >
-                  {brands.map((b) => (
-                    <option key={b} value={b}>{b}</option>
+                  {brands.map((b, idx) => (
+                    <option key={`pos-brand-${b}-${idx}`} value={b}>{b}</option>
                   ))}
                 </select>
               </div>
@@ -496,8 +496,8 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
                   onChange={(e) => setSelectedType(e.target.value)}
                   className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 focus:outline-none focus:border-indigo-500 focus:bg-white"
                 >
-                  {shoeTypes.map((t) => (
-                    <option key={t} value={t}>{t}</option>
+                  {shoeTypes.map((t, idx) => (
+                    <option key={`pos-type-${t}-${idx}`} value={t}>{t}</option>
                   ))}
                 </select>
               </div>
@@ -512,15 +512,15 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
                 <p className="text-xs text-slate-400 mt-1">Prueba cambiando la talla o limpiando el filtro de búsqueda.</p>
               </div>
             ) : (
-              filteredProducts.map((prod) => {
+              filteredProducts.map((prod, idx) => {
                 const inCart = cart.find((i) => i.product.id === prod.id);
                 const isOutOfStock = prod.stock <= 0;
                 const isLowStock = prod.stock > 0 && prod.stock <= prod.stock_minimo;
 
                 return (
                   <div
-                    key={prod.id}
-                    id={`pos-card-${prod.id}`}
+                    key={prod.id ? `pos-prod-${prod.id}-${idx}` : `pos-idx-${idx}`}
+                    id={`pos-card-${prod.id || idx}`}
                     className={`p-3.5 rounded-xl border bg-white transition-all shadow-xs flex flex-col justify-between ${
                       isOutOfStock
                         ? 'border-slate-200 opacity-60'
@@ -656,7 +656,7 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
                   El carrito está vacío. Haz clic en un zapato del catálogo para agregarlo.
                 </div>
               ) : (
-                cart.map((item) => {
+                cart.map((item, idx) => {
                   const unitPrice = item.customPrice !== undefined ? item.customPrice : item.product.precio;
                   const unitCost = item.customCost !== undefined ? item.customCost : item.product.costo;
                   const isPriceModified = item.customPrice !== undefined && Math.abs(item.customPrice - item.product.precio) > 0.001;
@@ -665,7 +665,7 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
                   const marginPercent = unitPrice > 0 ? ((unitPrice - unitCost) / unitPrice) * 100 : 0;
 
                   return (
-                    <div key={item.product.id} className="py-2.5 space-y-2">
+                    <div key={item.product.id ? `cart-item-${item.product.id}-${idx}` : `cart-item-${idx}`} className="py-2.5 space-y-2">
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex-1 min-w-0">
                           <div className="text-xs font-bold text-slate-900 truncate flex items-center gap-1.5">
@@ -988,9 +988,9 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
 
               {!isMixedPaymentOpen ? (
                 <div className="grid grid-cols-2 gap-1.5">
-                  {accounts.map((acc) => (
+                  {accounts.map((acc, idx) => (
                     <button
-                      key={acc.id}
+                      key={acc.id ? `acc-${acc.id}-${idx}` : `acc-${acc.nombre}-${idx}`}
                       onClick={() => setSinglePaymentAccount(acc.nombre)}
                       className={`p-2 rounded-lg text-left border transition text-xs flex items-center justify-between cursor-pointer ${
                         singlePaymentAccount === acc.nombre
@@ -1010,9 +1010,9 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
                   </div>
 
                   {/* List of current mixed payments */}
-                  {mixedPayments.map((pay) => (
+                  {mixedPayments.map((pay, idx) => (
                     <div
-                      key={pay.id}
+                      key={pay.id ? `mixed-pay-${pay.id}-${idx}` : `mixed-pay-${idx}`}
                       className="flex items-center justify-between p-2 bg-white rounded-lg border border-slate-200 text-xs"
                     >
                       <div>
@@ -1039,8 +1039,8 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
                       id="mixed-pay-account"
                       className="col-span-1 px-2 py-1 bg-white border border-slate-200 rounded text-xs text-slate-800"
                     >
-                      {accounts.map((a) => (
-                        <option key={a.id} value={a.nombre}>
+                      {accounts.map((a, idx) => (
+                        <option key={a.id ? `opt-acc-${a.id}-${idx}` : `opt-acc-${a.nombre}-${idx}`} value={a.nombre}>
                           {a.nombre}
                         </option>
                       ))}

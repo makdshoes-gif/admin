@@ -203,3 +203,51 @@ function validateGenero(val: string): 'Caballero' | 'Dama' | 'Unisex' | 'Niño' 
   const allowed = ['Caballero', 'Dama', 'Unisex', 'Niño', 'Niña'];
   return allowed.includes(val) ? (val as any) : 'Unisex';
 }
+
+/**
+ * Uses Gemini image editing to remove background and place product on pure white studio background
+ */
+export async function removeBackgroundWithGemini(imageBase64: string): Promise<string | null> {
+  const ai = getGenAI();
+  if (!ai) return null;
+
+  const { data, mimeType } = parseBase64Image(imageBase64);
+  if (!data || data.length < 50) return null;
+
+  try {
+    console.log('[Gemini Background Removal] Intentando remover fondo con gemini-3.1-flash-lite-image...');
+    const response = await ai.models.generateContent({
+      model: 'gemini-3.1-flash-lite-image',
+      contents: {
+        parts: [
+          {
+            inlineData: {
+              data,
+              mimeType: mimeType.includes('png') ? 'image/png' : 'image/jpeg',
+            },
+          },
+          {
+            text: 'Isolate the shoe/sneaker subject completely from its background. Place the exact same shoe on a clean, solid, pure studio white background (#FFFFFF) with a soft, subtle, natural contact shadow beneath the sole. Keep all colors, logos, laces, details and textures of the shoe completely authentic and unchanged.',
+          },
+        ],
+      },
+      config: {
+        imageConfig: {
+          aspectRatio: '1:1',
+        },
+      },
+    });
+
+    for (const part of response.candidates?.[0]?.content?.parts || []) {
+      if (part.inlineData && part.inlineData.data) {
+        const mime = part.inlineData.mimeType || 'image/png';
+        console.log('[Gemini Background Removal] ¡Imagen procesada con éxito por Gemini!');
+        return `data:${mime};base64,${part.inlineData.data}`;
+      }
+    }
+  } catch (err: any) {
+    console.warn('[Gemini Background Removal] Falló edición de imagen con Gemini:', err?.message || err);
+  }
+  return null;
+}
+

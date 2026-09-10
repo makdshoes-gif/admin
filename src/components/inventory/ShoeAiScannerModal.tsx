@@ -17,7 +17,10 @@ import {
   MessageCircle,
   Instagram,
   Eye,
-  Search
+  Search,
+  Download,
+  Wand2,
+  Image as ImageIcon
 } from 'lucide-react';
 import { analyzeShoeWithAi, ShoeAiResult } from '../../services/aiShoeService';
 import { useStore } from '../../context/StoreContext';
@@ -28,6 +31,11 @@ import {
   formatFileSize,
   CompressionResult,
 } from '../../utils/imageCompressor';
+import {
+  removeBackgroundToWhite,
+  createInstagramPostImage,
+  downloadImage,
+} from '../../utils/backgroundRemover';
 
 interface ShoeAiScannerModalProps {
   isOpen: boolean;
@@ -56,9 +64,73 @@ export const ShoeAiScannerModal: React.FC<ShoeAiScannerModalProps> = ({
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [copiedField, setCopiedField] = useState<string | null>(null);
 
+  // Background removal & White background state
+  const [originalImage, setOriginalImage] = useState<string | null>(null);
+  const [whiteBgImage, setWhiteBgImage] = useState<string | null>(null);
+  const [activeImageMode, setActiveImageMode] = useState<'white' | 'original'>('white');
+  const [isProcessingWhiteBg, setIsProcessingWhiteBg] = useState(false);
+  const [isDownloadingPost, setIsDownloadingPost] = useState(false);
+
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Automatic white studio background conversion
+  const processWhiteBackground = async (rawUrl: string) => {
+    setIsProcessingWhiteBg(true);
+    try {
+      const whiteResult = await removeBackgroundToWhite(rawUrl);
+      setWhiteBgImage(whiteResult);
+      setCapturedImage(whiteResult);
+      setActiveImageMode('white');
+    } catch (err) {
+      console.warn('Could not auto-apply white background:', err);
+    } finally {
+      setIsProcessingWhiteBg(false);
+    }
+  };
+
+  const toggleImageMode = (m: 'white' | 'original') => {
+    setActiveImageMode(m);
+    if (m === 'white' && whiteBgImage) {
+      setCapturedImage(whiteBgImage);
+    } else if (m === 'original' && originalImage) {
+      setCapturedImage(originalImage);
+    }
+  };
+
+  const handleDownloadWhiteBgPhoto = () => {
+    const target = whiteBgImage || capturedImage;
+    if (!target) return;
+    const nameSlug = (aiResult?.nombre || 'calzado-makdshop')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-');
+    downloadImage(target, `${nameSlug}-fondo-blanco.jpg`);
+  };
+
+  const handleDownloadInstagramPost = async () => {
+    const target = whiteBgImage || capturedImage;
+    if (!target) return;
+    setIsDownloadingPost(true);
+    try {
+      const postDataUrl = await createInstagramPostImage(target, {
+        nombre: aiResult?.nombre || 'Calzado Deportivo',
+        marca: aiResult?.marca,
+        precioUsd: aiResult?.precio_sugerido_usd || 0,
+        exchangeRate,
+        tallas: aiResult?.tallas_sugeridas,
+      });
+      const nameSlug = (aiResult?.nombre || 'post-instagram')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-');
+      downloadImage(postDataUrl, `instagram-${nameSlug}.png`);
+    } catch (err) {
+      console.error('Error generating Instagram post:', err);
+      handleDownloadWhiteBgPhoto();
+    } finally {
+      setIsDownloadingPost(false);
+    }
+  };
 
   // Stop camera cleanly
   const stopCamera = () => {
@@ -151,12 +223,16 @@ export const ShoeAiScannerModal: React.FC<ShoeAiScannerModalProps> = ({
           quality: 0.82,
           maxSizeBytes: 500 * 1024,
         });
+        setOriginalImage(compressed.dataUrl);
         setCapturedImage(compressed.dataUrl);
         setCompressionInfo(compressed);
+        processWhiteBackground(compressed.dataUrl);
         runAnalysis(compressed.dataUrl);
       } catch (err) {
         console.warn('Compression error on photo capture:', err);
+        setOriginalImage(rawDataUrl);
         setCapturedImage(rawDataUrl);
+        processWhiteBackground(rawDataUrl);
         runAnalysis(rawDataUrl);
       } finally {
         setIsCompressing(false);
@@ -181,8 +257,10 @@ export const ShoeAiScannerModal: React.FC<ShoeAiScannerModalProps> = ({
         quality: 0.82,
         maxSizeBytes: 500 * 1024,
       });
+      setOriginalImage(compressed.dataUrl);
       setCapturedImage(compressed.dataUrl);
       setCompressionInfo(compressed);
+      processWhiteBackground(compressed.dataUrl);
       runAnalysis(compressed.dataUrl);
     } catch (err) {
       console.error('Error comprimiendo imagen subida:', err);
@@ -191,7 +269,9 @@ export const ShoeAiScannerModal: React.FC<ShoeAiScannerModalProps> = ({
       reader.onload = (event) => {
         if (typeof event.target?.result === 'string') {
           const dataUrl = event.target.result;
+          setOriginalImage(dataUrl);
           setCapturedImage(dataUrl);
+          processWhiteBackground(dataUrl);
           runAnalysis(dataUrl);
         }
       };
@@ -220,6 +300,10 @@ export const ShoeAiScannerModal: React.FC<ShoeAiScannerModalProps> = ({
 
   const resetAll = () => {
     setCapturedImage(null);
+    setOriginalImage(null);
+    setWhiteBgImage(null);
+    setActiveImageMode('white');
+    setIsProcessingWhiteBg(false);
     setCompressionInfo(null);
     setIsCompressing(false);
     setAiResult(null);
@@ -414,12 +498,25 @@ export const ShoeAiScannerModal: React.FC<ShoeAiScannerModalProps> = ({
 
                 {/* 3. Captured Image with scanning animation */}
                 {capturedImage && (
-                  <div className="relative w-full h-full">
+                  <div className="relative w-full h-full bg-slate-900 flex items-center justify-center">
                     <img
                       src={capturedImage}
                       alt="Calzado a analizar"
-                      className="w-full h-full object-cover"
+                      className="w-full h-full object-contain bg-white"
                     />
+
+                    {/* Studio White Background Badge / Spinner */}
+                    {isProcessingWhiteBg ? (
+                      <div className="absolute top-2.5 left-2.5 z-10 px-2.5 py-1 bg-amber-950/85 border border-amber-500/50 rounded-lg text-[10px] font-bold text-amber-300 backdrop-blur-xs flex items-center gap-1.5 shadow-lg">
+                        <Sparkles className="w-3 h-3 animate-spin text-amber-400" />
+                        <span>Quitando fondo a blanco...</span>
+                      </div>
+                    ) : whiteBgImage ? (
+                      <div className="absolute top-2.5 left-2.5 z-10 px-2.5 py-1 bg-emerald-950/85 border border-emerald-500/50 rounded-lg text-[10px] font-bold text-emerald-300 backdrop-blur-xs flex items-center gap-1.5 shadow-lg">
+                        <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                        <span>Fondo Blanco Estudio</span>
+                      </div>
+                    ) : null}
 
                     {/* Compression indicator badge */}
                     {compressionInfo && (
@@ -428,6 +525,46 @@ export const ShoeAiScannerModal: React.FC<ShoeAiScannerModalProps> = ({
                         {compressionInfo.reductionPercentage > 0 && (
                           <span className="text-emerald-400">(-{compressionInfo.reductionPercentage}%)</span>
                         )}
+                      </div>
+                    )}
+
+                    {/* Image View Selector (White BG vs Original) & Re-process button */}
+                    {originalImage && whiteBgImage && (
+                      <div className="absolute bottom-2.5 inset-x-2.5 z-10 flex items-center justify-between">
+                        <div className="flex items-center bg-slate-950/90 p-0.5 rounded-lg border border-slate-700/80 backdrop-blur-xs text-[10px]">
+                          <button
+                            type="button"
+                            onClick={() => toggleImageMode('white')}
+                            className={`px-2.5 py-1 rounded-md font-bold transition-all cursor-pointer ${
+                              activeImageMode === 'white'
+                                ? 'bg-indigo-600 text-white shadow-xs'
+                                : 'text-slate-400 hover:text-white'
+                            }`}
+                          >
+                            ✨ Fondo Blanco
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => toggleImageMode('original')}
+                            className={`px-2.5 py-1 rounded-md font-bold transition-all cursor-pointer ${
+                              activeImageMode === 'original'
+                                ? 'bg-indigo-600 text-white shadow-xs'
+                                : 'text-slate-400 hover:text-white'
+                            }`}
+                          >
+                            Foto Original
+                          </button>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => processWhiteBackground(originalImage)}
+                          title="Re-procesar fondo blanco"
+                          className="px-2 py-1 bg-slate-900/90 hover:bg-slate-800 text-indigo-300 border border-slate-700 rounded-lg text-[10px] font-semibold backdrop-blur-xs flex items-center gap-1 cursor-pointer"
+                        >
+                          <Wand2 className="w-3 h-3 text-indigo-400" />
+                          <span>Re-limpiar</span>
+                        </button>
                       </div>
                     )}
 
@@ -689,12 +826,15 @@ export const ShoeAiScannerModal: React.FC<ShoeAiScannerModalProps> = ({
                     </div>
 
                     {/* Instagram Post & Hashtags */}
-                    <div className="bg-pink-950/30 border border-pink-800/60 rounded-2xl p-3.5 space-y-2 flex flex-col justify-between">
+                    <div className="bg-pink-950/30 border border-pink-800/60 rounded-2xl p-3.5 space-y-2.5 flex flex-col justify-between">
                       <div>
                         <div className="flex items-center justify-between text-xs font-bold text-pink-400">
                           <span className="flex items-center gap-1.5">
                             <Instagram className="w-4 h-4" />
-                            Copy para Instagram + Tags
+                            Instagram Feed & Stories
+                          </span>
+                          <span className="text-[10px] text-pink-300/80 bg-pink-900/40 px-2 py-0.5 rounded-full font-medium">
+                            Foto + Copy Listo
                           </span>
                         </div>
                         <div className="text-[11px] text-slate-300 mt-2 font-mono whitespace-pre-line line-clamp-2 bg-black/40 p-2 rounded-lg border border-pink-900/50">
@@ -703,17 +843,43 @@ export const ShoeAiScannerModal: React.FC<ShoeAiScannerModalProps> = ({
                         </div>
                       </div>
 
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const fullCopy = `${aiResult.nombre} 🔥\n\n${aiResult.descripcion_comercial}\n\n👟 Tallas recomendadas: ${aiResult.tallas_sugeridas?.join(', ')}\n💵 Precio: $${aiResult.precio_sugerido_usd.toFixed(2)} (Bs. ${(aiResult.precio_sugerido_usd * exchangeRate).toFixed(2)})\n📍 Puerto Ordaz - Alta Vista II\n📲 Envíos a toda Venezuela\n\n${aiResult.hashtags?.join(' ') || ''}`;
-                          copyToClipboard(fullCopy, 'ig');
-                        }}
-                        className="w-full py-1.5 px-2.5 bg-linear-to-r from-pink-600 to-purple-600 hover:from-pink-500 hover:to-purple-500 text-white rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
-                      >
-                        {copiedField === 'ig' ? <CheckCircle2 className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                        <span>{copiedField === 'ig' ? '¡Copy Instagram Copiado!' : 'Copiar Post + Hashtags'}</span>
-                      </button>
+                      {/* Direct Image Downloads & Copy Buttons */}
+                      <div className="space-y-2">
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            type="button"
+                            onClick={handleDownloadWhiteBgPhoto}
+                            title="Descargar fotografía con fondo blanco de estudio"
+                            className="py-2 px-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl text-[11px] font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                          >
+                            <Download className="w-3.5 h-3.5 text-indigo-400" />
+                            <span>Descargar Foto</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={handleDownloadInstagramPost}
+                            disabled={isDownloadingPost}
+                            title="Descargar post cuadrado 1:1 para el Feed de Instagram con precio y tienda"
+                            className="py-2 px-2 bg-pink-600/80 hover:bg-pink-600 text-white rounded-xl text-[11px] font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-xs disabled:opacity-50"
+                          >
+                            <Instagram className="w-3.5 h-3.5" />
+                            <span>{isDownloadingPost ? 'Generando...' : 'Post 1:1 Feed'}</span>
+                          </button>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const fullCopy = `${aiResult.nombre} 🔥\n\n${aiResult.descripcion_comercial}\n\n👟 Tallas recomendadas: ${aiResult.tallas_sugeridas?.join(', ')}\n💵 Precio: $${aiResult.precio_sugerido_usd.toFixed(2)} (Bs. ${(aiResult.precio_sugerido_usd * exchangeRate).toFixed(2)})\n📍 Puerto Ordaz - Alta Vista II\n📲 Envíos a toda Venezuela\n\n${aiResult.hashtags?.join(' ') || ''}`;
+                            copyToClipboard(fullCopy, 'ig');
+                          }}
+                          className="w-full py-2 px-2.5 bg-linear-to-r from-pink-600 to-purple-600 hover:from-pink-500 hover:to-purple-500 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-md shadow-pink-600/20"
+                        >
+                          {copiedField === 'ig' ? <CheckCircle2 className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                          <span>{copiedField === 'ig' ? '¡Copy Instagram Copiado!' : 'Copiar Copy + Hashtags'}</span>
+                        </button>
+                      </div>
                     </div>
                   </div>
 
@@ -739,19 +905,19 @@ export const ShoeAiScannerModal: React.FC<ShoeAiScannerModalProps> = ({
                   )}
 
                   {/* Big Primary Action: Add to Inventory */}
-                  {onSelectForProduct && capturedImage && (
+                  {onSelectForProduct && (whiteBgImage || capturedImage) && (
                     <div className="pt-2">
                       <button
                         type="button"
                         onClick={() => {
-                          onSelectForProduct(aiResult, capturedImage);
+                          onSelectForProduct(aiResult, whiteBgImage || capturedImage!);
                           stopCamera();
                           onClose();
                         }}
                         className="w-full py-3 px-4 bg-linear-to-r from-indigo-600 via-purple-600 to-indigo-600 hover:from-indigo-500 hover:to-indigo-500 text-white rounded-xl font-bold text-sm shadow-xl shadow-indigo-500/20 flex items-center justify-center gap-2 cursor-pointer transition-transform active:scale-[0.99]"
                       >
                         <Plus className="w-4 h-4" />
-                        <span>Usar Datos y Foto para Registrar Nuevo Producto</span>
+                        <span>Usar Datos y Foto (Fondo Blanco) para Registrar Calzado</span>
                       </button>
                     </div>
                   )}

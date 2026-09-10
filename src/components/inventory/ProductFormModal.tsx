@@ -17,7 +17,8 @@ import {
   Layers,
   Plus,
   Minus,
-  Smartphone
+  Smartphone,
+  Wand2
 } from 'lucide-react';
 import { ShoeProduct, ShoeType, ProductCategory } from '../../types';
 import { analyzeShoeWithAi, ShoeAiResult } from '../../services/aiShoeService';
@@ -28,6 +29,7 @@ import {
   estimateDataUrlSize,
   CompressionResult,
 } from '../../utils/imageCompressor';
+import { removeBackgroundToWhite } from '../../utils/backgroundRemover';
 
 interface ProductFormModalProps {
   isOpen: boolean;
@@ -86,6 +88,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
   const [isAiAnalyzing, setIsAiAnalyzing] = useState(false);
   const [aiAnalysisSuccess, setAiAnalysisSuccess] = useState<ShoeAiResult | null>(null);
   const [aiError, setAiError] = useState<string | null>(null);
+  const [isRemovingBackground, setIsRemovingBackground] = useState(false);
 
   // Single Item Mode: single size & stock
   const [singleTalla, setSingleTalla] = useState(editingProduct?.talla || '38');
@@ -385,6 +388,21 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
     }
   };
 
+  // Remove background to white studio backdrop
+  const handleCleanBackground = async (imageInput?: string) => {
+    const target = imageInput || imagen;
+    if (!target) return;
+    setIsRemovingBackground(true);
+    try {
+      const whiteResult = await removeBackgroundToWhite(target);
+      setImagen(whiteResult);
+    } catch (err) {
+      console.warn('Could not clean background:', err);
+    } finally {
+      setIsRemovingBackground(false);
+    }
+  };
+
   const handleAnalyzeWithAi = async (imageToAnalyze?: string) => {
     const targetImage = imageToAnalyze || imagen;
     if (!targetImage) {
@@ -394,6 +412,9 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
 
     setIsAiAnalyzing(true);
     setAiError(null);
+
+    // Auto-apply studio white background immediately when analyzed with Gemini!
+    handleCleanBackground(targetImage);
 
     try {
       const res = await analyzeShoeWithAi(targetImage);
@@ -1376,6 +1397,18 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
                   </div>
 
                   <div className="flex items-center gap-2">
+                    {/* Background cleaning button */}
+                    <button
+                      type="button"
+                      onClick={() => handleCleanBackground()}
+                      disabled={isRemovingBackground}
+                      title="Quitar fondo y poner fondo blanco de estudio"
+                      className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-indigo-700 border border-slate-200 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer disabled:opacity-50"
+                    >
+                      <Wand2 className={`w-3.5 h-3.5 text-indigo-600 ${isRemovingBackground ? 'animate-spin' : ''}`} />
+                      <span>{isRemovingBackground ? 'Limpiando...' : 'Fondo Blanco'}</span>
+                    </button>
+
                     {/* Trigger Gemini AI Analysis */}
                     <button
                       type="button"

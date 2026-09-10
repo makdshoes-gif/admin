@@ -15,7 +15,7 @@ import {
   getSalesClosures,
   addSalesClosure,
 } from './db.js';
-import { analyzeShoeImage } from './shoeAi.js';
+import { analyzeShoeImage, removeBackgroundWithGemini } from './shoeAi.js';
 
 export const app = express();
 // límite ampliado: las fotos del escáner de calzado llegan como base64 (~1-4mb)
@@ -39,6 +39,23 @@ const handleShoeAnalysis = async (req: express.Request, res: express.Response) =
 };
 app.post('/api/ai/analyze-shoe', handleShoeAnalysis);
 app.post('/api/analyze-shoe', handleShoeAnalysis);
+
+// API: Quitar fondo y poner fondo blanco con IA
+app.post('/api/ai/remove-background', async (req: express.Request, res: express.Response) => {
+  try {
+    const { imageBase64 } = req.body || {};
+    if (!imageBase64 || typeof imageBase64 !== 'string') {
+      return res.status(400).json({ error: 'No se recibió imagen para procesar.' });
+    }
+    const resultImage = await removeBackgroundWithGemini(imageBase64);
+    if (resultImage) {
+      return res.json({ success: true, imageBase64: resultImage });
+    }
+    return res.json({ success: false, fallback: true, message: 'Gemini no devolvió imagen, recurriendo a procesador local' });
+  } catch (err: any) {
+    return res.json({ success: false, fallback: true, error: err?.message });
+  }
+});
 
 // API Store State
 app.get('/api/store/state', async (_req, res) => {
