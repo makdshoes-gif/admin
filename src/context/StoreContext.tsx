@@ -90,8 +90,7 @@ interface StoreContextType {
     saleData: Omit<Sale, 'id' | 'created_at' | 'costo_total_usd' | 'ganancia_neta_usd'>
   ) => Sale;
   updateSaleDate: (saleId: string, newDateIso: string) => boolean;
-  updateSale: (saleId: string, updatedFields: Partial<Sale>, reason?: string) => boolean;
-  annulSale: (saleId: string, reason?: string) => boolean;
+  voidSale: (saleId: string, motivo: string) => Promise<boolean>;
   layaways: Layaway[];
   createLayaway: (
     layawayData: Omit<Layaway, 'id' | 'codigo_apartado' | 'created_at' | 'updated_at' | 'saldo_pendiente_usd' | 'saldo_pendiente_bs'>
@@ -104,8 +103,7 @@ interface StoreContextType {
   deliverLayaway: (layawayId: string) => boolean;
   updateLayaway: (layawayId: string, updates: Partial<Layaway>) => boolean;
   recordCashClosure: (
-    notas?: string,
-    customDateStr?: string
+    notas?: string
   ) => DailyCashClosure;
   expenses: Expense[];
   bankMovements: BankMovement[];
@@ -134,16 +132,22 @@ interface StoreContextType {
   loginWithGoogleAction: () => Promise<void>;
   logoutUserAction: () => Promise<void>;
   pushAllToCloud: () => Promise<void>;
-  restoreFromBackup: () => { productsRestored: number; salesRestored: number };
+  restoreFromBackup: () => void;
   exportStoreBackup: () => void;
-  importStoreBackup: (file: File) => Promise<boolean>;
+  importStoreBackup: (file: File) => Promise<void>;
 }
 
 const StoreContext = createContext<StoreContextType | undefined>(undefined);
 
 const STORAGE_KEY = 'makd_shop_store_v3';
-const BACKUP_KEY_PRODUCTS = 'makd_shop_backup_products';
-const BACKUP_KEY_SALES = 'makd_shop_backup_sales';
+
+// Limpieza automática de versiones anteriores con datos de prueba
+try {
+  const legacyKeys = Object.keys(localStorage).filter(
+    (k) => k.startsWith('makd_shop_store_v1') || k.startsWith('makd_shop_store_v2')
+  );
+  legacyKeys.forEach((k) => localStorage.removeItem(k));
+} catch {}
 
 /**
  * Almacenamiento seguro en localStorage que previene errores de cuota (QuotaExceededError)
@@ -155,11 +159,11 @@ function safeLocalStorageSet(key: string, value: string) {
     console.warn(`[StoreContext] Error al guardar en localStorage (${key}):`, err);
     if (err?.name === 'QuotaExceededError' || err?.code === 22) {
       try {
-        // Limpiar cachés temporales secundarias para liberar espacio inmediato sin borrar inventario
+        // Limpiar cachés secundarias para liberar espacio inmediato
         const nonEssential = Object.keys(localStorage).filter(
-          (k) => k.includes('_closures') || k.includes('_bcv_info')
+          (k) => k.includes('_closures') || k.includes('_bank_movements') || k.includes('_bcv_info')
         );
-        nonEssential.slice(0, 2).forEach((k) => localStorage.removeItem(k));
+        nonEssential.slice(0, 3).forEach((k) => localStorage.removeItem(k));
         localStorage.setItem(key, value);
       } catch (innerErr) {
         console.warn('[StoreContext] No se pudo liberar cuota de localStorage:', innerErr);
@@ -168,93 +172,21 @@ function safeLocalStorageSet(key: string, value: string) {
   }
 }
 
-/**
- * Cargador inteligente con rescate automático de copias de seguridad y claves previas
- */
-function loadInitialProducts(): ShoeProduct[] {
-  try {
-    // 1. Clave principal
-    const saved = localStorage.getItem(`${STORAGE_KEY}_products`);
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-    }
-    // 2. Respaldo local automático
-    const backup = localStorage.getItem(BACKUP_KEY_PRODUCTS);
-    if (backup) {
-      const parsed = JSON.parse(backup);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        console.info('[StoreContext] ¡Recuperados productos desde respaldo local automático!');
-        safeLocalStorageSet(`${STORAGE_KEY}_products`, backup);
-        return parsed;
-      }
-    }
-    // 3. Revisar versiones previas (v2, v1, legadas) para no perder nada
-    const legacyKeys = ['makd_shop_store_v2_products', 'makd_shop_store_v1_products', 'makd_shop_products'];
-    for (const k of legacyKeys) {
-      const leg = localStorage.getItem(k);
-      if (leg) {
-        try {
-          const parsed = JSON.parse(leg);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            console.info(`[StoreContext] ¡Recuperados productos desde versión previa (${k})!`);
-            safeLocalStorageSet(`${STORAGE_KEY}_products`, leg);
-            safeLocalStorageSet(BACKUP_KEY_PRODUCTS, leg);
-            return parsed;
-          }
-        } catch {}
-      }
-    }
-  } catch (e) {
-    console.warn('[StoreContext] Error al leer productos de almacenamiento:', e);
-  }
-  return INITIAL_PRODUCTS;
-}
-
-function loadInitialSales(): Sale[] {
-  try {
-    const saved = localStorage.getItem(`${STORAGE_KEY}_sales`);
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-    }
-    const backup = localStorage.getItem(BACKUP_KEY_SALES);
-    if (backup) {
-      const parsed = JSON.parse(backup);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        safeLocalStorageSet(`${STORAGE_KEY}_sales`, backup);
-        return parsed;
-      }
-    }
-    const legacyKeys = ['makd_shop_store_v2_sales', 'makd_shop_store_v1_sales', 'makd_shop_sales'];
-    for (const k of legacyKeys) {
-      const leg = localStorage.getItem(k);
-      if (leg) {
-        try {
-          const parsed = JSON.parse(leg);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            safeLocalStorageSet(`${STORAGE_KEY}_sales`, leg);
-            safeLocalStorageSet(BACKUP_KEY_SALES, leg);
-            return parsed;
-          }
-        } catch {}
-      }
-    }
-  } catch (e) {
-    console.warn('[StoreContext] Error al leer ventas de almacenamiento:', e);
-  }
-  return INITIAL_SALES;
-}
-
 export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [products, setProducts] = useState<ShoeProduct[]>(() => loadInitialProducts());
+  const [products, setProducts] = useState<ShoeProduct[]>(() => {
+    const saved = localStorage.getItem(`${STORAGE_KEY}_products`);
+    return saved ? JSON.parse(saved) : INITIAL_PRODUCTS;
+  });
 
   const [movements, setMovements] = useState<StockMovement[]>(() => {
     const saved = localStorage.getItem(`${STORAGE_KEY}_movements`);
     return saved ? JSON.parse(saved) : INITIAL_MOVEMENTS;
   });
 
-  const [sales, setSales] = useState<Sale[]>(() => loadInitialSales());
+  const [sales, setSales] = useState<Sale[]>(() => {
+    const saved = localStorage.getItem(`${STORAGE_KEY}_sales`);
+    return saved ? JSON.parse(saved) : INITIAL_SALES;
+  });
 
   const [layaways, setLayaways] = useState<Layaway[]>(() => {
     const saved = localStorage.getItem(`${STORAGE_KEY}_layaways`);
@@ -390,7 +322,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     safeLocalStorageSet(`${STORAGE_KEY}_bcv_info`, JSON.stringify(bcvInfo));
   }, [bcvInfo]);
 
-  // Master synchronization function from server store (Non-destructive Smart Merge)
+  // Master synchronization function from server store
   const syncFromServer = useCallback(async (silent = false) => {
     if (!silent) setSyncStatus('syncing');
     try {
@@ -405,10 +337,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       }
       if (json && json.data) {
         const d = json.data;
-
-        // --- 1. PRODUCTOS: PROTECCIÓN TOTAL CONTRA BORRADO ACCIDENTAL ---
         if (Array.isArray(d.products)) {
-          const mappedServerProducts: ShoeProduct[] = d.products.map((p: any) => ({
+          const mappedProducts: ShoeProduct[] = d.products.map((p: any) => ({
             id: p.id,
             nombre: p.nombre,
             sku: p.sku || `SKU-${p.id}`,
@@ -426,39 +356,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             imagen: p.imagen_url || p.imagen || '',
             created_at: p.created_at || new Date().toISOString(),
           }));
-
-          setProducts((currentLocal) => {
-            // Si el servidor devuelve vacío pero el navegador tiene productos:
-            // ¡NUNCA BORRAR! En su lugar, sembrar el servidor con los productos locales.
-            if (mappedServerProducts.length === 0) {
-              if (currentLocal.length > 0) {
-                fetch('/api/store/sync', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ products: currentLocal }),
-                }).catch(() => {});
-              }
-              return currentLocal;
-            }
-
-            // Si el servidor tiene productos, combinar inteligentemente sin perder los locales
-            const productMap = new Map<string, ShoeProduct>();
-            mappedServerProducts.forEach((p) => productMap.set(p.id, p));
-            currentLocal.forEach((p) => {
-              if (!productMap.has(p.id)) {
-                productMap.set(p.id, p);
-              }
-            });
-            const merged = Array.from(productMap.values());
-            safeLocalStorageSet(`${STORAGE_KEY}_products`, JSON.stringify(merged));
-            safeLocalStorageSet(BACKUP_KEY_PRODUCTS, JSON.stringify(merged));
-            return merged;
-          });
+          setProducts(mappedProducts);
+          try { localStorage.setItem(`${STORAGE_KEY}_products`, JSON.stringify(mappedProducts)); } catch {}
         }
-
-        // --- 2. VENTAS: FUSIÓN SEGURA SIN PÉRDIDAS ---
         if (Array.isArray(d.sales)) {
-          const mappedServerSales: Sale[] = d.sales.map((s: any) => ({
+          const mappedSales = d.sales.map((s: any) => ({
             ...s,
             total_usd: Number(s.total_usd) || 0,
             total_bs: Number(s.total_bs) || 0,
@@ -468,87 +370,22 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             ganancia_neta_usd: Number(s.ganancia_neta_usd) || 0,
             tasa_cambio: Number(s.tasa_cambio) || 0,
           }));
-
-          setSales((currentSales) => {
-            if (mappedServerSales.length === 0) {
-              if (currentSales.length > 0) {
-                fetch('/api/store/sync', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ sales: currentSales }),
-                }).catch(() => {});
-              }
-              return currentSales;
-            }
-            const salesMap = new Map<string, Sale>();
-            mappedServerSales.forEach((s) => salesMap.set(s.id, s));
-            currentSales.forEach((s) => {
-              if (!salesMap.has(s.id)) {
-                salesMap.set(s.id, s);
-              }
-            });
-            const merged = Array.from(salesMap.values()).sort(
-              (a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime()
-            );
-            safeLocalStorageSet(`${STORAGE_KEY}_sales`, JSON.stringify(merged));
-            safeLocalStorageSet(BACKUP_KEY_SALES, JSON.stringify(merged));
-            return merged;
-          });
+          setSales(mappedSales);
+          try { localStorage.setItem(`${STORAGE_KEY}_sales`, JSON.stringify(mappedSales)); } catch {}
         }
-
-        // --- 3. APARTADOS ---
         if (Array.isArray(d.layaways)) {
-          setLayaways((currentLayaways) => {
-            if (d.layaways.length === 0) {
-              if (currentLayaways.length > 0) {
-                fetch('/api/store/sync', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ layaways: currentLayaways }),
-                }).catch(() => {});
-              }
-              return currentLayaways;
-            }
-            const layawayMap = new Map<string, Layaway>();
-            d.layaways.forEach((l: Layaway) => layawayMap.set(l.id, l));
-            currentLayaways.forEach((l) => {
-              if (!layawayMap.has(l.id)) layawayMap.set(l.id, l);
-            });
-            const merged = Array.from(layawayMap.values());
-            safeLocalStorageSet(`${STORAGE_KEY}_layaways`, JSON.stringify(merged));
-            return merged;
-          });
+          setLayaways(d.layaways);
+          try { localStorage.setItem(`${STORAGE_KEY}_layaways`, JSON.stringify(d.layaways)); } catch {}
         }
-
-        // --- 4. MOVIMIENTOS KARDEX ---
         if (Array.isArray(d.movements)) {
-          setMovements((currentMovs) => {
-            if (d.movements.length === 0) {
-              if (currentMovs.length > 0) {
-                fetch('/api/store/sync', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ movements: currentMovs }),
-                }).catch(() => {});
-              }
-              return currentMovs;
-            }
-            const movMap = new Map<string, StockMovement>();
-            d.movements.forEach((m: StockMovement) => movMap.set(m.id, m));
-            currentMovs.forEach((m) => {
-              if (!movMap.has(m.id)) movMap.set(m.id, m);
-            });
-            const merged = Array.from(movMap.values());
-            safeLocalStorageSet(`${STORAGE_KEY}_movements`, JSON.stringify(merged));
-            return merged;
-          });
+          setMovements(d.movements);
+          try { localStorage.setItem(`${STORAGE_KEY}_movements`, JSON.stringify(d.movements)); } catch {}
         }
-
         if (Array.isArray(d.accounts) && d.accounts.length > 0) {
           setAccounts(d.accounts);
           try { localStorage.setItem(`${STORAGE_KEY}_accounts`, JSON.stringify(d.accounts)); } catch {}
         }
-        if (Array.isArray(d.cashClosures) && d.cashClosures.length > 0) {
+        if (Array.isArray(d.cashClosures)) {
           setCashClosures(d.cashClosures);
           try { localStorage.setItem(`${STORAGE_KEY}_closures`, JSON.stringify(d.cashClosures)); } catch {}
         }
@@ -662,8 +499,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   }, [addNotification]);
 
-  // Real-time Firestore sync via onSnapshot across all connected PCs and devices
+  // Real-time Firestore sync via onSnapshot when currentUser is logged in
   useEffect(() => {
+    if (!currentUser) return;
     setSyncStatus('syncing');
 
     const unsubProducts = onSnapshot(
@@ -681,7 +519,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           new Date().toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
         );
       },
-      (err) => console.warn('Firestore products onSnapshot:', err)
+      (err) => handleFirestoreError(err, OperationType.GET, 'products')
     );
 
     const unsubSales = onSnapshot(
@@ -696,7 +534,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           } catch {}
         }
       },
-      (err) => console.warn('Firestore sales onSnapshot:', err)
+      (err) => handleFirestoreError(err, OperationType.GET, 'sales')
     );
 
     const unsubLayaways = onSnapshot(
@@ -711,7 +549,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           } catch {}
         }
       },
-      (err) => console.warn('Firestore layaways onSnapshot:', err)
+      (err) => handleFirestoreError(err, OperationType.GET, 'layaways')
     );
 
     const unsubMovements = onSnapshot(
@@ -726,7 +564,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           } catch {}
         }
       },
-      (err) => console.warn('Firestore movements onSnapshot:', err)
+      (err) => handleFirestoreError(err, OperationType.GET, 'movements')
     );
 
     const unsubExpenses = onSnapshot(
@@ -740,7 +578,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           } catch {}
         }
       },
-      (err) => console.warn('Firestore expenses onSnapshot:', err)
+      (err) => handleFirestoreError(err, OperationType.GET, 'expenses')
     );
 
     const unsubClosures = onSnapshot(
@@ -748,14 +586,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       (snap) => {
         if (!snap.empty) {
           const cloudClosures = snap.docs.map((d) => d.data() as DailyCashClosure);
-          cloudClosures.sort((a, b) => new Date(b.cerrado_at || b.fecha).getTime() - new Date(a.cerrado_at || a.fecha).getTime());
           setCashClosures(cloudClosures);
           try {
             localStorage.setItem(`${STORAGE_KEY}_closures`, JSON.stringify(cloudClosures));
           } catch {}
         }
       },
-      (err) => console.warn('Firestore cash_closures onSnapshot:', err)
+      (err) => handleFirestoreError(err, OperationType.GET, 'cash_closures')
     );
 
     const unsubConfig = onSnapshot(
@@ -771,7 +608,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           }
         }
       },
-      (err) => console.warn('Firestore store_config onSnapshot:', err)
+      (err) => handleFirestoreError(err, OperationType.GET, 'store_config/main')
     );
 
     return () => {
@@ -783,7 +620,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       unsubClosures();
       unsubConfig();
     };
-  }, []);
+  }, [currentUser]);
 
   const pushAllToCloud = useCallback(async () => {
     if (!auth.currentUser) {
@@ -1351,25 +1188,26 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       body: JSON.stringify(completedSale),
     }).catch((e) => console.log('Backend sale sync info:', e));
 
-    // Real-time Firestore sync
-    try {
-      const batch = writeBatch(db);
-      batch.set(doc(db, 'sales', completedSale.id), completedSale);
-      saleMovements.forEach((m) => {
-        batch.set(doc(db, 'movements', m.id), m);
-      });
-      saleData.items.forEach((item) => {
-        const prod = products.find((p) => p.id === item.producto_id);
-        if (prod) {
-          const newStock = Math.max(0, prod.stock - item.cantidad);
-          batch.update(doc(db, 'products', prod.id), { stock: newStock });
-        }
-      });
-      batch.commit().catch((err) =>
-        console.warn('Firestore sale batch commit warning:', err)
-      );
-    } catch (err) {
-      console.warn('Firestore sale write warning:', err);
+    if (currentUser) {
+      try {
+        const batch = writeBatch(db);
+        batch.set(doc(db, 'sales', completedSale.id), completedSale);
+        saleMovements.forEach((m) => {
+          batch.set(doc(db, 'movements', m.id), m);
+        });
+        saleData.items.forEach((item) => {
+          const prod = products.find((p) => p.id === item.producto_id);
+          if (prod) {
+            const newStock = Math.max(0, prod.stock - item.cantidad);
+            batch.update(doc(db, 'products', prod.id), { stock: newStock });
+          }
+        });
+        batch.commit().catch((err) =>
+          handleFirestoreError(err, OperationType.WRITE, `sales/${completedSale.id}`)
+        );
+      } catch (err) {
+        console.warn('Firestore sale write warning:', err);
+      }
     }
 
     addNotification(
@@ -1381,93 +1219,20 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return completedSale;
   };
 
-  // Update Sale Date
+  // Update Sale Date (e.g., historical sales backdating or retroactive invoice date change)
   const updateSaleDate = (saleId: string, newDateIso: string): boolean => {
-    return updateSale(saleId, { fecha: newDateIso }, 'Cambio de fecha de factura');
-  };
-
-  // Update Sale (Full invoice correction: client, date, shoes/stock, payments)
-  const updateSale = (saleId: string, updatedFields: Partial<Sale>, reason?: string): boolean => {
     const saleIndex = sales.findIndex((s) => s.id === saleId);
     if (saleIndex === -1) return false;
 
     const currentSale = sales[saleIndex];
-
-    // 1. Stock adjustments if items changed
-    if (Array.isArray(updatedFields.items)) {
-      const oldItemMap = new Map<string, number>();
-      currentSale.items.forEach((it) => {
-        oldItemMap.set(it.producto_id, (oldItemMap.get(it.producto_id) || 0) + it.cantidad);
-      });
-
-      const newItemMap = new Map<string, number>();
-      updatedFields.items.forEach((it) => {
-        newItemMap.set(it.producto_id, (newItemMap.get(it.producto_id) || 0) + it.cantidad);
-      });
-
-      setProducts((prevProducts) => {
-        const updated = prevProducts.map((p) => {
-          const oldQty = oldItemMap.get(p.id) || 0;
-          const newQty = newItemMap.get(p.id) || 0;
-          const diff = oldQty - newQty; // If positive, fewer shoes sold -> return to stock
-          if (diff !== 0) {
-            const nextStock = Math.max(0, p.stock + diff);
-            try {
-              setDoc(doc(db, 'products', p.id), { stock: nextStock }, { merge: true }).catch(() => {});
-            } catch {}
-            return { ...p, stock: nextStock };
-          }
-          return p;
-        });
-        try {
-          localStorage.setItem(`${STORAGE_KEY}_products`, JSON.stringify(updated));
-        } catch {}
-        return updated;
-      });
-    }
-
-    // 2. Account balance corrections if payments changed
-    if (Array.isArray(updatedFields.pagos)) {
-      setAccounts((prevAccounts) => {
-        const updatedAccs = [...prevAccounts];
-        // Revert old payments
-        currentSale.pagos.forEach((p) => {
-          const idx = updatedAccs.findIndex((a) => a.nombre === p.cuenta);
-          if (idx >= 0) {
-            updatedAccs[idx] = {
-              ...updatedAccs[idx],
-              saldo: Math.max(0, updatedAccs[idx].saldo - p.monto),
-            };
-          }
-        });
-        // Apply new payments
-        updatedFields.pagos!.forEach((p) => {
-          const idx = updatedAccs.findIndex((a) => a.nombre === p.cuenta);
-          if (idx >= 0) {
-            updatedAccs[idx] = {
-              ...updatedAccs[idx],
-              saldo: updatedAccs[idx].saldo + p.monto,
-            };
-          }
-        });
-        try {
-          localStorage.setItem(`${STORAGE_KEY}_accounts`, JSON.stringify(updatedAccs));
-        } catch {}
-        return updatedAccs;
-      });
-    }
-
-    const mergedSale: Sale = {
+    const updatedSale: Sale = {
       ...currentSale,
-      ...updatedFields,
-      estado: currentSale.estado === 'anulada' ? 'anulada' : 'modificada',
-      modificada_at: new Date().toISOString(),
-      motivo_modificacion: reason || currentSale.motivo_modificacion || 'Ajuste de factura',
+      fecha: newDateIso,
     };
 
     setSales((prev) => {
       const updated = [...prev];
-      updated[saleIndex] = mergedSale;
+      updated[saleIndex] = updatedSale;
       try {
         localStorage.setItem(`${STORAGE_KEY}_sales`, JSON.stringify(updated));
       } catch {}
@@ -1478,142 +1243,79 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     fetch(`/api/sales/${saleId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(mergedSale),
+      body: JSON.stringify({ fecha: newDateIso }),
     }).catch(() => {});
 
     // Sync to Firestore
-    try {
-      setDoc(doc(db, 'sales', saleId), mergedSale, { merge: true }).catch((err) =>
-        console.warn('Firestore updateSale warning:', err)
+    if (currentUser) {
+      setDoc(doc(db, 'sales', saleId), { fecha: newDateIso }, { merge: true }).catch((err) =>
+        handleFirestoreError(err, OperationType.UPDATE, `sales/${saleId}`)
       );
-    } catch (e) {
-      console.warn('Firestore updateSale error:', e);
     }
 
     addNotification(
-      'Factura Actualizada',
-      `La factura #${mergedSale.numero_factura} fue corregida y sincronizada.`,
+      'Fecha Actualizada',
+      `La fecha de la factura #${updatedSale.numero_factura} fue modificada a ${new Date(newDateIso).toLocaleDateString('es-VE')}.`,
       'success'
     );
     return true;
   };
 
-  // Annul Sale (Returns stock to shoes, deducts payment balances, excludes from sales report)
-  const annulSale = (saleId: string, reason?: string): boolean => {
-    const saleIndex = sales.findIndex((s) => s.id === saleId);
-    if (saleIndex === -1) return false;
+  // Anular una venta registrada por error: se conserva en el historial
+  // (marcada como anulada, no se borra) y se devuelve el stock vendido.
+  const voidSale = async (saleId: string, motivo: string): Promise<boolean> => {
+    const sale = sales.find((s) => s.id === saleId);
+    if (!sale) return false;
 
-    const currentSale = sales[saleIndex];
-    if (currentSale.estado === 'anulada') {
-      addNotification('Aviso', 'Esta factura ya se encuentra anulada.', 'warning');
+    try {
+      const res = await fetch(`/api/sales/${saleId}/void`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ motivo }),
+      });
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        addNotification(
+          'No se pudo anular',
+          errJson.error || 'El servidor no confirmó la anulación. Verifica tu conexión e inténtalo de nuevo.',
+          'critical'
+        );
+        return false;
+      }
+    } catch (err) {
+      addNotification('No se pudo anular', 'Sin conexión con el servidor. Inténtalo de nuevo.', 'critical');
       return false;
     }
 
-    const nowIso = new Date().toISOString();
-
-    // 1. Restore all shoe items to product stock
-    const restorationMovements: StockMovement[] = [];
-    setProducts((prevProducts) => {
-      const updated = [...prevProducts];
-      currentSale.items.forEach((item) => {
-        const prodIndex = updated.findIndex((p) => p.id === item.producto_id);
-        if (prodIndex >= 0) {
-          const currentProd = updated[prodIndex];
-          const restoredStock = currentProd.stock + item.cantidad;
-          updated[prodIndex] = { ...currentProd, stock: restoredStock };
-
-          restorationMovements.push({
-            id: `mov-annul-${Date.now()}-${item.producto_id}`,
-            producto_id: currentProd.id,
-            producto_nombre: currentProd.nombre,
-            sku: currentProd.sku,
-            talla: currentProd.talla,
-            marca: currentProd.marca,
-            tipo: 'entrada',
-            cantidad: item.cantidad,
-            stock_anterior: currentProd.stock,
-            stock_nuevo: restoredStock,
-            motivo: `Anulación Factura #${currentSale.numero_factura}: ${reason || 'Error en factura'}`,
-            fecha: nowIso,
-            usuario: userRole === 'admin' ? 'Administrador' : 'Cajera',
-          });
-
-          // Sync product stock to Firestore
-          try {
-            setDoc(doc(db, 'products', currentProd.id), { stock: restoredStock }, { merge: true }).catch(() => {});
-          } catch {}
-        }
+    // Restaurar stock localmente
+    setProducts((prev) => {
+      const updated = prev.map((p) => {
+        const item = sale.items.find((i) => i.producto_id === p.id);
+        return item ? { ...p, stock: p.stock + item.cantidad } : p;
       });
-      try {
-        localStorage.setItem(`${STORAGE_KEY}_products`, JSON.stringify(updated));
-      } catch {}
+      try { localStorage.setItem(`${STORAGE_KEY}_products`, JSON.stringify(updated)); } catch {}
       return updated;
     });
 
-    if (restorationMovements.length > 0) {
-      setMovements((prev) => [...restorationMovements, ...prev]);
-      restorationMovements.forEach((m) => {
-        try {
-          setDoc(doc(db, 'movements', m.id), m).catch(() => {});
-        } catch {}
-      });
-    }
-
-    // 2. Revert payments from accounts
-    setAccounts((prevAccounts) => {
-      const updatedAccs = [...prevAccounts];
-      currentSale.pagos.forEach((p) => {
-        const accIndex = updatedAccs.findIndex((a) => a.nombre === p.cuenta);
-        if (accIndex >= 0) {
-          updatedAccs[accIndex] = {
-            ...updatedAccs[accIndex],
-            saldo: Math.max(0, updatedAccs[accIndex].saldo - p.monto),
-          };
-        }
-      });
-      try {
-        localStorage.setItem(`${STORAGE_KEY}_accounts`, JSON.stringify(updatedAccs));
-      } catch {}
-      return updatedAccs;
-    });
-
-    // 3. Mark sale as anulada
-    const annulledSale: Sale = {
-      ...currentSale,
-      estado: 'anulada',
-      anulada_at: nowIso,
-      anulada_motivo: reason || 'Anulación por error en factura',
-    };
-
+    // Marcar la venta como anulada en el estado local (se conserva, no se borra)
     setSales((prev) => {
-      const updated = [...prev];
-      updated[saleIndex] = annulledSale;
-      try {
-        localStorage.setItem(`${STORAGE_KEY}_sales`, JSON.stringify(updated));
-      } catch {}
+      const updated = prev.map((s) =>
+        s.id === saleId ? ({ ...s, estado: 'anulada', motivo_anulacion: motivo } as any) : s
+      );
+      try { localStorage.setItem(`${STORAGE_KEY}_sales`, JSON.stringify(updated)); } catch {}
       return updated;
     });
 
-    // Sync to backend
-    fetch(`/api/sales/${saleId}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(annulledSale),
-    }).catch(() => {});
-
-    // Sync to Firestore
-    try {
-      setDoc(doc(db, 'sales', saleId), annulledSale, { merge: true }).catch((err) =>
-        console.warn('Firestore annulSale warning:', err)
+    if (currentUser) {
+      setDoc(doc(db, 'sales', saleId), { estado: 'anulada', motivo_anulacion: motivo }, { merge: true }).catch((err) =>
+        handleFirestoreError(err, OperationType.UPDATE, `sales/${saleId}`)
       );
-    } catch (e) {
-      console.warn('Firestore annulSale error:', e);
     }
 
     addNotification(
-      'Factura Anulada',
-      `Factura #${currentSale.numero_factura} anulada. ${currentSale.items.reduce((s, i) => s + i.cantidad, 0)} pares fueron devueltos al inventario.`,
-      'success'
+      'Venta Anulada',
+      `Factura #${sale.numero_factura} fue anulada. El stock vendido fue devuelto al inventario.`,
+      'info'
     );
     return true;
   };
@@ -1949,33 +1651,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   // Record Cash Register Closure (Arqueo de caja diario)
-  const recordCashClosure = (notas?: string, customDateStr?: string): DailyCashClosure => {
-    // Determine target closure date (Venezuela local date YYYY-MM-DD)
-    let targetDate = customDateStr;
-    if (!targetDate) {
-      const d = new Date();
-      const y = d.getFullYear();
-      const m = String(d.getMonth() + 1).padStart(2, '0');
-      const day = String(d.getDate()).padStart(2, '0');
-      targetDate = `${y}-${m}-${day}`;
-    }
-
-    const isMatchingDate = (saleFecha: string, target: string) => {
-      if (!saleFecha) return false;
-      if (saleFecha.startsWith(target)) return true;
-      try {
-        const d = new Date(saleFecha);
-        const y = d.getFullYear();
-        const m = String(d.getMonth() + 1).padStart(2, '0');
-        const day = String(d.getDate()).padStart(2, '0');
-        return `${y}-${m}-${day}` === target;
-      } catch {
-        return false;
-      }
-    };
-
-    // Filter valid sales for the closure date (exclude annulled sales!)
-    const todaySales = sales.filter((s) => s.estado !== 'anulada' && isMatchingDate(s.fecha, targetDate!));
+  const recordCashClosure = (notas?: string): DailyCashClosure => {
+    const todayStr = new Date().toISOString().split('T')[0];
+    const todaySales = sales.filter((s) => s.fecha.startsWith(todayStr));
 
     const totalUsd = todaySales.reduce((sum, s) => sum + s.total_usd, 0);
     const totalBs = todaySales.reduce((sum, s) => sum + s.total_bs, 0);
@@ -2010,7 +1688,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     const closure: DailyCashClosure = {
       id: `close-${Date.now()}`,
-      fecha: targetDate,
+      fecha: todayStr,
       usuario: userRole === 'admin' ? 'Administrador' : 'Cajera',
       total_ventas_usd: totalUsd,
       total_ventas_bs: totalBs,
@@ -2029,18 +1707,15 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       body: JSON.stringify(closure),
     }).catch(() => {});
 
-    // Sync to Firestore in real-time
-    try {
+    if (currentUser) {
       setDoc(doc(db, 'cash_closures', closure.id), closure).catch((err) =>
-        console.warn('Firestore cash_closures sync warning:', err)
+        handleFirestoreError(err, OperationType.WRITE, `cash_closures/${closure.id}`)
       );
-    } catch (e) {
-      console.warn('Firestore cash closure write error:', e);
     }
 
     addNotification(
       'Cierre de Caja Guardado',
-      `Arqueo de ${targetDate} registrado con $${totalUsd.toFixed(2)} en ${todaySales.length} ventas.`,
+      `Arqueo de ${todayStr} registrado con $${totalUsd.toFixed(2)} en ${todaySales.length} ventas.`,
       'success'
     );
 
@@ -2319,173 +1994,59 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         expenses: [],
         cashClosures: [],
         accounts: INITIAL_ACCOUNTS.map((a) => ({ ...a, saldo: 0 })),
-        allowEmpty: true,
       }),
     }).catch(() => {});
 
-    addNotification('Datos Limpios', 'Se han vaciado los datos de trabajo. Tienes copias de seguridad disponibles si deseas recuperarlos.', 'info');
+    addNotification('Datos Limpios', 'Se han vaciado los datos de prueba para iniciar la operación real.', 'info');
   };
 
   const resetToDemoData = () => {
     clearAllData();
   };
 
-  // Rescate de emergencia desde respaldos locales y claves legadas
-  const restoreFromBackup = useCallback(() => {
-    let restoredProductsCount = 0;
-    let restoredSalesCount = 0;
-
-    // Buscar calzados en respaldos y claves anteriores
-    const prodKeys = [
-      BACKUP_KEY_PRODUCTS,
-      `${STORAGE_KEY}_products`,
-      'makd_shop_store_v2_products',
-      'makd_shop_store_v1_products',
-      'makd_shop_products',
-    ];
-    for (const k of prodKeys) {
-      const raw = localStorage.getItem(k);
-      if (raw) {
-        try {
-          const parsed = JSON.parse(raw);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            setProducts(parsed);
-            safeLocalStorageSet(`${STORAGE_KEY}_products`, raw);
-            safeLocalStorageSet(BACKUP_KEY_PRODUCTS, raw);
-            restoredProductsCount = parsed.length;
-            fetch('/api/store/sync', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ products: parsed }),
-            }).catch(() => {});
-            break;
-          }
-        } catch {}
-      }
-    }
-
-    // Buscar ventas en respaldos
-    const salesKeys = [
-      BACKUP_KEY_SALES,
-      `${STORAGE_KEY}_sales`,
-      'makd_shop_store_v2_sales',
-      'makd_shop_store_v1_sales',
-      'makd_shop_sales',
-    ];
-    for (const k of salesKeys) {
-      const raw = localStorage.getItem(k);
-      if (raw) {
-        try {
-          const parsed = JSON.parse(raw);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            setSales(parsed);
-            safeLocalStorageSet(`${STORAGE_KEY}_sales`, raw);
-            safeLocalStorageSet(BACKUP_KEY_SALES, raw);
-            restoredSalesCount = parsed.length;
-            fetch('/api/store/sync', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ sales: parsed }),
-            }).catch(() => {});
-            break;
-          }
-        } catch {}
-      }
-    }
-
-    if (restoredProductsCount > 0 || restoredSalesCount > 0) {
-      addNotification(
-        'Respaldo Restaurado',
-        `Se recuperaron con éxito ${restoredProductsCount} calzados y ${restoredSalesCount} ventas de tu copia local.`,
-        'success'
-      );
-    } else {
-      addNotification(
-        'Sin Respaldos Previos',
-        'No se encontraron datos anteriores en la memoria de este navegador.',
-        'info'
-      );
-    }
-
-    return { productsRestored: restoredProductsCount, salesRestored: restoredSalesCount };
-  }, [addNotification]);
-
-  // Exportar respaldo completo como archivo .json
   const exportStoreBackup = useCallback(() => {
-    const backupData = {
-      version: 'makd_shop_backup_v1',
-      exportedAt: new Date().toISOString(),
+    const data = {
       products,
       sales,
-      layaways,
       movements,
+      layaways,
       accounts,
-      expenses,
       cashClosures,
+      expenses,
+      bankMovements,
+      currencyPurchases,
       exchangeRate,
+      exportDate: new Date().toISOString(),
     };
-    const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `makd_shop_respaldo_${new Date().toISOString().split('T')[0]}.json`;
+    a.download = `backup_makd_shop_${new Date().toISOString().split('T')[0]}.json`;
     a.click();
     URL.revokeObjectURL(url);
-    addNotification('Respaldo Descargado', 'Archivo JSON generado y guardado en tu equipo.', 'success');
-  }, [products, sales, layaways, movements, accounts, expenses, cashClosures, exchangeRate, addNotification]);
+  }, [products, sales, movements, layaways, accounts, cashClosures, expenses, bankMovements, currencyPurchases, exchangeRate]);
 
-  // Importar respaldo desde archivo .json
-  const importStoreBackup = useCallback(async (file: File): Promise<boolean> => {
+  const importStoreBackup = useCallback(async (file: File) => {
     try {
       const text = await file.text();
       const data = JSON.parse(text);
-      if (data && typeof data === 'object') {
-        if (Array.isArray(data.products) && data.products.length > 0) {
-          setProducts(data.products);
-          safeLocalStorageSet(`${STORAGE_KEY}_products`, JSON.stringify(data.products));
-          safeLocalStorageSet(BACKUP_KEY_PRODUCTS, JSON.stringify(data.products));
-        }
-        if (Array.isArray(data.sales) && data.sales.length > 0) {
-          setSales(data.sales);
-          safeLocalStorageSet(`${STORAGE_KEY}_sales`, JSON.stringify(data.sales));
-          safeLocalStorageSet(BACKUP_KEY_SALES, JSON.stringify(data.sales));
-        }
-        if (Array.isArray(data.layaways)) {
-          setLayaways(data.layaways);
-          safeLocalStorageSet(`${STORAGE_KEY}_layaways`, JSON.stringify(data.layaways));
-        }
-        if (Array.isArray(data.movements)) {
-          setMovements(data.movements);
-          safeLocalStorageSet(`${STORAGE_KEY}_movements`, JSON.stringify(data.movements));
-        }
-        if (Array.isArray(data.expenses)) {
-          setExpenses(data.expenses);
-          safeLocalStorageSet(`${STORAGE_KEY}_expenses`, JSON.stringify(data.expenses));
-        }
-        if (typeof data.exchangeRate === 'number') {
-          setExchangeRateState(data.exchangeRate);
-        }
-
-        // Sincronizar en servidor
-        fetch('/api/store/sync', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(data),
-        }).catch(() => {});
-
-        addNotification(
-          'Importación Exitosa',
-          `Se cargaron ${(data.products || []).length} calzados y ${(data.sales || []).length} ventas desde el archivo.`,
-          'success'
-        );
-        return true;
-      }
-      return false;
-    } catch (e: any) {
-      addNotification('Error al Importar', 'El archivo no tiene el formato JSON válido de respaldo.', 'critical');
-      return false;
+      if (Array.isArray(data.products)) setProducts(data.products);
+      if (Array.isArray(data.sales)) setSales(data.sales);
+      if (Array.isArray(data.movements)) setMovements(data.movements);
+      if (Array.isArray(data.layaways)) setLayaways(data.layaways);
+      if (Array.isArray(data.accounts)) setAccounts(data.accounts);
+      if (Array.isArray(data.cashClosures)) setCashClosures(data.cashClosures);
+      if (Array.isArray(data.expenses)) setExpenses(data.expenses);
+      addNotification('Respaldo Restaurado', 'Se han importado los datos del archivo correctamente.', 'success');
+    } catch {
+      addNotification('Error al importar', 'El archivo no tiene el formato JSON válido.', 'critical');
     }
   }, [addNotification]);
+
+  const restoreFromBackup = useCallback(() => {
+    syncFromServer(false);
+  }, [syncFromServer]);
 
   return (
     <StoreContext.Provider
@@ -2514,8 +2075,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         deleteProduct,
         recordSale,
         updateSaleDate,
-        updateSale,
-        annulSale,
+        voidSale,
         layaways,
         createLayaway,
         addLayawayPayment,

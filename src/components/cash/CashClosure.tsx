@@ -108,7 +108,7 @@ export const CashClosure: React.FC = () => {
       }
     }
 
-    const closure = recordCashClosure(notes, selectedDate);
+    const closure = recordCashClosure(notes);
     setNotes('');
     setSelectedClosureForPrint(closure);
   };
