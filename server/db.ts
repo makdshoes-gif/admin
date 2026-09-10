@@ -247,6 +247,22 @@ export async function initDatabaseSchema() {
       );
     `;
 
+    // Columnas para persistir el cierre de caja / arqueo diario tal como lo
+    // arma el frontend (evita depender de que las columnas de arriba
+    // coincidan exactamente con lo que la app realmente envía).
+    await sql`ALTER TABLE cash_closures ADD COLUMN IF NOT EXISTS data JSONB`;
+    await sql`ALTER TABLE cash_closures ALTER COLUMN totales_por_cuenta DROP NOT NULL`;
+    await sql`ALTER TABLE cash_closures ALTER COLUMN tasa_bcv DROP NOT NULL`;
+
+    // Columnas añadidas después del diseño original: permiten guardar el
+    // correo del cliente, notas de la venta, y anular una venta con error
+    // (en vez de borrarla, se marca como 'anulada' y se conserva el historial).
+    await sql`ALTER TABLE sales_transactions ADD COLUMN IF NOT EXISTS cliente_correo VARCHAR(150)`;
+    await sql`ALTER TABLE sales_transactions ADD COLUMN IF NOT EXISTS notas TEXT`;
+    await sql`ALTER TABLE sales_transactions ADD COLUMN IF NOT EXISTS estado VARCHAR(20) DEFAULT 'completada'`;
+    await sql`ALTER TABLE sales_transactions ADD COLUMN IF NOT EXISTS motivo_anulacion TEXT`;
+    await sql`ALTER TABLE sales_transactions ADD COLUMN IF NOT EXISTS anulada_at TIMESTAMP WITH TIME ZONE`;
+
     // 4. Table for BDV Verified Payments
     await sql`
       CREATE TABLE IF NOT EXISTS bdv_verifications (
@@ -312,6 +328,112 @@ export async function initDatabaseSchema() {
   }
 }
 
+// ==========================================
+// Ventas (sales_transactions)
+// ==========================================
+
+export async function insertSale(sale: any): Promise<boolean> {
+  const sql = getNeonSql();
+  if (!sql) return false;
+  await sql`
+    INSERT INTO sales_transactions (
+      id, numero_factura, cliente_nombre, cliente_apellido, cliente_rif,
+      cliente_telefono, cliente_correo, subtotal_usd, descuento_usd, aplica_iva,
+      porcentaje_iva, iva_monto_usd, total_usd, total_bs, costo_total_usd,
+      ganancia_neta_usd, tasa_cambio, items, pagos, fecha, usuario, notas, estado
+    ) VALUES (
+      ${sale.id}, ${sale.numero_factura}, ${sale.cliente_nombre || ''}, ${sale.cliente_apellido || ''},
+      ${sale.cliente_rif || ''}, ${sale.cliente_telefono || ''}, ${sale.cliente_correo || ''},
+      ${sale.subtotal_usd || 0}, ${sale.descuento_usd || 0}, ${!!sale.aplica_iva},
+      ${sale.porcentaje_iva || 0}, ${sale.iva_monto_usd || 0}, ${sale.total_usd || 0},
+      ${sale.total_bs || 0}, ${sale.costo_total_usd || 0}, ${sale.ganancia_neta_usd || 0},
+      ${sale.tasa_cambio || 0}, ${JSON.stringify(sale.items || [])}, ${JSON.stringify(sale.pagos || [])},
+      ${sale.fecha || new Date().toISOString()}, ${sale.usuario || ''}, ${sale.notas || ''}, 'completada'
+    )
+    ON CONFLICT (id) DO NOTHING;
+  `;
+  return true;
+}
+
+export async function updateSale(id: string, updates: Record<string, any>): Promise<boolean> {
+  const sql = getNeonSql();
+  if (!sql) return false;
+  const allowed: Record<string, true> = {
+    fecha: true, notas: true, cliente_nombre: true, cliente_apellido: true,
+    cliente_rif: true, cliente_telefono: true, cliente_correo: true,
+  };
+  const keys = Object.keys(updates).filter((k) => allowed[k]);
+  if (keys.length === 0) return false;
+  for (const key of keys) {
+    await (sql as any).query(`UPDATE sales_transactions SET ${key} = $1 WHERE id = $2`, [updates[key], id]);
+  }
+  return true;
+}
+
+// Anular una venta con error: no se borra (se conserva el historial), se
+// marca como 'anulada' y el stock de cada producto vendido se restituye.
+export async function voidSale(id: string, motivo: string): Promise<{ ok: boolean; items?: any[] }> {
+  const sql = getNeonSql();
+  if (!sql) return { ok: false };
+  const rows = await sql`SELECT * FROM sales_transactions WHERE id = ${id}`;
+  const sale = rows[0] as any;
+  if (!sale) return { ok: false };
+  if (sale.estado === 'anulada') return { ok: true, items: sale.items };
+
+  await sql`
+    UPDATE sales_transactions
+    SET estado = 'anulada', motivo_anulacion = ${motivo || ''}, anulada_at = NOW()
+    WHERE id = ${id}
+  `;
+
+  const items = Array.isArray(sale.items) ? sale.items : [];
+  for (const item of items) {
+    if (item?.producto_id && item?.cantidad) {
+      await sql`
+        UPDATE shoe_products SET stock = stock + ${item.cantidad}
+        WHERE id = ${item.producto_id}
+      `;
+    }
+  }
+  return { ok: true, items };
+}
+
+// ==========================================
+// Cierres de caja / arqueo diario (cash_closures.data)
+// ==========================================
+
+export async function getSalesClosures(): Promise<any[]> {
+  const sql = getNeonSql();
+  if (!sql) return [];
+  try {
+    const rows = await sql`
+      SELECT id, data FROM cash_closures
+      WHERE data IS NOT NULL
+      ORDER BY fecha DESC, created_at DESC
+    `;
+    return rows.map((r: any) => ({ ...(r.data || {}), id: r.id }));
+  } catch (err) {
+    console.error('Error obteniendo cierres de caja:', err);
+    return [];
+  }
+}
+
+export async function addSalesClosure(closure: any): Promise<boolean> {
+  const sql = getNeonSql();
+  if (!sql || !closure?.id) return false;
+  await sql`
+    INSERT INTO cash_closures (
+      id, fecha, data, total_ventas_usd, total_ventas_bs, usuario, observaciones, estado
+    ) VALUES (
+      ${closure.id}, ${closure.fecha || ''}, ${JSON.stringify(closure)},
+      ${closure.total_ventas_usd || 0}, ${closure.total_ventas_bs || 0},
+      ${closure.usuario || ''}, ${closure.notas || ''}, 'cerrado'
+    )
+    ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data;
+  `;
+  return true;
+}
+
 export async function getNeonTables(): Promise<{ table_name: string }[]> {
   const sql = getNeonSql();
   if (!sql) return [];
@@ -375,4 +497,3 @@ export async function getNeonTableData(tableName: string, limit = 50): Promise<{
     throw new Error(msg);
   }
 }
-
