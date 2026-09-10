@@ -9,6 +9,11 @@ import {
   normalizeSales,
   normalizeExpenses,
   normalizeBankReconciliations,
+  insertSale,
+  updateSale,
+  voidSale,
+  getSalesClosures,
+  addSalesClosure,
 } from './db.js';
 import { analyzeShoeImage } from './shoeAi.js';
 
@@ -46,7 +51,7 @@ app.get('/api/store/state', async (_req, res) => {
         sql`SELECT * FROM sales_transactions ORDER BY fecha DESC`,
         sql`SELECT * FROM expenses ORDER BY fecha DESC, created_at DESC`,
         sql`SELECT * FROM bank_reconciliations ORDER BY fecha DESC, created_at DESC`,
-        sql`SELECT * FROM cash_closures ORDER BY fecha DESC, created_at DESC`,
+        getSalesClosures(),
       ]);
 
       return res.json({
@@ -228,9 +233,101 @@ app.get('/api/sales', async (_req, res) => {
       return res.json({ source: 'neon_postgres', data: normalizeSales(rows as any[]) });
     } catch (err) {
       console.error('Neon sales fetch error:', err);
+      return res.status(503).json({ source: 'neon_error', error: 'No se pudo leer ventas. Tus datos no se borraron.', data: [] });
     }
   }
-  res.json({ source: 'local_fallback', data: [] });
+  res.status(503).json({ source: 'no_database_configured', error: 'DATABASE_URL no configurada.', data: [] });
+});
+
+// Crear una nueva venta (se llama justo al completar la venta en el POS)
+app.post('/api/sales', async (req, res) => {
+  const sale = req.body;
+  if (!sale || !sale.id) {
+    return res.status(400).json({ saved: false, error: 'Datos de venta inválidos' });
+  }
+  const sql = getNeonSql();
+  if (!sql) {
+    return res.status(503).json({ saved: false, error: 'DATABASE_URL no configurada en Vercel: la venta no se guardó en el servidor.' });
+  }
+  try {
+    await initDatabaseSchema();
+    await insertSale(sale);
+    res.json({ saved: true, id: sale.id });
+  } catch (err) {
+    console.error('Error guardando venta en Neon:', err);
+    res.status(500).json({ saved: false, error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// Editar datos de una venta ya registrada (ej. corregir fecha, datos del cliente, notas)
+app.patch('/api/sales/:id', async (req, res) => {
+  const { id } = req.params;
+  const sql = getNeonSql();
+  if (!sql) {
+    return res.status(503).json({ updated: false, error: 'DATABASE_URL no configurada en Vercel.' });
+  }
+  try {
+    const ok = await updateSale(id, req.body || {});
+    res.json({ updated: ok, id });
+  } catch (err) {
+    console.error('Error actualizando venta en Neon:', err);
+    res.status(500).json({ updated: false, error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// Anular una venta con error (no se borra: queda marcada como 'anulada' y
+// se conserva en el historial; el stock vendido se devuelve al inventario)
+app.post('/api/sales/:id/void', async (req, res) => {
+  const { id } = req.params;
+  const { motivo } = req.body || {};
+  const sql = getNeonSql();
+  if (!sql) {
+    return res.status(503).json({ success: false, error: 'DATABASE_URL no configurada en Vercel.' });
+  }
+  try {
+    const result = await voidSale(id, motivo || '');
+    if (!result.ok) {
+      return res.status(404).json({ success: false, error: 'Venta no encontrada.' });
+    }
+    res.json({ success: true, id, items: result.items });
+  } catch (err) {
+    console.error('Error anulando venta en Neon:', err);
+    res.status(500).json({ success: false, error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// Cierres de caja / arqueo diario
+app.get('/api/closures', async (_req, res) => {
+  const sql = getNeonSql();
+  if (!sql) {
+    return res.status(503).json({ source: 'no_database_configured', error: 'DATABASE_URL no configurada.', data: [] });
+  }
+  try {
+    const closures = await getSalesClosures();
+    res.json({ source: 'neon_postgres', data: closures });
+  } catch (err) {
+    console.error('Error leyendo cierres de caja de Neon:', err);
+    res.status(503).json({ source: 'neon_error', error: 'No se pudo leer el arqueo de caja. Tus datos no se borraron.', data: [] });
+  }
+});
+
+app.post('/api/closures', async (req, res) => {
+  const closure = req.body;
+  if (!closure || !closure.id) {
+    return res.status(400).json({ saved: false, error: 'Datos de cierre de caja inválidos' });
+  }
+  const sql = getNeonSql();
+  if (!sql) {
+    return res.status(503).json({ saved: false, error: 'DATABASE_URL no configurada en Vercel: el arqueo no se guardó en el servidor.' });
+  }
+  try {
+    await initDatabaseSchema();
+    await addSalesClosure(closure);
+    res.json({ saved: true, id: closure.id });
+  } catch (err) {
+    console.error('Error guardando cierre de caja en Neon:', err);
+    res.status(500).json({ saved: false, error: err instanceof Error ? err.message : String(err) });
+  }
 });
 
 // Expenses
