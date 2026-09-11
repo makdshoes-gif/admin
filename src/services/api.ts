@@ -6,7 +6,8 @@ import {
   Sale,
   Expense,
   BankMovement,
-  NeonTableInfo
+  NeonTableInfo,
+  DailyCashClosure
 } from '../types';
 
 /**
@@ -244,6 +245,75 @@ export async function updateBankReconciliationApi(
     return Boolean(json.updated);
   } catch (err) {
     console.error('Error updating bank reconciliation:', err);
+    return false;
+  }
+}
+
+// Sales API client
+export async function fetchSalesApi(): Promise<Sale[]> {
+  try {
+    const res = await fetch('/api/sales');
+    const json = await safeJson(res, { data: [] });
+    return json.data || [];
+  } catch (err) {
+    console.error('Error fetching sales from API:', err);
+    return [];
+  }
+}
+
+export async function saveSaleApi(sale: Sale): Promise<boolean> {
+  try {
+    const res = await fetch('/api/sales', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(sale),
+    });
+    const json = await safeJson(res, { saved: false });
+    return Boolean(json.saved);
+  } catch (err) {
+    console.error('Error saving sale to API:', err);
+    return false;
+  }
+}
+
+export async function voidSaleApi(id: string, motivo: string): Promise<boolean> {
+  try {
+    const res = await fetch(`/api/sales/${id}/void`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ motivo }),
+    });
+    const json = await safeJson(res, { success: false });
+    return Boolean(json.success);
+  } catch (err) {
+    console.error('Error voiding sale in API:', err);
+    return false;
+  }
+}
+
+// Cash Closures API client
+export async function fetchClosuresApi(): Promise<DailyCashClosure[]> {
+  try {
+    const res = await fetch('/api/closures');
+    const json = await safeJson(res, { data: [] });
+    return json.data || [];
+  } catch (err) {
+    console.error('Error fetching closures from API:', err);
+    return [];
+  }
+}
+
+export async function saveClosureApi(closure: DailyCashClosure): Promise<boolean> {
+  try {
+    const res = await fetch('/api/closures', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(closure),
+    });
+    const json = await safeJson(res, { saved: false });
+    return Boolean(json.saved);
+  } catch (err) {
+    console.error('Error saving closure to API:', err);
     return false;
   }
 }

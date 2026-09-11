@@ -33,6 +33,7 @@ import { ShoeLabelModal } from './ShoeLabelModal';
 import { ExcelImportModal } from './ExcelImportModal';
 import { ShoeAiScannerModal } from './ShoeAiScannerModal';
 import { GitHubSyncModal } from '../catalog/GitHubSyncModal';
+import { BatchWhiteBackgroundModal } from './BatchWhiteBackgroundModal';
 import { ShoeAiResult } from '../../services/aiShoeService';
 
 export const InventoryManager: React.FC = () => {
@@ -76,6 +77,9 @@ export const InventoryManager: React.FC = () => {
 
   // GitHub Catalog Sync Modal state
   const [isGitHubSyncOpen, setIsGitHubSyncOpen] = useState(false);
+
+  // Batch White Studio Background Modal state
+  const [isBatchWhiteBgOpen, setIsBatchWhiteBgOpen] = useState(false);
 
   const handleOpenLabelModal = (p: ShoeProduct) => {
     setLabelProduct(p);
@@ -222,6 +226,17 @@ export const InventoryManager: React.FC = () => {
             <Globe className="w-4 h-4 text-indigo-400" />
             <span>Sincronizar Catálogo Web</span>
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+          </button>
+
+          <button
+            id="batch-white-bg-btn"
+            type="button"
+            onClick={() => setIsBatchWhiteBgOpen(true)}
+            className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 active:bg-black text-cyan-300 font-semibold rounded-lg text-xs flex items-center gap-2 shadow-xs transition-colors cursor-pointer border border-cyan-500/40"
+            title="Poner fondo blanco puro de estudio a todos los calzados registrados"
+          >
+            <Sparkles className="w-4 h-4 text-cyan-400" />
+            <span>Fondo Blanco Masivo</span>
           </button>
 
           <button
@@ -1029,6 +1044,12 @@ export const InventoryManager: React.FC = () => {
       <GitHubSyncModal
         isOpen={isGitHubSyncOpen}
         onClose={() => setIsGitHubSyncOpen(false)}
+      />
+
+      {/* Modal: Batch White Studio Background Processing */}
+      <BatchWhiteBackgroundModal
+        isOpen={isBatchWhiteBgOpen}
+        onClose={() => setIsBatchWhiteBgOpen(false)}
       />
 
     </div>

@@ -36,6 +36,7 @@ import {
   createInstagramPostImage,
   downloadImage,
 } from '../../utils/backgroundRemover';
+import { downloadSocialCard } from '../../utils/socialCardGenerator';
 
 interface ShoeAiScannerModalProps {
   isOpen: boolean;
@@ -113,17 +114,17 @@ export const ShoeAiScannerModal: React.FC<ShoeAiScannerModalProps> = ({
     if (!target) return;
     setIsDownloadingPost(true);
     try {
-      const postDataUrl = await createInstagramPostImage(target, {
-        nombre: aiResult?.nombre || 'Calzado Deportivo',
-        marca: aiResult?.marca,
-        precioUsd: aiResult?.precio_sugerido_usd || 0,
+      await downloadSocialCard(
+        {
+          nombre: aiResult?.nombre || 'Calzado Deportivo',
+          marca: aiResult?.marca,
+          precio: aiResult?.precio_sugerido_usd || 0,
+          talla: aiResult?.tallas_sugeridas ? aiResult.tallas_sugeridas.join(', ') : '37',
+          imagen: target,
+        },
         exchangeRate,
-        tallas: aiResult?.tallas_sugeridas,
-      });
-      const nameSlug = (aiResult?.nombre || 'post-instagram')
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '-');
-      downloadImage(postDataUrl, `instagram-${nameSlug}.png`);
+        'square'
+      );
     } catch (err) {
       console.error('Error generating Instagram post:', err);
       handleDownloadWhiteBgPhoto();
