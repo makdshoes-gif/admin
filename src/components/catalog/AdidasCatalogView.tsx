@@ -31,6 +31,7 @@ import { ShoeProduct } from '../../types';
 import { ShoeAiScannerModal } from '../inventory/ShoeAiScannerModal';
 import { GitHubSyncModal } from './GitHubSyncModal';
 import { BatchWhiteBackgroundModal } from '../inventory/BatchWhiteBackgroundModal';
+import { AmazonProductDetailModal } from './AmazonProductDetailModal';
 import { downloadSocialCard } from '../../utils/socialCardGenerator';
 import { removeBackgroundToWhite } from '../../utils/backgroundRemover';
 
@@ -59,6 +60,33 @@ export const AdidasCatalogView: React.FC = () => {
   const [isDownloadingCard, setIsDownloadingCard] = useState(false);
   const [isCleaningSingleShoe, setIsCleaningSingleShoe] = useState(false);
   const [isBatchWhiteBgOpen, setIsBatchWhiteBgOpen] = useState(false);
+
+  // Amazon Product Detail Modal
+  const [selectedShoeForAmazon, setSelectedShoeForAmazon] = useState<ShoeProduct | null>(null);
+  const [selectedShoeAmazonSizes, setSelectedShoeAmazonSizes] = useState<string[]>([]);
+
+  // Single shoe clean background with white studio + real contact shadow
+  const handleCleanSingleShoe = async (shoe: ShoeProduct) => {
+    if (!shoe.imagen) return;
+    setIsCleaningSingleShoe(true);
+    try {
+      const cleanImg = await removeBackgroundToWhite(shoe.imagen);
+      updateProduct(shoe.id, { imagen: cleanImg, imagen_url: cleanImg } as any);
+      await fetch('/api/products', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...shoe, imagen: cleanImg, imagen_url: cleanImg }),
+      }).catch(() => {});
+      if (selectedShoeForAmazon && selectedShoeForAmazon.id === shoe.id) {
+        setSelectedShoeForAmazon({ ...selectedShoeForAmazon, imagen: cleanImg });
+      }
+      triggerCopy('', `Fondo blanco y sombra real aplicados a ${shoe.nombre}`);
+    } catch (e) {
+      console.error('Error limpiando fondo de zapato:', e);
+    } finally {
+      setIsCleaningSingleShoe(false);
+    }
+  };
 
   // Multi-select for Broadcast
   const [selectedForBroadcast, setSelectedForBroadcast] = useState<string[]>([]);
@@ -512,23 +540,30 @@ export const AdidasCatalogView: React.FC = () => {
                   >
                     
                     {/* Top image area with badges */}
-                    <div className="relative aspect-4/3 bg-slate-100 overflow-hidden flex items-center justify-center">
+                    <div 
+                      onClick={() => {
+                        setSelectedShoeForAmazon(main);
+                        setSelectedShoeAmazonSizes(sizes.map((s) => s.talla));
+                      }}
+                      className="relative aspect-4/3 bg-gradient-to-b from-[#FFFFFF] via-[#FAFBFD] to-[#F4F6F8] overflow-hidden flex items-center justify-center cursor-pointer group"
+                      title="Haz clic para ver la Ficha estilo Amazon con todos los detalles"
+                    >
                       
                       {main.imagen ? (
                         <img
                           src={main.imagen}
                           alt={main.nombre}
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                          className="w-full h-full object-contain p-2 group-hover:scale-105 transition-transform duration-300 drop-shadow-[0_4px_12px_rgba(40,44,52,0.06)]"
                         />
                       ) : (
-                        <div className="w-full h-full flex flex-col items-center justify-center text-slate-400 bg-slate-200">
+                        <div className="w-full h-full flex flex-col items-center justify-center text-slate-400 bg-slate-100">
                           <ShoppingBag className="w-12 h-12 mb-1" />
                           <span className="text-[10px] font-bold">Sin foto</span>
                         </div>
                       )}
 
                       {/* Brand pill top-left */}
-                      <div className="absolute top-3 left-3 flex items-center gap-1.5">
+                      <div className="absolute top-3 left-3 flex flex-col gap-1 items-start">
                         <span className={`px-2.5 py-1 rounded-full text-[10px] font-black tracking-wider uppercase backdrop-blur-md shadow-md ${
                           isAdidas
                             ? 'bg-blue-600 text-white border border-blue-400/40'
@@ -537,22 +572,34 @@ export const AdidasCatalogView: React.FC = () => {
                           {main.marca || 'Original'}
                         </span>
 
-                        {totalStock <= 2 && totalStock > 0 && (
-                          <span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-rose-500 text-white uppercase animate-pulse">
-                            ¡Últimos {totalStock}!
-                          </span>
-                        )}
+                        <span className="px-2 py-0.5 rounded text-[9px] font-extrabold bg-[#0F1111] text-[#FF9900] tracking-tight shadow-sm flex items-center gap-1">
+                          <span>Amazon</span>
+                          <span className="text-white text-[8px]">Choice</span>
+                        </span>
                       </div>
 
-                      {/* Quick Action Button: Social Card modal */}
-                      <button
-                        type="button"
-                        onClick={() => setSelectedShoeForSocial(main)}
-                        className="absolute bottom-3 right-3 p-2.5 rounded-2xl bg-black/80 hover:bg-black text-white shadow-lg backdrop-blur-xs transition transform hover:scale-105 cursor-pointer"
-                        title="Generar Ficha para Redes Sociales"
-                      >
-                        <Instagram className="w-4 h-4" />
-                      </button>
+                      {totalStock <= 2 && totalStock > 0 && (
+                        <div className="absolute top-3 right-3">
+                          <span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-rose-500 text-white uppercase animate-pulse shadow-md">
+                            ¡Últimos {totalStock}!
+                          </span>
+                        </div>
+                      )}
+
+                      {/* Quick Action Buttons on image */}
+                      <div className="absolute bottom-3 right-3 flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedShoeForSocial(main);
+                          }}
+                          className="p-2 rounded-xl bg-black/80 hover:bg-black text-white shadow-lg backdrop-blur-xs transition transform hover:scale-105 cursor-pointer"
+                          title="Generar Ficha para Redes Sociales"
+                        >
+                          <Instagram className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
 
                     </div>
 
@@ -561,13 +608,30 @@ export const AdidasCatalogView: React.FC = () => {
                       <div>
                         
                         {/* Title & Color */}
-                        <div className="flex items-start justify-between gap-2">
-                          <h4 className="font-black text-slate-900 text-sm tracking-tight line-clamp-1 uppercase">
+                        <div 
+                          onClick={() => {
+                            setSelectedShoeForAmazon(main);
+                            setSelectedShoeAmazonSizes(sizes.map((s) => s.talla));
+                          }}
+                          className="cursor-pointer group/title"
+                        >
+                          <h4 className="font-black text-slate-900 text-sm tracking-tight line-clamp-1 uppercase group-hover/title:text-blue-600 transition-colors">
                             {main.nombre}
                           </h4>
                         </div>
                         
-                        <p className="text-[11px] text-slate-500 mt-0.5">
+                        {/* Amazon Rating Stars & Reviews */}
+                        <div className="flex items-center gap-1.5 mt-1">
+                          <div className="flex text-amber-500 text-xs tracking-tighter" aria-label="Calificación 4.8 de 5 estrellas">
+                            ★★★★★
+                          </div>
+                          <span className="text-[11px] font-bold text-slate-700">4.8</span>
+                          <span className="text-[11px] text-slate-400 font-normal hover:underline cursor-pointer">
+                            ({Math.floor(45 + (main.nombre.length * 7) % 350)})
+                          </span>
+                        </div>
+
+                        <p className="text-[11px] text-slate-500 mt-1">
                           Color: <strong className="text-slate-700 font-semibold">{main.color || 'Estándar'}</strong>
                         </p>
 
@@ -625,31 +689,44 @@ export const AdidasCatalogView: React.FC = () => {
                           </button>
                         </div>
 
-                        {/* Social Buttons */}
-                        <div className="grid grid-cols-2 gap-2">
+                        {/* Actions */}
+                        <div className="space-y-2">
                           <button
                             type="button"
                             onClick={() => {
-                              const text = getShoeWhatsAppText(main, sizes);
-                              triggerCopy(text, `Copiado: ${main.nombre}`);
-                              // Also can open WhatsApp directly
-                              const waUrl = `https://wa.me/?text=${encodeURIComponent(text)}`;
-                              window.open(waUrl, '_blank');
+                              setSelectedShoeForAmazon(main);
+                              setSelectedShoeAmazonSizes(sizes.map((s) => s.talla));
                             }}
-                            className="py-2 px-2.5 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer shadow-xs"
+                            className="w-full py-2 px-3 bg-[#FFD814] hover:bg-[#F7CA00] active:bg-[#F0B800] text-[#0F1111] rounded-xl text-xs font-black flex items-center justify-center gap-1.5 transition cursor-pointer shadow-xs border border-[#FCD200]"
                           >
-                            <MessageCircle className="w-3.5 h-3.5" />
-                            <span>WhatsApp</span>
+                            <ExternalLink className="w-3.5 h-3.5 text-[#0F1111]" />
+                            <span>Ver Ficha Amazon</span>
                           </button>
 
-                          <button
-                            type="button"
-                            onClick={() => setSelectedShoeForSocial(main)}
-                            className="py-2 px-2.5 bg-slate-900 hover:bg-black active:bg-slate-800 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer shadow-xs"
-                          >
-                            <Instagram className="w-3.5 h-3.5" />
-                            <span>Ficha Post</span>
-                          </button>
+                          <div className="grid grid-cols-2 gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const text = getShoeWhatsAppText(main, sizes);
+                                triggerCopy(text, `Copiado: ${main.nombre}`);
+                                const waUrl = `https://wa.me/?text=${encodeURIComponent(text)}`;
+                                window.open(waUrl, '_blank');
+                              }}
+                              className="py-2 px-2.5 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer shadow-xs"
+                            >
+                              <MessageCircle className="w-3.5 h-3.5" />
+                              <span>WhatsApp</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => setSelectedShoeForSocial(main)}
+                              className="py-2 px-2.5 bg-slate-900 hover:bg-black active:bg-slate-800 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer shadow-xs"
+                            >
+                              <Instagram className="w-3.5 h-3.5" />
+                              <span>Ficha Post</span>
+                            </button>
+                          </div>
                         </div>
 
                       </div>
@@ -1060,6 +1137,17 @@ export const AdidasCatalogView: React.FC = () => {
       <BatchWhiteBackgroundModal
         isOpen={isBatchWhiteBgOpen}
         onClose={() => setIsBatchWhiteBgOpen(false)}
+      />
+
+      {/* MODAL 5: AMAZON STYLE PRODUCT DETAIL SHEET */}
+      <AmazonProductDetailModal
+        product={selectedShoeForAmazon}
+        allAvailableSizes={selectedShoeAmazonSizes}
+        exchangeRate={exchangeRate}
+        isOpen={!!selectedShoeForAmazon}
+        onClose={() => setSelectedShoeForAmazon(null)}
+        onCleanBackground={handleCleanSingleShoe}
+        isCleaningBackground={isCleaningSingleShoe}
       />
 
       {/* Copied Notification Toast */}

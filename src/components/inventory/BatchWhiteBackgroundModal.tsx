@@ -39,8 +39,8 @@ export const BatchWhiteBackgroundModal: React.FC<BatchWhiteBackgroundModalProps>
 
   const stopRequestedRef = useRef(false);
 
-  // Products with images
-  const productsWithImage = products.filter((p) => p.activo && p.imagen && p.imagen.length > 50);
+  // Products with images (accept data URLs, absolute URLs, or local asset paths)
+  const productsWithImage = products.filter((p) => p.activo && p.imagen && p.imagen.trim().length > 4);
 
   useEffect(() => {
     if (isOpen) {
@@ -80,11 +80,23 @@ export const BatchWhiteBackgroundModal: React.FC<BatchWhiteBackgroundModalProps>
 
       try {
         if (prod.imagen) {
-          // Process with white studio background engine (Gemini AI + Canvas edge anti-aliasing)
+          // Process with white studio background engine (Gemini AI + Canvas edge anti-aliasing + realistic contact shadow)
           const cleanWhiteImage = await removeBackgroundToWhite(prod.imagen);
 
           // Update product in local state, localStorage and cloud database
-          updateProduct(prod.id, { imagen: cleanWhiteImage });
+          const updatedShoe = { ...prod, imagen: cleanWhiteImage, imagen_url: cleanWhiteImage };
+          updateProduct(prod.id, { imagen: cleanWhiteImage, imagen_url: cleanWhiteImage } as any);
+
+          // Explicitly push to backend to ensure persistence
+          try {
+            await fetch('/api/products', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(updatedShoe),
+            });
+          } catch (apiErr) {
+            console.warn('Backend sync warning in batch:', apiErr);
+          }
 
           setLastProcessedAfter(cleanWhiteImage);
           successful++;

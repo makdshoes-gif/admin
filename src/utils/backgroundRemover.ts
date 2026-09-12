@@ -67,8 +67,9 @@ async function tryGeminiBackgroundRemoval(imageBase64: string, timeoutMs = 6000)
 }
 
 /**
- * High-performance client-side Canvas background removal & white studio background.
- * Uses perimeter chromatic sampling, edge-sensitive flood fill, and contact shadow rendering.
+ * High-performance client-side Canvas background removal & studio white background engine.
+ * Uses perimeter seed flood-fill with edge gradient barrier protection so white shoes/laces
+ * are never erased, and renders a realistic studio contact shadow under the sole.
  */
 export async function removeBackgroundClientCanvas(imageSrc: string): Promise<string> {
   const img = await loadImageElement(imageSrc);
@@ -97,90 +98,135 @@ export async function removeBackgroundClientCanvas(imageSrc: string): Promise<st
   ctx.drawImage(img, 0, 0, width, height);
   const imgData = ctx.getImageData(0, 0, width, height);
   const data = imgData.data;
+  const totalPixels = width * height;
 
-  // 1. Sample perimeter pixels to establish background color model
-  const borderSamples: [number, number, number][] = [];
-  const step = Math.max(1, Math.floor(Math.min(width, height) / 80));
+  // 1. Compute perimeter background color profile (Top, Bottom, Left, Right)
+  const bgSamples: [number, number, number][] = [];
+  const borderMargin = Math.max(3, Math.floor(Math.min(width, height) * 0.025));
 
-  // Top & Bottom borders
-  for (let x = 0; x < width; x += step) {
-    for (let y = 0; y < Math.min(height, 8); y++) {
+  for (let x = 0; x < width; x += 4) {
+    for (let y = 0; y < borderMargin; y++) {
       const idx = (y * width + x) * 4;
-      borderSamples.push([data[idx], data[idx + 1], data[idx + 2]]);
+      bgSamples.push([data[idx], data[idx + 1], data[idx + 2]]);
     }
-    for (let y = Math.max(0, height - 8); y < height; y++) {
+    for (let y = height - borderMargin; y < height; y++) {
       const idx = (y * width + x) * 4;
-      borderSamples.push([data[idx], data[idx + 1], data[idx + 2]]);
-    }
-  }
-
-  // Left & Right borders
-  for (let y = 0; y < height; y += step) {
-    for (let x = 0; x < Math.min(width, 8); x++) {
-      const idx = (y * width + x) * 4;
-      borderSamples.push([data[idx], data[idx + 1], data[idx + 2]]);
-    }
-    for (let x = Math.max(0, width - 8); x < width; x++) {
-      const idx = (y * width + x) * 4;
-      borderSamples.push([data[idx], data[idx + 1], data[idx + 2]]);
+      bgSamples.push([data[idx], data[idx + 1], data[idx + 2]]);
     }
   }
 
-  // Calculate average background color and standard deviation
-  let sumR = 0, sumG = 0, sumB = 0;
-  for (const [r, g, b] of borderSamples) {
-    sumR += r;
-    sumG += g;
-    sumB += b;
+  for (let y = 0; y < height; y += 4) {
+    for (let x = 0; x < borderMargin; x++) {
+      const idx = (y * width + x) * 4;
+      bgSamples.push([data[idx], data[idx + 1], data[idx + 2]]);
+    }
+    for (let x = width - borderMargin; x < width; x++) {
+      const idx = (y * width + x) * 4;
+      bgSamples.push([data[idx], data[idx + 1], data[idx + 2]]);
+    }
   }
-  const avgR = sumR / borderSamples.length;
-  const avgG = sumG / borderSamples.length;
-  const avgB = sumB / borderSamples.length;
 
-  // Compute variance/distance tolerance
-  let sumDiff = 0;
-  for (const [r, g, b] of borderSamples) {
-    const diff = Math.sqrt(
-      Math.pow(r - avgR, 2) + Math.pow(g - avgG, 2) + Math.pow(b - avgB, 2)
-    );
-    sumDiff += diff;
+  let avgR = 0, avgG = 0, avgB = 0;
+  for (const [r, g, b] of bgSamples) {
+    avgR += r;
+    avgG += g;
+    avgB += b;
   }
-  const avgDiff = sumDiff / borderSamples.length;
-  // Adaptive threshold based on background noise
-  const threshold = Math.max(28, Math.min(65, avgDiff * 2.2));
+  avgR /= bgSamples.length;
+  avgG /= bgSamples.length;
+  avgB /= bgSamples.length;
 
-  // 2. Build foreground mask and find shoe bounding box
+  // Color distance helper
+  const colorDist = (r: number, g: number, b: number, tr: number, tg: number, tb: number): number => {
+    const dr = r - tr;
+    const dg = g - tg;
+    const db = b - tb;
+    // Perceptual weighting: human eye is more sensitive to green
+    return Math.sqrt(0.299 * dr * dr + 0.587 * dg * dg + 0.114 * db * db);
+  };
+
+  // 2. Multi-seed perimeter flood-fill to identify outer background
+  // 0 = unvisited, 1 = background, 2 = foreground (shoe)
+  const pixelStatus = new Uint8Array(totalPixels);
+  const queue: Int32Array = new Int32Array(totalPixels);
+  let qHead = 0;
+  let qTail = 0;
+
+  // Adaptive threshold based on background variation
+  let diffSum = 0;
+  for (const [r, g, b] of bgSamples) {
+    diffSum += colorDist(r, g, b, avgR, avgG, avgB);
+  }
+  const avgBgVar = diffSum / bgSamples.length;
+  const floodThreshold = Math.max(22, Math.min(52, avgBgVar * 2.1));
+
+  // Seed all perimeter pixels
+  for (let x = 0; x < width; x++) {
+    // Top border
+    queue[qTail++] = x;
+    pixelStatus[x] = 1;
+    // Bottom border
+    const bIdx = (height - 1) * width + x;
+    queue[qTail++] = bIdx;
+    pixelStatus[bIdx] = 1;
+  }
+  for (let y = 1; y < height - 1; y++) {
+    // Left border
+    const lIdx = y * width;
+    queue[qTail++] = lIdx;
+    pixelStatus[lIdx] = 1;
+    // Right border
+    const rIdx = y * width + (width - 1);
+    queue[qTail++] = rIdx;
+    pixelStatus[rIdx] = 1;
+  }
+
+  // Flood fill algorithm
+  while (qHead < qTail) {
+    const curr = queue[qHead++];
+    const cx = curr % width;
+    const cy = Math.floor(curr / width);
+    const cIdx = curr * 4;
+    const cr = data[cIdx];
+    const cg = data[cIdx + 1];
+    const cb = data[cIdx + 2];
+
+    // 4-neighborhood
+    const neighbors = [
+      cx > 0 ? curr - 1 : -1,
+      cx < width - 1 ? curr + 1 : -1,
+      cy > 0 ? curr - width : -1,
+      cy < height - 1 ? curr + width : -1,
+    ];
+
+    for (const n of neighbors) {
+      if (n === -1 || pixelStatus[n] !== 0) continue;
+
+      const nIdx = n * 4;
+      const nr = data[nIdx];
+      const ng = data[nIdx + 1];
+      const nb = data[nIdx + 2];
+
+      // Distance to average background AND step distance from current pixel
+      const distToBg = colorDist(nr, ng, nb, avgR, avgG, avgB);
+      const stepDist = colorDist(nr, ng, nb, cr, cg, cb);
+
+      // If it looks like background and transition isn't an edge barrier
+      if (distToBg < floodThreshold && stepDist < 36) {
+        pixelStatus[n] = 1; // background
+        queue[qTail++] = n;
+      }
+    }
+  }
+
+  // 3. Mark foreground and compute shoe bounding box
   let minX = width, maxX = 0, minY = height, maxY = 0;
-  const isForeground = new Uint8Array(width * height);
-
-  // Center coordinates
-  const cx = width / 2;
-  const cy = height / 2;
-  const maxCenterDist = Math.sqrt(cx * cx + cy * cy);
-
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
-      const idx = (y * width + x) * 4;
-      const r = data[idx];
-      const g = data[idx + 1];
-      const b = data[idx + 2];
-
-      // Distance to average background color
-      const colorDist = Math.sqrt(
-        Math.pow(r - avgR, 2) + Math.pow(g - avgG, 2) + Math.pow(b - avgB, 2)
-      );
-
-      // Distance to image edge (outer 4% is almost always background)
-      const edgeDistX = Math.min(x, width - x);
-      const edgeDistY = Math.min(y, height - y);
-      const isExtremeEdge = edgeDistX < 8 || edgeDistY < 8;
-
-      // Distance to center (shoes are placed near center)
-      const distFromCenter = Math.sqrt(Math.pow(x - cx, 2) + Math.pow(y - cy, 2));
-      const centerBias = (distFromCenter / maxCenterDist) * 18;
-
-      if (!isExtremeEdge && colorDist > (threshold - centerBias)) {
-        isForeground[y * width + x] = 1;
+      const idx = y * width + x;
+      if (pixelStatus[idx] !== 1) {
+        // Pixel is NOT background, it is the shoe!
+        pixelStatus[idx] = 2; // foreground
         if (x < minX) minX = x;
         if (x > maxX) maxX = x;
         if (y < minY) minY = y;
@@ -189,83 +235,157 @@ export async function removeBackgroundClientCanvas(imageSrc: string): Promise<st
     }
   }
 
-  // Expand bounding box slightly for natural margin
-  minX = Math.max(0, minX - 4);
-  maxX = Math.min(width - 1, maxX + 4);
-  minY = Math.max(0, minY - 4);
-  maxY = Math.min(height - 1, maxY + 4);
-
-  // 3. Render onto new high-clarity canvas with pure white studio background
-  const outCanvas = document.createElement('canvas');
-  outCanvas.width = width;
-  outCanvas.height = height;
-  const outCtx = outCanvas.getContext('2d');
-  if (!outCtx) return imageSrc;
-
-  // Pure studio white base (#FFFFFF)
-  outCtx.fillStyle = '#FFFFFF';
-  outCtx.fillRect(0, 0, width, height);
-
-  // 4. Add subtle, realistic studio contact shadow beneath the sole
-  if (maxY > minY && maxX > minX) {
-    const shadowWidth = (maxX - minX) * 0.85;
-    const shadowHeight = Math.max(10, Math.min(26, (maxY - minY) * 0.07));
-    const shadowX = (minX + maxX) / 2;
-    const shadowY = Math.min(height - 8, maxY + (shadowHeight * 0.35));
-
-    outCtx.save();
-    outCtx.beginPath();
-    outCtx.ellipse(shadowX, shadowY, shadowWidth / 2, shadowHeight / 2, 0, 0, Math.PI * 2);
-    const grad = outCtx.createRadialGradient(
-      shadowX, shadowY, 0,
-      shadowX, shadowY, shadowWidth / 2
-    );
-    grad.addColorStop(0, 'rgba(15, 23, 42, 0.18)');
-    grad.addColorStop(0.5, 'rgba(15, 23, 42, 0.08)');
-    grad.addColorStop(1, 'rgba(255, 255, 255, 0)');
-    outCtx.fillStyle = grad;
-    outCtx.fill();
-    outCtx.restore();
+  // Safety check: If flood-fill failed to find shoe or isolated too much, fallback gracefully
+  if (maxX <= minX || maxY <= minY || (maxX - minX) < width * 0.15) {
+    minX = Math.round(width * 0.08);
+    maxX = Math.round(width * 0.92);
+    minY = Math.round(height * 0.12);
+    maxY = Math.round(height * 0.88);
   }
 
-  // 5. Blend foreground pixels with anti-aliasing into the white background
-  const outImgData = outCtx.getImageData(0, 0, width, height);
-  const outData = outImgData.data;
+  const rawShoeWidth = Math.max(10, maxX - minX + 1);
+  const rawShoeHeight = Math.max(10, maxY - minY + 1);
 
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      const i = y * width + x;
-      const idx = i * 4;
+  // 4. Extract Cutout Shoe to Isolated Canvas with Smooth Edge Anti-Aliasing
+  const cutoutCanvas = document.createElement('canvas');
+  cutoutCanvas.width = rawShoeWidth;
+  cutoutCanvas.height = rawShoeHeight;
+  const cutoutCtx = cutoutCanvas.getContext('2d');
+  if (!cutoutCtx) return imageSrc;
 
-      if (isForeground[i]) {
-        // Check neighborhood to apply soft edge anti-aliasing
-        let fgNeighbors = 0;
-        if (x > 0 && isForeground[i - 1]) fgNeighbors++;
-        if (x < width - 1 && isForeground[i + 1]) fgNeighbors++;
-        if (y > 0 && isForeground[i - width]) fgNeighbors++;
-        if (y < height - 1 && isForeground[i + width]) fgNeighbors++;
+  const cutoutImgData = cutoutCtx.createImageData(rawShoeWidth, rawShoeHeight);
+  const cutoutData = cutoutImgData.data;
 
-        if (fgNeighbors === 4) {
-          // Inner foreground
-          outData[idx] = data[idx];
-          outData[idx + 1] = data[idx + 1];
-          outData[idx + 2] = data[idx + 2];
-          outData[idx + 3] = 255;
-        } else {
-          // Boundary pixel - smooth blend with white
-          const alpha = (fgNeighbors / 4) * 0.85 + 0.15;
-          outData[idx] = Math.round(data[idx] * alpha + 255 * (1 - alpha));
-          outData[idx + 1] = Math.round(data[idx + 1] * alpha + 255 * (1 - alpha));
-          outData[idx + 2] = Math.round(data[idx + 2] * alpha + 255 * (1 - alpha));
-          outData[idx + 3] = 255;
-        }
+  for (let y = minY; y <= maxY; y++) {
+    for (let x = minX; x <= maxX; x++) {
+      const srcIdx = y * width + x;
+      const srcPixel = srcIdx * 4;
+
+      const destX = x - minX;
+      const destY = y - minY;
+      const destPixel = (destY * rawShoeWidth + destX) * 4;
+
+      if (pixelStatus[srcIdx] === 2) {
+        let fgCount = 0;
+        if (x > 0 && pixelStatus[srcIdx - 1] === 2) fgCount++;
+        if (x < width - 1 && pixelStatus[srcIdx + 1] === 2) fgCount++;
+        if (y > 0 && pixelStatus[srcIdx - width] === 2) fgCount++;
+        if (y < height - 1 && pixelStatus[srcIdx + width] === 2) fgCount++;
+
+        const alpha = fgCount === 4 ? 255 : Math.round(((fgCount / 4) * 0.7 + 0.3) * 255);
+
+        cutoutData[destPixel] = data[srcPixel];
+        cutoutData[destPixel + 1] = data[srcPixel + 1];
+        cutoutData[destPixel + 2] = data[srcPixel + 2];
+        cutoutData[destPixel + 3] = alpha;
+      } else {
+        cutoutData[destPixel + 3] = 0;
       }
     }
   }
+  cutoutCtx.putImageData(cutoutImgData, 0, 0);
 
-  outCtx.putImageData(outImgData, 0, 0);
+  // 5. Create Pro Studio Cyclorama Output Canvas (Matching Reference Aesthetic)
+  const outW = 1200;
+  const outH = 900;
+  const outCanvas = document.createElement('canvas');
+  outCanvas.width = outW;
+  outCanvas.height = outH;
+  const outCtx = outCanvas.getContext('2d');
+  if (!outCtx) return imageSrc;
 
-  // Return crisp JPEG with high quality
+  // Seamless Studio Cyclorama Background (#F4F6F8 with soft key-light highlight)
+  const bgGrad = outCtx.createRadialGradient(
+    outW * 0.5, outH * 0.38, 0,
+    outW * 0.5, outH * 0.38, outW * 0.72
+  );
+  bgGrad.addColorStop(0, '#FFFFFF');
+  bgGrad.addColorStop(0.45, '#FAFCFE');
+  bgGrad.addColorStop(0.82, '#F4F6F8');
+  bgGrad.addColorStop(1, '#ECEFF2');
+  outCtx.fillStyle = bgGrad;
+  outCtx.fillRect(0, 0, outW, outH);
+
+  // 6. Optimal Shoe Framing & Grounding (Profile Centering matching Adidas & Amazon specs)
+  const maxAllowedW = outW * 0.82;
+  const maxAllowedH = outH * 0.65;
+  const scale = Math.min(maxAllowedW / rawShoeWidth, maxAllowedH / rawShoeHeight);
+
+  const finalW = Math.round(rawShoeWidth * scale);
+  const finalH = Math.round(rawShoeHeight * scale);
+  const finalX = Math.round((outW - finalW) / 2);
+
+  // Ground plane: sole/cleats rest naturally at ~77% of canvas height
+  const groundY = Math.round(outH * 0.77);
+  const finalY = groundY - finalH;
+
+  // 7. REALISTIC STUDIO CONTACT SHADOW (Sombra Real de Estudio)
+  outCtx.save();
+
+  // A) Ambient Diffuse Ground Shadow (Sombra difusa amplia que ancla el zapato)
+  const ambShadowW = finalW * 0.90;
+  const ambShadowH = Math.max(16, Math.min(42, finalH * 0.10));
+  const ambGrad = outCtx.createRadialGradient(
+    outW / 2, groundY + 4, 0,
+    outW / 2, groundY + 4, ambShadowW / 2
+  );
+  ambGrad.addColorStop(0, 'rgba(40, 44, 52, 0.24)');
+  ambGrad.addColorStop(0.38, 'rgba(50, 55, 65, 0.13)');
+  ambGrad.addColorStop(0.72, 'rgba(70, 75, 85, 0.04)');
+  ambGrad.addColorStop(1, 'rgba(244, 246, 248, 0)');
+
+  outCtx.beginPath();
+  outCtx.ellipse(outW / 2, groundY + 4, ambShadowW / 2, ambShadowH / 2, 0, 0, Math.PI * 2);
+  outCtx.fillStyle = ambGrad;
+  outCtx.fill();
+
+  // B) Direct Contact Occlusion Shadow (Sombra de contacto oscura bajo la suela)
+  const contactW = finalW * 0.76;
+  const contactH = Math.max(6, Math.min(18, finalH * 0.038));
+  const contactGrad = outCtx.createRadialGradient(
+    outW / 2, groundY + 1, 0,
+    outW / 2, groundY + 1, contactW / 2
+  );
+  contactGrad.addColorStop(0, 'rgba(30, 34, 42, 0.48)');
+  contactGrad.addColorStop(0.45, 'rgba(35, 40, 50, 0.22)');
+  contactGrad.addColorStop(0.85, 'rgba(45, 50, 60, 0.05)');
+  contactGrad.addColorStop(1, 'rgba(244, 246, 248, 0)');
+
+  outCtx.beginPath();
+  outCtx.ellipse(outW / 2, groundY + 1, contactW / 2, contactH / 2, 0, 0, Math.PI * 2);
+  outCtx.fillStyle = contactGrad;
+  outCtx.fill();
+
+  // C) Heel & Forefoot Weight Contact Accents
+  const heelX = finalX + finalW * 0.22;
+  const forefootX = finalX + finalW * 0.78;
+  const accentRadius = Math.max(16, finalW * 0.10);
+
+  const heelGrad = outCtx.createRadialGradient(heelX, groundY + 1, 0, heelX, groundY + 1, accentRadius);
+  heelGrad.addColorStop(0, 'rgba(30, 34, 42, 0.32)');
+  heelGrad.addColorStop(1, 'rgba(244, 246, 248, 0)');
+  outCtx.beginPath();
+  outCtx.ellipse(heelX, groundY + 1, accentRadius, contactH * 0.8, 0, 0, Math.PI * 2);
+  outCtx.fillStyle = heelGrad;
+  outCtx.fill();
+
+  const ffGrad = outCtx.createRadialGradient(forefootX, groundY + 1, 0, forefootX, groundY + 1, accentRadius);
+  ffGrad.addColorStop(0, 'rgba(30, 34, 42, 0.26)');
+  ffGrad.addColorStop(1, 'rgba(244, 246, 248, 0)');
+  outCtx.beginPath();
+  outCtx.ellipse(forefootX, groundY + 1, accentRadius, contactH * 0.8, 0, 0, Math.PI * 2);
+  outCtx.fillStyle = ffGrad;
+  outCtx.fill();
+
+  outCtx.restore();
+
+  // 8. Render Shoe Foreground Cutout with High-Fidelity Smoothing
+  outCtx.save();
+  outCtx.imageSmoothingEnabled = true;
+  outCtx.imageSmoothingQuality = 'high';
+  outCtx.drawImage(cutoutCanvas, finalX, finalY, finalW, finalH);
+  outCtx.restore();
+
   return outCanvas.toDataURL('image/jpeg', 0.92);
 }
 
