@@ -12,10 +12,12 @@ import {
   insertSale,
   updateSale,
   voidSale,
+  deductStockForSale,
   getSalesClosures,
   addSalesClosure,
 } from './db.js';
 import { analyzeShoeImage, removeBackgroundWithGemini } from './shoeAi.js';
+import { notifyInventoryWebhook } from './inventoryWebhook.js';
 
 export const app = express();
 // límite ampliado: las fotos del escáner de calzado llegan como base64 (~1-4mb)
@@ -164,6 +166,8 @@ app.post('/api/products', async (req, res) => {
         descripcion = EXCLUDED.descripcion;
     `;
     res.json({ saved: true, id: p.id, product: p });
+    // Notifica al webhook de la página de venta (no bloquea la respuesta al admin)
+    notifyInventoryWebhook();
   } catch (err) {
     console.error('Error guardando producto en Neon:', err);
     res.status(500).json({ saved: false, error: err instanceof Error ? err.message : String(err) });
@@ -235,6 +239,8 @@ app.post('/api/products/bulk', async (req, res) => {
       `;
     }
     res.json({ success: true, count: products.length });
+    // Notifica al webhook de la página de venta (no bloquea la respuesta al admin)
+    notifyInventoryWebhook();
   } catch (err) {
     console.error('Error en importación masiva a Neon:', err);
     res.status(500).json({ success: false, error: err instanceof Error ? err.message : String(err) });
@@ -269,7 +275,10 @@ app.post('/api/sales', async (req, res) => {
   try {
     await initDatabaseSchema();
     await insertSale(sale);
+    await deductStockForSale(sale.items || []);
     res.json({ saved: true, id: sale.id });
+    // El stock bajó: notifica al webhook de la página de venta
+    notifyInventoryWebhook();
   } catch (err) {
     console.error('Error guardando venta en Neon:', err);
     res.status(500).json({ saved: false, error: err instanceof Error ? err.message : String(err) });
@@ -307,6 +316,8 @@ app.post('/api/sales/:id/void', async (req, res) => {
       return res.status(404).json({ success: false, error: 'Venta no encontrada.' });
     }
     res.json({ success: true, id, items: result.items });
+    // El stock se restituyó: notifica al webhook de la página de venta
+    notifyInventoryWebhook();
   } catch (err) {
     console.error('Error anulando venta en Neon:', err);
     res.status(500).json({ success: false, error: err instanceof Error ? err.message : String(err) });
