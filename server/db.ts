@@ -370,21 +370,6 @@ export async function updateSale(id: string, updates: Record<string, any>): Prom
   return true;
 }
 
-// Descuenta del inventario los artículos vendidos (se llama al registrar una venta).
-// Simétrico a voidSale, que devuelve el stock cuando una venta se anula.
-export async function deductStockForSale(items: any[]): Promise<void> {
-  const sql = getNeonSql();
-  if (!sql || !Array.isArray(items)) return;
-  for (const item of items) {
-    if (item?.producto_id && item?.cantidad) {
-      await sql`
-        UPDATE shoe_products SET stock = GREATEST(0, stock - ${item.cantidad})
-        WHERE id = ${item.producto_id}
-      `;
-    }
-  }
-}
-
 // Anular una venta con error: no se borra (se conserva el historial), se
 // marca como 'anulada' y el stock de cada producto vendido se restituye.
 export async function voidSale(id: string, motivo: string): Promise<{ ok: boolean; items?: any[] }> {
