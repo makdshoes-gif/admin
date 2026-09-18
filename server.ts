@@ -15,9 +15,12 @@ import {
   normalizeSales,
   normalizeExpenses,
   normalizeBankReconciliations,
+  voidSale,
+  getSalesClosures,
+  addSalesClosure,
 } from './server/db.js';
 import { verifyBdvPayment, getBdvApiConfig, getRecentVerifications } from './server/bdv.js';
-import { analyzeShoeImage, removeBackgroundWithGemini } from './server/shoeAi.js';
+import { analyzeShoeImage } from './server/shoeAi.js';
 
 const DATA_DIR = path.join(process.cwd(), 'server', 'data');
 if (!fs.existsSync(DATA_DIR)) {
@@ -53,75 +56,12 @@ const DEFAULT_ACCOUNTS = [
   { id: 'acc-6', nombre: 'Cashea', moneda: 'USD', saldo: 0.00, icono: 'CircleDollarSign' },
 ];
 
-const SAMPLE_ADIZERO_PRODUCTS = [
-  {
-    id: 'prod-adizero-purehustle-40',
-    nombre: 'Adidas Adizero PureHustle Cleats White & Silver',
-    sku: 'ADI-ADZ-WHTSLV-40',
-    categoria: 'Calzado',
-    marca: 'Adidas',
-    tipo: 'Deportivo',
-    talla: '40',
-    color: 'Blanco y Plata Metálica',
-    moneda: 'USD',
-    precio: 75.0,
-    costo: 42.0,
-    stock: 6,
-    stock_minimo: 2,
-    activo: true,
-    imagen: '/adizero-purehustle-studio.jpg',
-    descripcion: 'Calzado deportivo de alto rendimiento Adidas Adizero PureHustle con placa de tracción de tacos metálicos, acabado en plata reflectante, capellada ultraligera transpirable y amortiguación receptiva para campo y entrenamiento.',
-    genero: 'Unisex',
-    created_at: new Date().toISOString(),
-  },
-  {
-    id: 'prod-adizero-purehustle-41',
-    nombre: 'Adidas Adizero PureHustle Cleats White & Silver',
-    sku: 'ADI-ADZ-WHTSLV-41',
-    categoria: 'Calzado',
-    marca: 'Adidas',
-    tipo: 'Deportivo',
-    talla: '41',
-    color: 'Blanco y Plata Metálica',
-    moneda: 'USD',
-    precio: 75.0,
-    costo: 42.0,
-    stock: 8,
-    stock_minimo: 2,
-    activo: true,
-    imagen: '/adizero-purehustle-studio.jpg',
-    descripcion: 'Calzado deportivo de alto rendimiento Adidas Adizero PureHustle con placa de tracción de tacos metálicos, acabado en plata reflectante, capellada ultraligera transpirable y amortiguación receptiva para campo y entrenamiento.',
-    genero: 'Unisex',
-    created_at: new Date().toISOString(),
-  },
-  {
-    id: 'prod-adizero-purehustle-42',
-    nombre: 'Adidas Adizero PureHustle Cleats White & Silver',
-    sku: 'ADI-ADZ-WHTSLV-42',
-    categoria: 'Calzado',
-    marca: 'Adidas',
-    tipo: 'Deportivo',
-    talla: '42',
-    color: 'Blanco y Plata Metálica',
-    moneda: 'USD',
-    precio: 75.0,
-    costo: 42.0,
-    stock: 5,
-    stock_minimo: 2,
-    activo: true,
-    imagen: '/adizero-purehustle-studio.jpg',
-    descripcion: 'Calzado deportivo de alto rendimiento Adidas Adizero PureHustle con placa de tracción de tacos metálicos, acabado en plata reflectante, capellada ultraligera transpirable y amortiguación receptiva para campo y entrenamiento.',
-    genero: 'Unisex',
-    created_at: new Date().toISOString(),
-  }
-];
-
 function readServerStore(): ServerStoreState {
   try {
     if (fs.existsSync(STORE_FILE)) {
       const data = JSON.parse(fs.readFileSync(STORE_FILE, 'utf-8'));
       return {
-        products: Array.isArray(data.products) && data.products.length > 0 ? data.products : SAMPLE_ADIZERO_PRODUCTS,
+        products: Array.isArray(data.products) ? data.products : [],
         sales: Array.isArray(data.sales) ? data.sales : [],
         layaways: Array.isArray(data.layaways) ? data.layaways : [],
         movements: Array.isArray(data.movements) ? data.movements : [],
@@ -150,10 +90,6 @@ function readServerStore(): ServerStoreState {
       initialSales = JSON.parse(fs.readFileSync(SALES_FILE, 'utf-8'));
     }
   } catch (e) {}
-
-  if (!initialProducts || initialProducts.length === 0) {
-    initialProducts = SAMPLE_ADIZERO_PRODUCTS;
-  }
 
   const initial: ServerStoreState = {
     products: initialProducts,
@@ -211,7 +147,10 @@ function writeLocalSales(sales: any[]) {
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  // Render (y la mayoría de hostings) asignan el puerto por variable de
+  // entorno. Si se deja fijo en 3000, el servicio arranca pero el hosting
+  // nunca logra conectarse y el sitio queda caído.
+  const PORT = Number(process.env.PORT) || 3000;
 
   // JSON & URL-encoded middleware (25MB limit for high-res camera sneaker photos)
   app.use(express.json({ limit: '25mb' }));
@@ -444,22 +383,10 @@ async function startServer() {
             ${p.imagen_url || p.imagen || null}, ${p.ubicacion || 'Almacén'}, ${p.descripcion || ''}
           )
           ON CONFLICT (id) DO UPDATE SET
-            nombre = EXCLUDED.nombre,
-            marca = EXCLUDED.marca,
-            modelo = EXCLUDED.modelo,
-            color = EXCLUDED.color,
-            genero = EXCLUDED.genero,
-            categoria = EXCLUDED.categoria,
-            talla = EXCLUDED.talla,
-            sku = EXCLUDED.sku,
+            stock = EXCLUDED.stock,
             precio = EXCLUDED.precio,
             costo = EXCLUDED.costo,
-            stock = EXCLUDED.stock,
-            stock_minimo = EXCLUDED.stock_minimo,
-            stock_maximo = EXCLUDED.stock_maximo,
-            imagen_url = COALESCE(EXCLUDED.imagen_url, shoe_products.imagen_url),
-            ubicacion = EXCLUDED.ubicacion,
-            descripcion = EXCLUDED.descripcion;
+            nombre = EXCLUDED.nombre;
         `;
       } catch (err: unknown) {
         console.error('Error saving product to Neon:', err);
@@ -528,22 +455,10 @@ async function startServer() {
               ${p.imagen_url || p.imagen || null}, ${p.ubicacion || 'Almacén'}, ${p.descripcion || ''}
             )
             ON CONFLICT (id) DO UPDATE SET
-              nombre = EXCLUDED.nombre,
-              marca = EXCLUDED.marca,
-              modelo = EXCLUDED.modelo,
-              color = EXCLUDED.color,
-              genero = EXCLUDED.genero,
-              categoria = EXCLUDED.categoria,
-              talla = EXCLUDED.talla,
-              sku = EXCLUDED.sku,
+              stock = EXCLUDED.stock,
               precio = EXCLUDED.precio,
               costo = EXCLUDED.costo,
-              stock = EXCLUDED.stock,
-              stock_minimo = EXCLUDED.stock_minimo,
-              stock_maximo = EXCLUDED.stock_maximo,
-              imagen_url = COALESCE(EXCLUDED.imagen_url, shoe_products.imagen_url),
-              ubicacion = EXCLUDED.ubicacion,
-              descripcion = EXCLUDED.descripcion;
+              nombre = EXCLUDED.nombre;
           `;
         }
       } catch (err) {
@@ -744,19 +659,49 @@ async function startServer() {
   });
 
   // Cash Closures API
-  app.get('/api/closures', (req, res) => {
-    const store = readServerStore();
-    res.json({ success: true, data: store.cashClosures });
+  // Arqueo de caja: se guarda en Neon (base de datos compartida), NO en un
+  // archivo local. El disco del hosting es temporal y se borra en cada
+  // redespliegue, así que un archivo local perdería todos los cierres.
+  app.get('/api/closures', async (req, res) => {
+    try {
+      const closures = await getSalesClosures();
+      res.json({ success: true, data: closures });
+    } catch (err) {
+      console.error('Error leyendo cierres de caja:', err);
+      res.status(503).json({ success: false, error: 'No se pudo leer el arqueo. Tus datos no se borraron.', data: [] });
+    }
   });
 
-  app.post('/api/closures', (req, res) => {
+  app.post('/api/closures', async (req, res) => {
     const closure = req.body;
-    if (closure && closure.id) {
-      const store = readServerStore();
-      store.cashClosures.unshift(closure);
-      writeServerStore(store);
+    if (!closure || !closure.id) {
+      return res.status(400).json({ success: false, error: 'Datos de cierre inválidos' });
     }
-    res.json({ success: true });
+    try {
+      await initDatabaseSchema();
+      await addSalesClosure(closure);
+      res.json({ success: true, id: closure.id });
+    } catch (err) {
+      console.error('Error guardando cierre de caja:', err);
+      res.status(500).json({ success: false, error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  // Anular una venta con error (no se borra: queda marcada como 'anulada'
+  // y el stock vendido se devuelve al inventario)
+  app.post('/api/sales/:id/void', async (req, res) => {
+    const { id } = req.params;
+    const { motivo } = req.body || {};
+    try {
+      const result = await voidSale(id, motivo || '');
+      if (!result.ok) {
+        return res.status(404).json({ success: false, error: 'Venta no encontrada.' });
+      }
+      res.json({ success: true, id, items: result.items });
+    } catch (err) {
+      console.error('Error anulando venta:', err);
+      res.status(500).json({ success: false, error: err instanceof Error ? err.message : String(err) });
+    }
   });
 
   // 6. BDV Payment Verification API
@@ -993,36 +938,6 @@ async function startServer() {
   app.all('/api/analyze-shoe', handleShoeAnalysis);
   app.all('/api/shoe-ai', handleShoeAnalysis);
   app.all('/api/ai/shoe', handleShoeAnalysis);
-
-  // Background removal API endpoint
-  const handleRemoveBackground = async (req: express.Request, res: express.Response) => {
-    res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
-    res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept');
-
-    if (req.method === 'OPTIONS') {
-      return res.status(200).end();
-    }
-
-    try {
-      const { imageBase64 } = req.body || {};
-      if (!imageBase64 || typeof imageBase64 !== 'string') {
-        return res.status(400).json({ success: false, error: 'Se requiere una imagen en Base64' });
-      }
-
-      const whiteBgImage = await removeBackgroundWithGemini(imageBase64);
-      if (whiteBgImage) {
-        return res.json({ success: true, imageBase64: whiteBgImage });
-      }
-      return res.status(422).json({ success: false, error: 'No se pudo generar fondo de estudio con IA' });
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      res.status(500).json({ success: false, error: msg });
-    }
-  };
-
-  app.all('/api/ai/remove-background', handleRemoveBackground);
-  app.all('/api/remove-background', handleRemoveBackground);
 
   // 10. Catálogo Público & Sincronización GitHub (makdshoes-gif/makd)
   app.get('/api/catalog/products', async (_req, res) => {
