@@ -978,7 +978,24 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updatedItem),
-      }).catch((e) => console.log('Backend update sync info:', e));
+      })
+        .then(async (res) => {
+          if (!res.ok) {
+            const errJson = await res.json().catch(() => ({}));
+            addNotification(
+              'No se guardó en el servidor',
+              `El cambio quedó solo en esta pantalla. ${errJson.error || 'Verifica tu conexión e inténtalo de nuevo.'}`,
+              'critical'
+            );
+          }
+        })
+        .catch(() => {
+          addNotification(
+            'Sin conexión con el servidor',
+            'El cambio quedó solo en esta pantalla y no se sincronizó. Verifica tu conexión e inténtalo de nuevo.',
+            'critical'
+          );
+        });
 
       if (currentUser) {
         setDoc(doc(db, 'products', id), updatedItem, { merge: true }).catch((err) =>
