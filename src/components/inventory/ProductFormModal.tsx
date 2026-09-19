@@ -6,6 +6,7 @@ import {
   Tag,
   Boxes,
   ShieldAlert,
+  ShieldCheck,
   Camera,
   Upload,
   Link,
@@ -78,7 +79,9 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
   const [stockMinimo, setStockMinimo] = useState(editingProduct?.stock_minimo?.toString() || '2');
   const [imagen, setImagen] = useState(editingProduct?.imagen || '');
   const [descripcion, setDescripcion] = useState(editingProduct?.descripcion || '');
+  const [descripcionOriginalIA, setDescripcionOriginalIA] = useState<string | null>(null);
   const [genero, setGenero] = useState(editingProduct?.genero || 'Unisex');
+  const [esOriginal, setEsOriginal] = useState(editingProduct?.es_original !== false);
 
   // Image Compression State (ensures images stay < 500KB with high clarity)
   const [isCompressingImage, setIsCompressingImage] = useState(false);
@@ -121,9 +124,10 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
         setCosto(Math.round(initialAiData.precio_sugerido_usd * 0.55).toString());
       }
       if (initialAiData.descripcion_comercial) {
-        setDescripcion(
-          initialAiData.descripcion_comercial + (initialAiData.detalles_estilo ? '\n\n💡 ' + initialAiData.detalles_estilo : '')
-        );
+        const textoIA =
+          initialAiData.descripcion_comercial + (initialAiData.detalles_estilo ? '\n\n💡 ' + initialAiData.detalles_estilo : '');
+        setDescripcion(textoIA);
+        setDescripcionOriginalIA(textoIA);
       }
       if (initialAiData.tallas_sugeridas && initialAiData.tallas_sugeridas.length > 0) {
         setActiveSizes(initialAiData.tallas_sugeridas.map((t) => ({ talla: t, stock: 4 })));
@@ -430,9 +434,10 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
         setCosto(Math.round(res.precio_sugerido_usd * 0.55).toString());
       }
       if (res.descripcion_comercial) {
-        setDescripcion(
-          res.descripcion_comercial + (res.detalles_estilo ? '\n\n💡 ' + res.detalles_estilo : '')
-        );
+        const textoIA =
+          res.descripcion_comercial + (res.detalles_estilo ? '\n\n💡 ' + res.detalles_estilo : '');
+        setDescripcion(textoIA);
+        setDescripcionOriginalIA(textoIA);
       }
       if (!sku.trim() && res.marca && res.modelo) {
         const brandCode = res.marca.substring(0, 3).toUpperCase();
@@ -600,6 +605,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
       activo: true,
       descripcion: descripcion.trim() || undefined,
       genero: genero.trim() || undefined,
+      es_original: esOriginal,
       imagen:
         finalImagen ||
         (categoria === 'Gorras'
@@ -868,6 +874,39 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
             </div>
           </div>
 
+          {/* Autenticidad: Original vs Réplica */}
+          <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
+            <label className="block text-slate-700 font-bold mb-2 text-xs">
+              Autenticidad
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setEsOriginal(true)}
+                className={`flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border-2 transition cursor-pointer ${
+                  esOriginal
+                    ? 'bg-emerald-50 border-emerald-500 text-emerald-700'
+                    : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300'
+                }`}
+              >
+                <ShieldCheck className="w-3.5 h-3.5" />
+                Original
+              </button>
+              <button
+                type="button"
+                onClick={() => setEsOriginal(false)}
+                className={`flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border-2 transition cursor-pointer ${
+                  !esOriginal
+                    ? 'bg-amber-50 border-amber-500 text-amber-700'
+                    : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300'
+                }`}
+              >
+                <ShieldAlert className="w-3.5 h-3.5" />
+                Réplica
+              </button>
+            </div>
+          </div>
+
           {/* Description & Social Media Copy */}
           <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-2">
             <div className="flex items-center justify-between">
@@ -888,6 +927,17 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
               placeholder="Descripción comercial atractiva, detalles de silueta, materiales y copy para redes sociales..."
               className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-indigo-500 text-xs resize-none"
             />
+            {descripcionOriginalIA && descripcion !== descripcionOriginalIA && (
+              <button
+                type="button"
+                onClick={() => setDescripcion(descripcionOriginalIA)}
+                className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1 cursor-pointer"
+                title="Descartar tus cambios y volver al texto que generó la IA"
+              >
+                <RotateCcw className="w-3 h-3" />
+                Restaurar descripción original de la IA
+              </button>
+            )}
           </div>
 
           {/* Pricing & Cost Matrix */}
