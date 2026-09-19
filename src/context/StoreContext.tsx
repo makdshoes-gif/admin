@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useMemo, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   ShoeProduct,
   StockMovement,
@@ -678,6 +678,14 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   }, [products, sales, movements, exchangeRate, adminPin, addNotification]);
 
+  // exchangeRate en una ref: syncBcvRate necesita leer el valor actual dentro
+  // del mensaje de error, pero SIN que eso obligue a recrear la función cada
+  // vez que la tasa cambia (eso era la causa del bug de abajo).
+  const exchangeRateRef = useRef(exchangeRate);
+  useEffect(() => {
+    exchangeRateRef.current = exchangeRate;
+  }, [exchangeRate]);
+
   const syncBcvRate = useCallback(async (silent = false) => {
     setIsBcvSyncing(true);
     try {
@@ -730,19 +738,25 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       if (!silent) {
         addNotification(
           'Alerta de Sincronización BCV',
-          `No se pudo consultar la API del BCV en este instante (${errorMsg}). Se mantendrá la tasa local de ${exchangeRate.toFixed(2)} Bs/USD.`,
+          `No se pudo consultar la API del BCV en este instante (${errorMsg}). Se mantendrá la tasa local de ${exchangeRateRef.current.toFixed(2)} Bs/USD.`,
           'warning'
         );
       }
     } finally {
       setIsBcvSyncing(false);
     }
-  }, [addNotification, exchangeRate]);
+  }, [addNotification]);
 
-  // Auto-sync BCV on initial mount
+  // Sincroniza la tasa BCV UNA SOLA VEZ al abrir la app.
+  // IMPORTANTE: el arreglo de dependencias vacío es intencional. Antes decía
+  // [syncBcvRate], y como syncBcvRate dependía de exchangeRate, cada vez que
+  // la tasa cambiaba (incluido al guardar una tasa MANUAL) esta función se
+  // volvía a crear y este efecto se disparaba de nuevo, pisando la tasa
+  // manual con la tasa en vivo — incluso con "Auto-sincronización" apagada.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     syncBcvRate(true);
-  }, [syncBcvRate]);
+  }, []);
 
   // Periodic real-time background sync every 3 minutes (180,000 ms)
   useEffect(() => {
