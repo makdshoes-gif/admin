@@ -3,6 +3,7 @@ import {
   X,
   Star,
   ShieldCheck,
+  ShieldAlert,
   Truck,
   RotateCcw,
   CheckCircle2,
@@ -270,6 +271,17 @@ export const AmazonProductDetailModal: React.FC<AmazonProductDetailModalProps> =
                 <h1 className="text-xl sm:text-2xl font-black text-slate-900 leading-tight mt-1">
                   {product.nombre} {product.color ? `— ${product.color}` : ''}
                 </h1>
+                {product.es_original === false ? (
+                  <span className="inline-flex items-center gap-1 mt-1.5 px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-500 text-white uppercase">
+                    <ShieldAlert className="w-3 h-3" />
+                    Réplica
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 mt-1.5 px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-600 text-white uppercase">
+                    <ShieldCheck className="w-3 h-3" />
+                    100% Original
+                  </span>
+                )}
               </div>
 
               {/* Amazon Ratings & Reviews */}
