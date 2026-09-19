@@ -257,6 +257,9 @@ export async function initDatabaseSchema() {
     // Columnas añadidas después del diseño original: permiten guardar el
     // correo del cliente, notas de la venta, y anular una venta con error
     // (en vez de borrarla, se marca como 'anulada' y se conserva el historial).
+    // Marca si el producto es original/auténtico o una réplica.
+    await sql`ALTER TABLE shoe_products ADD COLUMN IF NOT EXISTS es_original BOOLEAN DEFAULT true`;
+
     await sql`ALTER TABLE sales_transactions ADD COLUMN IF NOT EXISTS cliente_correo VARCHAR(150)`;
     await sql`ALTER TABLE sales_transactions ADD COLUMN IF NOT EXISTS notas TEXT`;
     await sql`ALTER TABLE sales_transactions ADD COLUMN IF NOT EXISTS estado VARCHAR(20) DEFAULT 'completada'`;
