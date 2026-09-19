@@ -24,7 +24,9 @@ import {
   Smartphone,
   Globe,
   UploadCloud,
-  Loader2
+  Loader2,
+  ShieldCheck,
+  ShieldAlert
 } from 'lucide-react';
 import { useStore } from '../../context/StoreContext';
 import { ShoeProduct } from '../../types';
@@ -572,6 +574,18 @@ export const AdidasCatalogView: React.FC = () => {
                           {main.marca || 'Original'}
                         </span>
 
+                        {main.es_original === false ? (
+                          <span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-amber-500 text-white uppercase shadow-md flex items-center gap-1">
+                            <ShieldAlert className="w-2.5 h-2.5" />
+                            Réplica
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-emerald-600 text-white uppercase shadow-md flex items-center gap-1">
+                            <ShieldCheck className="w-2.5 h-2.5" />
+                            Original
+                          </span>
+                        )}
+
                         <span className="px-2 py-0.5 rounded text-[9px] font-extrabold bg-[#0F1111] text-[#FF9900] tracking-tight shadow-sm flex items-center gap-1">
                           <span>Amazon</span>
                           <span className="text-white text-[8px]">Choice</span>
@@ -963,6 +977,17 @@ export const AdidasCatalogView: React.FC = () => {
                       <h3 className="text-base sm:text-lg font-black uppercase tracking-tight leading-tight mt-0.5 font-sans">
                         {selectedShoeForSocial.nombre}
                       </h3>
+                      {selectedShoeForSocial.es_original === false ? (
+                        <span className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-full text-[9px] font-black bg-amber-500 text-white uppercase">
+                          <ShieldAlert className="w-2.5 h-2.5" />
+                          Réplica
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-full text-[9px] font-black bg-emerald-500 text-white uppercase">
+                          <ShieldCheck className="w-2.5 h-2.5" />
+                          100% Original
+                        </span>
+                      )}
                     </div>
 
                     <span className="px-2.5 py-1 rounded-md bg-white text-black font-black text-[10px] uppercase tracking-wider">
