@@ -403,7 +403,16 @@ async function startServer() {
             es_original = EXCLUDED.es_original;
         `;
       } catch (err: unknown) {
+        // Antes este error solo se registraba en el log del servidor y se le
+        // respondía "guardado" al navegador de todas formas. Eso hacía que un
+        // cambio de talla/precio pareciera guardarse pero en realidad nunca
+        // llegara a Neon, y volviera al valor anterior en la siguiente
+        // sincronización. Ahora se informa el fallo de verdad.
         console.error('Error saving product to Neon:', err);
+        return res.status(500).json({
+          saved: false,
+          error: err instanceof Error ? err.message : String(err),
+        });
       }
     }
 
