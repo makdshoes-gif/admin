@@ -375,18 +375,32 @@ async function startServer() {
           INSERT INTO shoe_products (
             id, nombre, marca, modelo, color, genero, categoria,
             talla, sku, precio, costo, stock, stock_minimo, stock_maximo,
-            imagen_url, ubicacion, descripcion
+            imagen_url, ubicacion, descripcion, es_original
           ) VALUES (
             ${p.id}, ${p.nombre}, ${p.marca}, ${p.modelo || ''}, ${p.color || ''},
             ${p.genero || 'Unisex'}, ${p.categoria || 'Casual'}, ${p.talla}, ${p.sku},
             ${p.precio}, ${p.costo}, ${p.stock}, ${p.stock_minimo || 3}, ${p.stock_maximo || 30},
-            ${p.imagen_url || p.imagen || null}, ${p.ubicacion || 'Almacén'}, ${p.descripcion || ''}
+            ${p.imagen_url || p.imagen || null}, ${p.ubicacion || 'Almacén'}, ${p.descripcion || ''},
+            ${p.es_original !== false}
           )
           ON CONFLICT (id) DO UPDATE SET
-            stock = EXCLUDED.stock,
+            nombre = EXCLUDED.nombre,
+            marca = EXCLUDED.marca,
+            modelo = EXCLUDED.modelo,
+            color = EXCLUDED.color,
+            genero = EXCLUDED.genero,
+            categoria = EXCLUDED.categoria,
+            talla = EXCLUDED.talla,
+            sku = EXCLUDED.sku,
             precio = EXCLUDED.precio,
             costo = EXCLUDED.costo,
-            nombre = EXCLUDED.nombre;
+            stock = EXCLUDED.stock,
+            stock_minimo = EXCLUDED.stock_minimo,
+            stock_maximo = EXCLUDED.stock_maximo,
+            imagen_url = EXCLUDED.imagen_url,
+            ubicacion = EXCLUDED.ubicacion,
+            descripcion = EXCLUDED.descripcion,
+            es_original = EXCLUDED.es_original;
         `;
       } catch (err: unknown) {
         console.error('Error saving product to Neon:', err);
