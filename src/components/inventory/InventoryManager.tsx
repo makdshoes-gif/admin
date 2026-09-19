@@ -599,7 +599,17 @@ export const InventoryManager: React.FC = () => {
                                 )}
                               </div>
                               <div>
-                                <div className="font-bold text-slate-900 text-xs">{p.nombre}</div>
+                                <div className="font-bold text-slate-900 text-xs flex items-center gap-1.5">
+                                  {p.nombre}
+                                  {p.es_original === false && (
+                                    <span
+                                      className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 text-[9px] font-bold border border-amber-200"
+                                      title="Producto marcado como réplica (no original)"
+                                    >
+                                      RÉPLICA
+                                    </span>
+                                  )}
+                                </div>
                                 <div className="text-[10px] text-slate-400 flex items-center gap-2">
                                   <span>{p.color}</span>
                                   <span>•</span>
