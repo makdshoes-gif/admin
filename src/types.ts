@@ -1,11 +1,11 @@
 export type ShoeType =
   | 'Deportivo'
   | 'Casual'
-  | 'Botas'
-  | 'Tacones'
-  | 'Sandalias'
-  | 'Mocasines'
-  | 'Infantil'
+  | 'Sala'
+  | 'Tacos'
+  | 'Beisbol'
+  | 'Runing'
+  | 'Microtacos'
   | 'Gorras'
   | 'Medias'
   | 'Accesorios'
@@ -42,6 +42,7 @@ export interface ShoeProduct {
   imagen?: string;
   descripcion?: string;
   genero?: string;
+  es_original?: boolean; // true = producto original/auténtico, false = réplica
   created_at: string;
 }
 
@@ -326,5 +327,3 @@ export interface Layaway {
   created_at: string;
   updated_at: string;
 }
-
-
