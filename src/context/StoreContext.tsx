@@ -354,6 +354,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             stock_minimo: Number(p.stock_minimo) || 2,
             activo: p.activo !== false,
             imagen: p.imagen_url || p.imagen || '',
+            descripcion: p.descripcion || '',
+            es_original: p.es_original !== false,
             created_at: p.created_at || new Date().toISOString(),
           }));
           setProducts(mappedProducts);
