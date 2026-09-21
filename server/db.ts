@@ -259,12 +259,19 @@ export async function initDatabaseSchema() {
     // (en vez de borrarla, se marca como 'anulada' y se conserva el historial).
     // Marca si el producto es original/auténtico o una réplica.
     await sql`ALTER TABLE shoe_products ADD COLUMN IF NOT EXISTS es_original BOOLEAN DEFAULT true`;
+    // updated_at: para que la app pueda preguntar "¿cambió algo?" con una
+    // consulta barata, en vez de tener que volver a descargar todos los
+    // productos (con sus fotos) cada vez que revisa si hay novedades.
+    await sql`ALTER TABLE shoe_products ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()`;
 
     await sql`ALTER TABLE sales_transactions ADD COLUMN IF NOT EXISTS cliente_correo VARCHAR(150)`;
     await sql`ALTER TABLE sales_transactions ADD COLUMN IF NOT EXISTS notas TEXT`;
     await sql`ALTER TABLE sales_transactions ADD COLUMN IF NOT EXISTS estado VARCHAR(20) DEFAULT 'completada'`;
     await sql`ALTER TABLE sales_transactions ADD COLUMN IF NOT EXISTS motivo_anulacion TEXT`;
     await sql`ALTER TABLE sales_transactions ADD COLUMN IF NOT EXISTS anulada_at TIMESTAMP WITH TIME ZONE`;
+    await sql`ALTER TABLE expenses ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()`;
+    await sql`ALTER TABLE bank_reconciliations ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()`;
+    await sql`ALTER TABLE cash_closures ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()`;
 
     // 4. Table for BDV Verified Payments
     await sql`
@@ -432,9 +439,76 @@ export async function addSalesClosure(closure: any): Promise<boolean> {
       ${closure.total_ventas_usd || 0}, ${closure.total_ventas_bs || 0},
       ${closure.usuario || ''}, ${closure.notas || ''}, 'cerrado'
     )
-    ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data;
+    ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data, updated_at = NOW();
   `;
   return true;
+}
+
+// ==========================================
+// Versión ligera del estado de la tienda
+// ==========================================
+// Consulta MUY barata (no trae fotos ni datos completos) que la app usa
+// para preguntar "¿cambió algo desde la última vez?" antes de decidir si
+// vale la pena volver a descargar todo (incluidas las fotos de productos).
+// Esto es lo que evita que cada revisión automática consuma el ancho de
+// banda de re-enviar el catálogo completo una y otra vez sin necesidad.
+// Antes esta función juntaba productos, ventas, gastos, etc. en UN solo
+// "número de versión". El problema: cada venta nueva (que pasa todo el día,
+// muchas veces por hora) cambiaba ese número combinado, así que el "¿cambió
+// algo?" casi SIEMPRE decía que sí — y la app terminaba re-descargando TODO
+// el catálogo, fotos de productos incluidas, en cada sincronización (cada
+// 60 segundos, en cada PC/pestaña abierta). Eso fue lo que agotó el ancho
+// de banda gratuito de Render.
+//
+// Ahora se calcula un número de versión POR SEPARADO para cada cosa
+// (productos, ventas, gastos, etc.). Así, una venta nueva solo obliga a
+// re-descargar ventas (datos livianos, sin fotos) — el catálogo de
+// productos con sus fotos solo se vuelve a bajar cuando un producto de
+// verdad cambió.
+export interface StoreVersion {
+  products: string;
+  sales: string;
+  expenses: string;
+  bankReconciliations: string;
+  closures: string;
+}
+
+export async function getStoreVersion(): Promise<StoreVersion> {
+  const sql = getNeonSql();
+  const empty: StoreVersion = {
+    products: 'no-db', sales: 'no-db', expenses: 'no-db',
+    bankReconciliations: 'no-db', closures: 'no-db',
+  };
+  if (!sql) return empty;
+  try {
+    const rows = await sql`
+      SELECT
+        (SELECT COUNT(*) FROM shoe_products) AS p_count,
+        (SELECT COALESCE(EXTRACT(EPOCH FROM MAX(updated_at)), 0) FROM shoe_products) AS p_ts,
+        (SELECT COUNT(*) FROM sales_transactions) AS s_count,
+        (SELECT COALESCE(EXTRACT(EPOCH FROM MAX(GREATEST(created_at, COALESCE(anulada_at, created_at)))), 0) FROM sales_transactions) AS s_ts,
+        (SELECT COUNT(*) FROM expenses) AS e_count,
+        (SELECT COALESCE(EXTRACT(EPOCH FROM MAX(updated_at)), 0) FROM expenses) AS e_ts,
+        (SELECT COUNT(*) FROM bank_reconciliations) AS b_count,
+        (SELECT COALESCE(EXTRACT(EPOCH FROM MAX(updated_at)), 0) FROM bank_reconciliations) AS b_ts,
+        (SELECT COUNT(*) FROM cash_closures) AS c_count,
+        (SELECT COALESCE(EXTRACT(EPOCH FROM MAX(updated_at)), 0) FROM cash_closures) AS c_ts
+    `;
+    const r: any = rows[0] || {};
+    return {
+      products: `${r.p_count}-${r.p_ts}`,
+      sales: `${r.s_count}-${r.s_ts}`,
+      expenses: `${r.e_count}-${r.e_ts}`,
+      bankReconciliations: `${r.b_count}-${r.b_ts}`,
+      closures: `${r.c_count}-${r.c_ts}`,
+    };
+  } catch (err) {
+    console.error('Error calculando versión de la tienda:', err);
+    return {
+      products: 'error', sales: 'error', expenses: 'error',
+      bankReconciliations: 'error', closures: 'error',
+    };
+  }
 }
 
 export async function getNeonTables(): Promise<{ table_name: string }[]> {
