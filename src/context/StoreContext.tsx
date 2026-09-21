@@ -322,10 +322,112 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     safeLocalStorageSet(`${STORAGE_KEY}_bcv_info`, JSON.stringify(bcvInfo));
   }, [bcvInfo]);
 
+  // Guarda la última "versión" conocida de CADA parte del estado del
+  // servidor por separado (productos, ventas, gastos, cierres). Antes era
+  // un solo valor combinado, y una venta nueva (constante durante el día)
+  // hacía que pareciera que "todo" cambió, obligando a re-descargar las
+  // fotos de todo el catálogo en cada sincronización. Ahora, si solo
+  // cambiaron las ventas, solo se vuelve a pedir /api/sales (liviano, sin
+  // fotos) y el catálogo de productos ni se toca.
+  const lastKnownVersionRef = useRef<{
+    products: string; sales: string; expenses: string;
+    bankReconciliations: string; closures: string;
+  } | null>(null);
+
+  const applySalesData = (salesArr: any[]) => {
+    const mappedSales = salesArr.map((s: any) => ({
+      ...s,
+      total_usd: Number(s.total_usd) || 0,
+      total_bs: Number(s.total_bs) || 0,
+      subtotal_usd: Number(s.subtotal_usd) || 0,
+      descuento_usd: Number(s.descuento_usd) || 0,
+      costo_total_usd: Number(s.costo_total_usd) || 0,
+      ganancia_neta_usd: Number(s.ganancia_neta_usd) || 0,
+      tasa_cambio: Number(s.tasa_cambio) || 0,
+    }));
+    setSales(mappedSales);
+    try { localStorage.setItem(`${STORAGE_KEY}_sales`, JSON.stringify(mappedSales)); } catch {}
+  };
+
+  const applyExpensesData = (expensesArr: any[]) => {
+    if (expensesArr.length > 0) {
+      setExpenses(expensesArr);
+      try { localStorage.setItem(`${STORAGE_KEY}_expenses`, JSON.stringify(expensesArr)); } catch {}
+    }
+  };
+
+  const applyClosuresData = (closuresArr: any[]) => {
+    setCashClosures(closuresArr);
+    try { localStorage.setItem(`${STORAGE_KEY}_closures`, JSON.stringify(closuresArr)); } catch {}
+  };
+
   // Master synchronization function from server store
   const syncFromServer = useCallback(async (silent = false) => {
     if (!silent) setSyncStatus('syncing');
     try {
+      // En una revisión silenciosa (el sondeo automático), primero pregunta
+      // "¿cambió algo, y qué?" con una consulta chiquita.
+      if (silent && lastKnownVersionRef.current) {
+        try {
+          const vRes = await fetch('/api/store/version');
+          if (vRes.ok) {
+            const vJson = await vRes.json();
+            const nv = vJson?.version;
+            const ov = lastKnownVersionRef.current;
+            if (nv && typeof nv === 'object') {
+              const productsChanged = nv.products !== ov.products;
+              const salesChanged = nv.sales !== ov.sales;
+              const expensesChanged = nv.expenses !== ov.expenses;
+              const bankChanged = nv.bankReconciliations !== ov.bankReconciliations;
+              const closuresChanged = nv.closures !== ov.closures;
+
+              if (!productsChanged && !salesChanged && !expensesChanged && !bankChanged && !closuresChanged) {
+                return; // nada cambió, no hace falta descargar nada
+              }
+
+              if (!productsChanged) {
+                // Nada en el catálogo de productos cambió: pedimos SOLO las
+                // partes livianas que sí cambiaron, sin tocar /api/store/state
+                // (que es lo que trae las fotos de todos los productos).
+                const tasks: Promise<void>[] = [];
+                if (salesChanged) {
+                  tasks.push(
+                    fetch('/api/sales').then((r) => (r.ok ? r.json() : null)).then((j) => {
+                      if (Array.isArray(j?.data)) applySalesData(j.data);
+                    })
+                  );
+                }
+                if (expensesChanged) {
+                  tasks.push(
+                    fetch('/api/expenses').then((r) => (r.ok ? r.json() : null)).then((j) => {
+                      if (Array.isArray(j?.data)) applyExpensesData(j.data);
+                    })
+                  );
+                }
+                if (closuresChanged) {
+                  tasks.push(
+                    fetch('/api/closures').then((r) => (r.ok ? r.json() : null)).then((j) => {
+                      if (Array.isArray(j?.data)) applyClosuresData(j.data);
+                    })
+                  );
+                }
+                await Promise.all(tasks);
+                lastKnownVersionRef.current = nv;
+                setSyncStatus('synced');
+                setLastSyncedAt(new Date().toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+                return;
+              }
+              // Si llegamos aquí, los productos sí cambiaron (una foto, un
+              // precio, etc.) — seguimos abajo con la sincronización
+              // completa, que es la única forma de traer la foto nueva.
+            }
+          }
+        } catch {
+          // Si falla la comprobación de versión, seguimos con la sincronización
+          // completa normal (mejor pecar de gastar de más que de quedar desactualizado).
+        }
+      }
+
       const res = await fetch('/api/store/state');
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const text = await res.text();
@@ -362,18 +464,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           try { localStorage.setItem(`${STORAGE_KEY}_products`, JSON.stringify(mappedProducts)); } catch {}
         }
         if (Array.isArray(d.sales)) {
-          const mappedSales = d.sales.map((s: any) => ({
-            ...s,
-            total_usd: Number(s.total_usd) || 0,
-            total_bs: Number(s.total_bs) || 0,
-            subtotal_usd: Number(s.subtotal_usd) || 0,
-            descuento_usd: Number(s.descuento_usd) || 0,
-            costo_total_usd: Number(s.costo_total_usd) || 0,
-            ganancia_neta_usd: Number(s.ganancia_neta_usd) || 0,
-            tasa_cambio: Number(s.tasa_cambio) || 0,
-          }));
-          setSales(mappedSales);
-          try { localStorage.setItem(`${STORAGE_KEY}_sales`, JSON.stringify(mappedSales)); } catch {}
+          applySalesData(d.sales);
         }
         if (Array.isArray(d.layaways)) {
           setLayaways(d.layaways);
@@ -388,12 +479,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           try { localStorage.setItem(`${STORAGE_KEY}_accounts`, JSON.stringify(d.accounts)); } catch {}
         }
         if (Array.isArray(d.cashClosures)) {
-          setCashClosures(d.cashClosures);
-          try { localStorage.setItem(`${STORAGE_KEY}_closures`, JSON.stringify(d.cashClosures)); } catch {}
+          applyClosuresData(d.cashClosures);
         }
-        if (Array.isArray(d.expenses) && d.expenses.length > 0) {
-          setExpenses(d.expenses);
-          try { localStorage.setItem(`${STORAGE_KEY}_expenses`, JSON.stringify(d.expenses)); } catch {}
+        if (Array.isArray(d.expenses)) {
+          applyExpensesData(d.expenses);
         }
         if (typeof d.exchangeRate === 'number' && d.exchangeRate > 0) {
           setExchangeRateState(d.exchangeRate);
@@ -403,6 +492,17 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         }
         setSyncStatus('synced');
         setLastSyncedAt(new Date().toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+
+        // Guardamos la versión actual (por partes) para poder saltarnos o
+        // acotar la próxima descarga. Se hace después de un sync completo
+        // real (no en el atajo de arriba), así que refleja lo que acabamos
+        // de recibir.
+        fetch('/api/store/version')
+          .then((r) => (r.ok ? r.json() : null))
+          .then((v) => {
+            if (v?.version && typeof v.version === 'object') lastKnownVersionRef.current = v.version;
+          })
+          .catch(() => {});
       }
     } catch (err) {
       console.warn('Sync from server error:', err);
