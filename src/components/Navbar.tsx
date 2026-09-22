@@ -460,18 +460,24 @@ export const Header: React.FC<{
         {/* User Role Switcher Pill */}
         {/* Role Badge and Secure Session Exit */}
         <div className="flex items-center gap-1.5">
-          <div className={`px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1.5 border shadow-2xs ${
+          <button
+            type="button"
+            id="role-badge-btn"
+            onClick={() => setShowUserModal(true)}
+            className={`px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1.5 border shadow-2xs transition cursor-pointer hover:shadow-xs ${
             userRole === 'admin'
-              ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
-              : 'bg-indigo-50 border-indigo-200 text-indigo-800'
-          }`}>
+              ? 'bg-emerald-50 border-emerald-200 text-emerald-800 hover:bg-emerald-100'
+              : 'bg-indigo-50 border-indigo-200 text-indigo-800 hover:bg-indigo-100'
+          }`}
+            title="Ver Perfil o Cambiar Rol (Requiere PIN para Admin)"
+          >
             {userRole === 'admin' ? (
               <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
             ) : (
               <User className="w-3.5 h-3.5 text-indigo-600" />
             )}
             <span className="capitalize">{userRole === 'admin' ? 'Admin' : 'Cajera'}</span>
-          </div>
+          </button>
 
           <button
             type="button"

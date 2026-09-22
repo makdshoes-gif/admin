@@ -72,8 +72,8 @@ export const LoginPage: React.FC = () => {
     if (!success) {
       setErrorMessage(
         selectedRole === 'admin'
-          ? 'Clave de Administrador incorrecta (Predeterminada: 1234)'
-          : 'Clave de Cajera incorrecta (Predeterminada: 0000)'
+          ? 'Clave de Administrador incorrecta. Verifica e intenta de nuevo.'
+          : 'Clave de Cajera incorrecta. Verifica e intenta de nuevo.'
       );
       triggerShake();
       setPin('');
@@ -207,9 +207,9 @@ export const LoginPage: React.FC = () => {
                   Facturación de calzado, registro de clientes, apartados, verificación Pago Móvil BDV y arqueo diario.
                 </p>
                 <div className="pt-2 border-t border-slate-800 flex items-center justify-between text-[11px]">
-                  <span className="text-slate-500">Clave Predeterminada:</span>
-                  <span className="font-mono font-bold text-indigo-400 bg-indigo-950/60 px-2 py-0.5 rounded border border-indigo-800/40">
-                    0000
+                  <span className="text-slate-500">Acceso Seguro:</span>
+                  <span className="font-semibold text-slate-400 bg-slate-800/80 px-2 py-0.5 rounded border border-slate-700/50">
+                    Clave de 4 dígitos
                   </span>
                 </div>
               </button>
@@ -250,9 +250,9 @@ export const LoginPage: React.FC = () => {
                   Control total de inventario, compras de divisas, costos, reportes de utilidades y conciliación bancaria/Cashea.
                 </p>
                 <div className="pt-2 border-t border-slate-800 flex items-center justify-between text-[11px]">
-                  <span className="text-slate-500">Clave Predeterminada:</span>
-                  <span className="font-mono font-bold text-emerald-400 bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-800/40">
-                    1234
+                  <span className="text-slate-500">Acceso Restringido:</span>
+                  <span className="font-semibold text-slate-400 bg-slate-800/80 px-2 py-0.5 rounded border border-slate-700/50">
+                    Clave de 4 dígitos
                   </span>
                 </div>
               </button>

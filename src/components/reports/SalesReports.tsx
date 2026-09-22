@@ -20,8 +20,28 @@ import {
   Edit2,
   Check,
   X,
-  Ban
+  Ban,
+  CreditCard,
+  Smartphone,
+  Banknote,
+  Clock,
+  ShieldCheck,
+  Wallet,
+  ArrowRight,
+  ChevronDown,
+  ChevronUp,
+  BarChart3,
 } from 'lucide-react';
+import {
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+} from 'recharts';
 import * as XLSX from 'xlsx';
 import { useStore } from '../../context/StoreContext';
 import { Sale, ReportPeriod } from '../../types';
@@ -43,6 +63,163 @@ export const SalesReports: React.FC = () => {
   const [saleToVoid, setSaleToVoid] = useState<Sale | null>(null);
   const [voidReason, setVoidReason] = useState('');
   const [isVoiding, setIsVoiding] = useState(false);
+  const [paymentTypeFilter, setPaymentTypeFilter] = useState<'all' | 'cashea' | 'direct'>('all');
+
+  // Estados para el gráfico semanal de métodos de pago (Recharts)
+  const [weeklyChartType, setWeeklyChartType] = useState<'stacked' | 'grouped'>('stacked');
+  const [weeklyCurrency, setWeeklyCurrency] = useState<'USD' | 'Bs'>('USD');
+  const [weeklyRangeType, setWeeklyRangeType] = useState<'last_7_days' | 'current_week'>('last_7_days');
+  const [isWeeklyTableExpanded, setIsWeeklyTableExpanded] = useState<boolean>(false);
+
+  // Procesamiento de datos de la última semana por día diferenciando Efectivo, Punto, Móvil y Cashea
+  const { weeklyPaymentData, weeklyTotals, hasOtrosPayments } = useMemo(() => {
+    const dates: Date[] = [];
+    const now = new Date();
+
+    if (weeklyRangeType === 'last_7_days') {
+      // 7 días móviles hasta hoy
+      for (let i = 6; i >= 0; i--) {
+        const d = new Date(now);
+        d.setDate(now.getDate() - i);
+        dates.push(d);
+      }
+    } else {
+      // Semana en curso (de Lunes a Domingo)
+      const currentDay = now.getDay();
+      const diffToMonday = currentDay === 0 ? -6 : 1 - currentDay;
+      const monday = new Date(now);
+      monday.setDate(now.getDate() + diffToMonday);
+
+      for (let i = 0; i < 7; i++) {
+        const d = new Date(monday);
+        d.setDate(monday.getDate() + i);
+        dates.push(d);
+      }
+    }
+
+    const formatLocalDateKey = (d: Date) => {
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    };
+
+    const daysList = dates.map((d) => {
+      const dateKey = formatLocalDateKey(d);
+      const weekday = d.toLocaleDateString('es-VE', { weekday: 'short' });
+      const dayLabel = `${weekday.charAt(0).toUpperCase() + weekday.slice(1).replace('.', '')} ${d.getDate()}`;
+      const fullDate = d.toLocaleDateString('es-VE', {
+        weekday: 'long',
+        day: 'numeric',
+        month: 'long',
+      });
+
+      return {
+        dateKey,
+        dayLabel,
+        fullDate,
+        efectivo: 0,
+        punto: 0,
+        movil: 0,
+        cashea: 0,
+        otros: 0,
+        total: 0,
+        transacciones: 0,
+      };
+    });
+
+    const dayMap = new Map(daysList.map((d) => [d.dateKey, d]));
+
+    sales.forEach((s) => {
+      if (s.estado === 'anulada') return;
+      const sDate = new Date(s.fecha);
+      const sKey = formatLocalDateKey(sDate);
+      const targetDay = dayMap.get(sKey);
+      if (!targetDay) return;
+
+      targetDay.transacciones += 1;
+
+      if (Array.isArray(s.pagos)) {
+        s.pagos.forEach((p) => {
+          const cuentaLower = (p.cuenta || '').toLowerCase().trim();
+          const baseUsd = Number(p.monto_equivalente_usd) || 0;
+          const val =
+            weeklyCurrency === 'USD'
+              ? baseUsd
+              : p.moneda === 'Bs'
+              ? Number(p.monto) || 0
+              : baseUsd * exchangeRate;
+
+          if (cuentaLower.includes('cashea')) {
+            targetDay.cashea += val;
+          } else if (cuentaLower.includes('punto') || cuentaLower.includes('pos')) {
+            targetDay.punto += val;
+          } else if (
+            cuentaLower.includes('pago móvil') ||
+            cuentaLower.includes('pago movil') ||
+            cuentaLower.includes('movil') ||
+            cuentaLower.includes('móvil')
+          ) {
+            targetDay.movil += val;
+          } else if (cuentaLower.includes('efectivo') || cuentaLower.includes('caja')) {
+            targetDay.efectivo += val;
+          } else {
+            targetDay.otros += val;
+          }
+
+          targetDay.total += val;
+        });
+      }
+    });
+
+    const roundedDays = daysList.map((d) => ({
+      ...d,
+      efectivo: Number(d.efectivo.toFixed(2)),
+      punto: Number(d.punto.toFixed(2)),
+      movil: Number(d.movil.toFixed(2)),
+      cashea: Number(d.cashea.toFixed(2)),
+      otros: Number(d.otros.toFixed(2)),
+      total: Number(d.total.toFixed(2)),
+    }));
+
+    let sumEfectivo = 0;
+    let sumPunto = 0;
+    let sumMovil = 0;
+    let sumCashea = 0;
+    let sumOtros = 0;
+    let sumTotal = 0;
+    let sumTx = 0;
+    let peak: (typeof roundedDays)[0] | null = null;
+
+    roundedDays.forEach((d) => {
+      sumEfectivo += d.efectivo;
+      sumPunto += d.punto;
+      sumMovil += d.movil;
+      sumCashea += d.cashea;
+      sumOtros += d.otros;
+      sumTotal += d.total;
+      sumTx += d.transacciones;
+
+      if (!peak || d.total > peak.total) {
+        peak = d;
+      }
+    });
+
+    return {
+      weeklyPaymentData: roundedDays,
+      hasOtrosPayments: sumOtros > 0,
+      weeklyTotals: {
+        efectivo: sumEfectivo,
+        punto: sumPunto,
+        movil: sumMovil,
+        cashea: sumCashea,
+        otros: sumOtros,
+        total: sumTotal,
+        transacciones: sumTx,
+        peakDay: peak,
+      },
+    };
+  }, [sales, weeklyRangeType, weeklyCurrency, exchangeRate]);
 
   // Filter sales by selected period
   const filteredSales = useMemo(() => {
@@ -120,6 +297,67 @@ export const SalesReports: React.FC = () => {
   }, [filteredSales]);
 
   const averageTicketUsd = filteredSales.length > 0 ? totalRevenueUsd / filteredSales.length : 0;
+
+  // Immediate positive cash/bank collection vs pending Cashea in bank
+  const totalImmediateCollectedUsd = useMemo(() => {
+    return filteredSales.reduce((acc, s) => {
+      if (s.estado === 'anulada') return acc;
+      if (typeof s.total_positivo_inmediato_usd === 'number') {
+        return acc + s.total_positivo_inmediato_usd;
+      }
+      const nonCashea = s.pagos.filter((p) => !p.cuenta.toLowerCase().includes('cashea'));
+      return acc + nonCashea.reduce((sum, p) => sum + p.monto_equivalente_usd, 0);
+    }, 0);
+  }, [filteredSales]);
+
+  const totalCasheaPendingUsd = useMemo(() => {
+    return filteredSales.reduce((acc, s) => {
+      if (s.estado === 'anulada') return acc;
+      if (typeof s.total_cashea_pendiente_usd === 'number') {
+        return acc + s.total_cashea_pendiente_usd;
+      }
+      const casheaPays = s.pagos.filter(
+        (p) => p.cuenta.toLowerCase().includes('cashea') && p.estado_liquidacion !== 'conciliado_en_banco'
+      );
+      return acc + casheaPays.reduce((sum, p) => sum + p.monto_equivalente_usd, 0);
+    }, 0);
+  }, [filteredSales]);
+
+  const totalCasheaReconciledUsd = useMemo(() => {
+    return filteredSales.reduce((acc, s) => {
+      if (s.estado === 'anulada') return acc;
+      const reconciledCashea = s.pagos.filter(
+        (p) => p.cuenta.toLowerCase().includes('cashea') && p.estado_liquidacion === 'conciliado_en_banco'
+      );
+      return acc + reconciledCashea.reduce((sum, p) => sum + p.monto_equivalente_usd, 0);
+    }, 0);
+  }, [filteredSales]);
+
+  const casheaSalesCount = useMemo(() => {
+    return filteredSales.filter(
+      (s) => s.estado !== 'anulada' && s.pagos.some((p) => p.cuenta.toLowerCase().includes('cashea'))
+    ).length;
+  }, [filteredSales]);
+
+  const directSalesCount = useMemo(() => {
+    return filteredSales.filter(
+      (s) => s.estado !== 'anulada' && !s.pagos.some((p) => p.cuenta.toLowerCase().includes('cashea'))
+    ).length;
+  }, [filteredSales]);
+
+  const displayedSales = useMemo(() => {
+    if (paymentTypeFilter === 'cashea') {
+      return filteredSales.filter((s) =>
+        s.pagos.some((p) => p.cuenta.toLowerCase().includes('cashea'))
+      );
+    }
+    if (paymentTypeFilter === 'direct') {
+      return filteredSales.filter(
+        (s) => !s.pagos.some((p) => p.cuenta.toLowerCase().includes('cashea'))
+      );
+    }
+    return filteredSales;
+  }, [filteredSales, paymentTypeFilter]);
 
   // Breakdown by Size (Curva de Tallas)
   const sizeDistribution = useMemo(() => {
@@ -442,6 +680,81 @@ export const SalesReports: React.FC = () => {
 
       </div>
 
+      {/* Liquidity Breakdown: Cobro Inmediato (Caja y Bancos) vs Cashea Financiado */}
+      <div className="bg-slate-900 rounded-2xl p-4 sm:p-5 text-white shadow-md border border-slate-800">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-800">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center text-indigo-400">
+              <Wallet className="w-4 h-4" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                <span>Cobranza Real vs Financiamiento Cashea</span>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                  Conciliación Multimoneda
+                </span>
+              </h3>
+              <p className="text-[11px] text-slate-400">
+                Las iniciales cobradas en Punto de Venta o Pago Móvil ingresan a tu caja/banco hoy; el saldo Cashea se refleja por separado hasta su liquidación bancaria.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 mt-3.5">
+          {/* Immediate Positive Income */}
+          <div className="bg-slate-800/80 border border-slate-700/80 p-3.5 rounded-xl">
+            <div className="flex items-center justify-between text-[11px] font-semibold text-emerald-400">
+              <span className="flex items-center gap-1.5">
+                <CheckCircle className="w-3.5 h-3.5" />
+                <span>Cobrado en Positivo (Caja y Bancos)</span>
+              </span>
+              <span className="text-[10px] text-emerald-300 font-bold bg-emerald-950/60 px-1.5 py-0.2 rounded border border-emerald-800/40">Disponible</span>
+            </div>
+            <div className="text-2xl font-bold font-mono text-white mt-1">
+              ${totalImmediateCollectedUsd.toFixed(2)}
+            </div>
+            <div className="text-[10px] text-slate-400 font-mono mt-0.5">
+              {(totalImmediateCollectedUsd * exchangeRate).toFixed(0)} Bs (Punto de Venta, Pago Móvil, Efectivo, etc.)
+            </div>
+          </div>
+
+          {/* Pending Cashea */}
+          <div className="bg-slate-800/80 border border-slate-700/80 p-3.5 rounded-xl">
+            <div className="flex items-center justify-between text-[11px] font-semibold text-amber-400">
+              <span className="flex items-center gap-1.5">
+                <Clock className="w-3.5 h-3.5" />
+                <span>Por Cobrar Cashea (En Banco)</span>
+              </span>
+              <span className="text-[10px] text-amber-300 font-bold bg-amber-950/60 px-1.5 py-0.2 rounded border border-amber-800/40 font-mono">{casheaSalesCount} ventas</span>
+            </div>
+            <div className="text-2xl font-bold font-mono text-amber-300 mt-1">
+              ${totalCasheaPendingUsd.toFixed(2)}
+            </div>
+            <div className="text-[10px] text-slate-400 font-mono mt-0.5">
+              Saldo financiado pendiente de acreditación por Cashea
+            </div>
+          </div>
+
+          {/* Reconciled Cashea */}
+          <div className="bg-slate-800/80 border border-slate-700/80 p-3.5 rounded-xl">
+            <div className="flex items-center justify-between text-[11px] font-semibold text-indigo-300">
+              <span className="flex items-center gap-1.5">
+                <ShieldCheck className="w-3.5 h-3.5" />
+                <span>Cashea Liquidado en Banco</span>
+              </span>
+              <span className="text-[10px] text-indigo-300 font-bold bg-indigo-950/60 px-1.5 py-0.2 rounded border border-indigo-800/40">Acreditado</span>
+            </div>
+            <div className="text-2xl font-bold font-mono text-indigo-200 mt-1">
+              ${totalCasheaReconciledUsd.toFixed(2)}
+            </div>
+            <div className="text-[10px] text-slate-400 font-mono mt-0.5">
+              Fondos ya transferidos y conciliados en cuenta
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* Automatic Executive Summary (Diagnóstico Inteligente) */}
       <div className="bg-indigo-50/70 border border-indigo-200/80 p-4 rounded-xl shadow-xs">
         <div className="flex items-center gap-2 mb-1.5">
@@ -453,6 +766,549 @@ export const SalesReports: React.FC = () => {
         <p className="text-xs text-slate-700 leading-relaxed">
           {executiveSummary}
         </p>
+      </div>
+
+      {/* Visualización de Datos con Recharts: Volumen de Ventas Semanal por Método de Pago */}
+      <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-6 shadow-xs space-y-5">
+        {/* Header & Controls Toolbar */}
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-slate-100">
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shrink-0 shadow-2xs">
+              <BarChart3 className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="text-base font-bold text-slate-900">
+                  Volumen de Ventas de la Última Semana por Método de Pago
+                </h3>
+                <span className="text-[10px] font-bold font-mono px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                  Recharts • 7 Días
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Seguimiento diario diferenciando <span className="font-semibold text-emerald-600">Efectivo</span>, <span className="font-semibold text-blue-600">Punto de Venta</span>, <span className="font-semibold text-purple-600">Pago Móvil</span> y <span className="font-semibold text-amber-600">Cashea</span>.
+              </p>
+            </div>
+          </div>
+
+          {/* Interactive Controls */}
+          <div className="flex items-center flex-wrap gap-2">
+            {/* Range Toggle */}
+            <div className="inline-flex rounded-lg border border-slate-200 p-0.5 bg-slate-50 text-xs">
+              <button
+                type="button"
+                onClick={() => setWeeklyRangeType('last_7_days')}
+                className={`px-2.5 py-1 rounded-md font-medium transition ${
+                  weeklyRangeType === 'last_7_days'
+                    ? 'bg-white text-slate-900 shadow-2xs font-semibold'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Últimos 7 Días
+              </button>
+              <button
+                type="button"
+                onClick={() => setWeeklyRangeType('current_week')}
+                className={`px-2.5 py-1 rounded-md font-medium transition ${
+                  weeklyRangeType === 'current_week'
+                    ? 'bg-white text-slate-900 shadow-2xs font-semibold'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Esta Semana (Lun-Dom)
+              </button>
+            </div>
+
+            {/* Presentation Mode Toggle */}
+            <div className="inline-flex rounded-lg border border-slate-200 p-0.5 bg-slate-50 text-xs">
+              <button
+                type="button"
+                onClick={() => setWeeklyChartType('stacked')}
+                className={`px-2.5 py-1 rounded-md font-medium transition ${
+                  weeklyChartType === 'stacked'
+                    ? 'bg-white text-slate-900 shadow-2xs font-semibold'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Apiladas (Total)
+              </button>
+              <button
+                type="button"
+                onClick={() => setWeeklyChartType('grouped')}
+                className={`px-2.5 py-1 rounded-md font-medium transition ${
+                  weeklyChartType === 'grouped'
+                    ? 'bg-white text-slate-900 shadow-2xs font-semibold'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Agrupadas (Comparar)
+              </button>
+            </div>
+
+            {/* Currency Toggle */}
+            <div className="inline-flex rounded-lg border border-slate-200 p-0.5 bg-slate-50 text-xs">
+              <button
+                type="button"
+                onClick={() => setWeeklyCurrency('USD')}
+                className={`px-2.5 py-1 rounded-md font-medium transition ${
+                  weeklyCurrency === 'USD'
+                    ? 'bg-indigo-600 text-white shadow-2xs font-semibold'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                $ USD
+              </button>
+              <button
+                type="button"
+                onClick={() => setWeeklyCurrency('Bs')}
+                className={`px-2.5 py-1 rounded-md font-medium transition ${
+                  weeklyCurrency === 'Bs'
+                    ? 'bg-indigo-600 text-white shadow-2xs font-semibold'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Bs (BCV)
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* 4 Payment Types KPI Highlight Cards */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          {/* Efectivo Card */}
+          <div className="p-3.5 rounded-xl border border-emerald-200/80 bg-emerald-50/40 space-y-1">
+            <div className="flex items-center justify-between text-xs font-semibold text-emerald-800">
+              <span className="flex items-center gap-1.5">
+                <Banknote className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Efectivo (USD / Bs)</span>
+              </span>
+              <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-emerald-100 text-emerald-800">
+                {weeklyTotals.total > 0
+                  ? `${((weeklyTotals.efectivo / weeklyTotals.total) * 100).toFixed(0)}%`
+                  : '0%'}
+              </span>
+            </div>
+            <div className="text-xl font-bold font-mono text-slate-900">
+              {weeklyCurrency === 'USD'
+                ? `$${weeklyTotals.efectivo.toFixed(2)}`
+                : `${weeklyTotals.efectivo.toLocaleString('es-VE', { maximumFractionDigits: 0 })} Bs`}
+            </div>
+            <p className="text-[10px] text-slate-500">
+              Caja física disponible de inmediato
+            </p>
+          </div>
+
+          {/* Punto de Venta Card */}
+          <div className="p-3.5 rounded-xl border border-blue-200/80 bg-blue-50/40 space-y-1">
+            <div className="flex items-center justify-between text-xs font-semibold text-blue-800">
+              <span className="flex items-center gap-1.5">
+                <CreditCard className="w-3.5 h-3.5 text-blue-600" />
+                <span>Punto de Venta (POS)</span>
+              </span>
+              <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-blue-100 text-blue-800">
+                {weeklyTotals.total > 0
+                  ? `${((weeklyTotals.punto / weeklyTotals.total) * 100).toFixed(0)}%`
+                  : '0%'}
+              </span>
+            </div>
+            <div className="text-xl font-bold font-mono text-slate-900">
+              {weeklyCurrency === 'USD'
+                ? `$${weeklyTotals.punto.toFixed(2)}`
+                : `${weeklyTotals.punto.toLocaleString('es-VE', { maximumFractionDigits: 0 })} Bs`}
+            </div>
+            <p className="text-[10px] text-slate-500">
+              Tarjetas de débito/crédito en tienda
+            </p>
+          </div>
+
+          {/* Pago Móvil Card */}
+          <div className="p-3.5 rounded-xl border border-purple-200/80 bg-purple-50/40 space-y-1">
+            <div className="flex items-center justify-between text-xs font-semibold text-purple-800">
+              <span className="flex items-center gap-1.5">
+                <Smartphone className="w-3.5 h-3.5 text-purple-600" />
+                <span>Pago Móvil</span>
+              </span>
+              <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-purple-100 text-purple-800">
+                {weeklyTotals.total > 0
+                  ? `${((weeklyTotals.movil / weeklyTotals.total) * 100).toFixed(0)}%`
+                  : '0%'}
+              </span>
+            </div>
+            <div className="text-xl font-bold font-mono text-slate-900">
+              {weeklyCurrency === 'USD'
+                ? `$${weeklyTotals.movil.toFixed(2)}`
+                : `${weeklyTotals.movil.toLocaleString('es-VE', { maximumFractionDigits: 0 })} Bs`}
+            </div>
+            <p className="text-[10px] text-slate-500">
+              Acreditación directa BDV y banca nacional
+            </p>
+          </div>
+
+          {/* Cashea Card */}
+          <div className="p-3.5 rounded-xl border border-amber-200/80 bg-amber-50/40 space-y-1">
+            <div className="flex items-center justify-between text-xs font-semibold text-amber-800">
+              <span className="flex items-center gap-1.5">
+                <Clock className="w-3.5 h-3.5 text-amber-600" />
+                <span>Cashea</span>
+              </span>
+              <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-amber-100 text-amber-800">
+                {weeklyTotals.total > 0
+                  ? `${((weeklyTotals.cashea / weeklyTotals.total) * 100).toFixed(0)}%`
+                  : '0%'}
+              </span>
+            </div>
+            <div className="text-xl font-bold font-mono text-slate-900">
+              {weeklyCurrency === 'USD'
+                ? `$${weeklyTotals.cashea.toFixed(2)}`
+                : `${weeklyTotals.cashea.toLocaleString('es-VE', { maximumFractionDigits: 0 })} Bs`}
+            </div>
+            <p className="text-[10px] text-slate-500">
+              Cuotas y crédito financiado en app
+            </p>
+          </div>
+        </div>
+
+        {/* Weekly Summary Banner (Peak Day & Total) */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200/80 text-xs">
+          <div className="flex items-center gap-2">
+            <TrendingUp className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span className="text-slate-600">
+              Total facturado en la semana:{' '}
+              <strong className="text-slate-900 font-mono">
+                {weeklyCurrency === 'USD'
+                  ? `$${weeklyTotals.total.toFixed(2)}`
+                  : `${weeklyTotals.total.toLocaleString('es-VE', { maximumFractionDigits: 0 })} Bs`}
+              </strong>{' '}
+              ({weeklyTotals.transacciones} {weeklyTotals.transacciones === 1 ? 'venta' : 'ventas'})
+            </span>
+          </div>
+
+          {weeklyTotals.peakDay && weeklyTotals.peakDay.total > 0 && (
+            <div className="flex items-center gap-1.5 text-slate-600">
+              <span className="text-slate-500">Día con mayor recaudación:</span>
+              <span className="font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded font-mono text-[11px]">
+                {weeklyTotals.peakDay.dayLabel} (
+                {weeklyCurrency === 'USD'
+                  ? `$${weeklyTotals.peakDay.total.toFixed(2)}`
+                  : `${weeklyTotals.peakDay.total.toLocaleString('es-VE', { maximumFractionDigits: 0 })} Bs`}
+                )
+              </span>
+            </div>
+          )}
+        </div>
+
+        {/* Recharts Chart Canvas */}
+        <div className="w-full h-80 pt-2">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart
+              data={weeklyPaymentData}
+              margin={{ top: 15, right: 10, left: 0, bottom: 5 }}
+            >
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+              <XAxis
+                dataKey="dayLabel"
+                tick={{ fontSize: 11, fill: '#475569', fontWeight: 600 }}
+                axisLine={{ stroke: '#cbd5e1' }}
+                tickLine={false}
+              />
+              <YAxis
+                tick={{ fontSize: 11, fill: '#64748b' }}
+                axisLine={false}
+                tickLine={false}
+                tickFormatter={(v: number) =>
+                  weeklyCurrency === 'USD'
+                    ? `$${v >= 1000 ? `${(v / 1000).toFixed(1)}k` : v.toFixed(0)}`
+                    : `${(v / 1000).toFixed(0)}k`
+                }
+              />
+              <Tooltip
+                cursor={{ fill: 'rgba(241, 245, 249, 0.6)' }}
+                content={(props: any) => {
+                  const { active, payload } = props;
+                  if (!active || !payload || !payload.length) return null;
+                  const day = payload[0]?.payload;
+                  if (!day) return null;
+
+                  const total = day.total || 0;
+                  const isUsd = weeklyCurrency === 'USD';
+
+                  return (
+                    <div className="bg-slate-900/95 text-white p-3.5 rounded-xl border border-slate-700 shadow-2xl text-xs space-y-2.5 min-w-[250px] pointer-events-none">
+                      <div className="border-b border-slate-800 pb-2 flex items-center justify-between">
+                        <div>
+                          <span className="font-bold text-white text-[13px] capitalize block">
+                            {day.fullDate}
+                          </span>
+                          <span className="text-[10px] text-slate-400 font-mono">
+                            {day.transacciones}{' '}
+                            {day.transacciones === 1 ? 'venta registrada' : 'ventas registradas'}
+                          </span>
+                        </div>
+                        <div className="text-right">
+                          <span className="text-sm font-bold text-emerald-400 font-mono block">
+                            {isUsd
+                              ? `$${total.toFixed(2)}`
+                              : `${total.toLocaleString('es-VE', { maximumFractionDigits: 0 })} Bs`}
+                          </span>
+                          <span className="text-[9px] text-slate-400 font-mono">Total Día</span>
+                        </div>
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <span className="flex items-center gap-1.5 text-slate-300">
+                            <span className="w-2.5 h-2.5 rounded-full bg-[#10b981] inline-block"></span>
+                            <span>Efectivo:</span>
+                          </span>
+                          <span className="font-mono font-bold text-white">
+                            {isUsd
+                              ? `$${day.efectivo.toFixed(2)}`
+                              : `${day.efectivo.toLocaleString('es-VE', { maximumFractionDigits: 0 })} Bs`}
+                            <span className="text-[10px] text-emerald-300 font-normal ml-1.5 font-sans">
+                              ({total > 0 ? ((day.efectivo / total) * 100).toFixed(0) : 0}%)
+                            </span>
+                          </span>
+                        </div>
+
+                        <div className="flex items-center justify-between">
+                          <span className="flex items-center gap-1.5 text-slate-300">
+                            <span className="w-2.5 h-2.5 rounded-full bg-[#3b82f6] inline-block"></span>
+                            <span>Punto de Venta:</span>
+                          </span>
+                          <span className="font-mono font-bold text-white">
+                            {isUsd
+                              ? `$${day.punto.toFixed(2)}`
+                              : `${day.punto.toLocaleString('es-VE', { maximumFractionDigits: 0 })} Bs`}
+                            <span className="text-[10px] text-blue-300 font-normal ml-1.5 font-sans">
+                              ({total > 0 ? ((day.punto / total) * 100).toFixed(0) : 0}%)
+                            </span>
+                          </span>
+                        </div>
+
+                        <div className="flex items-center justify-between">
+                          <span className="flex items-center gap-1.5 text-slate-300">
+                            <span className="w-2.5 h-2.5 rounded-full bg-[#8b5cf6] inline-block"></span>
+                            <span>Pago Móvil:</span>
+                          </span>
+                          <span className="font-mono font-bold text-white">
+                            {isUsd
+                              ? `$${day.movil.toFixed(2)}`
+                              : `${day.movil.toLocaleString('es-VE', { maximumFractionDigits: 0 })} Bs`}
+                            <span className="text-[10px] text-purple-300 font-normal ml-1.5 font-sans">
+                              ({total > 0 ? ((day.movil / total) * 100).toFixed(0) : 0}%)
+                            </span>
+                          </span>
+                        </div>
+
+                        <div className="flex items-center justify-between">
+                          <span className="flex items-center gap-1.5 text-slate-300">
+                            <span className="w-2.5 h-2.5 rounded-full bg-[#f59e0b] inline-block"></span>
+                            <span>Cashea:</span>
+                          </span>
+                          <span className="font-mono font-bold text-white">
+                            {isUsd
+                              ? `$${day.cashea.toFixed(2)}`
+                              : `${day.cashea.toLocaleString('es-VE', { maximumFractionDigits: 0 })} Bs`}
+                            <span className="text-[10px] text-amber-300 font-normal ml-1.5 font-sans">
+                              ({total > 0 ? ((day.cashea / total) * 100).toFixed(0) : 0}%)
+                            </span>
+                          </span>
+                        </div>
+
+                        {day.otros > 0 && (
+                          <div className="flex items-center justify-between">
+                            <span className="flex items-center gap-1.5 text-slate-300">
+                              <span className="w-2.5 h-2.5 rounded-full bg-[#94a3b8] inline-block"></span>
+                              <span>Otros:</span>
+                            </span>
+                            <span className="font-mono font-bold text-white">
+                              {isUsd
+                                ? `$${day.otros.toFixed(2)}`
+                                : `${day.otros.toLocaleString('es-VE', { maximumFractionDigits: 0 })} Bs`}
+                              <span className="text-[10px] text-slate-400 font-normal ml-1.5 font-sans">
+                                ({total > 0 ? ((day.otros / total) * 100).toFixed(0) : 0}%)
+                              </span>
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                }}
+              />
+              <Legend
+                wrapperStyle={{ paddingTop: 14 }}
+                formatter={(value: string) => (
+                  <span className="text-xs font-semibold text-slate-700 px-1">{value}</span>
+                )}
+              />
+              <Bar
+                dataKey="efectivo"
+                name="Efectivo"
+                stackId={weeklyChartType === 'stacked' ? 'pagos' : undefined}
+                fill="#10b981"
+                radius={weeklyChartType === 'stacked' ? [0, 0, 0, 0] : [4, 4, 0, 0]}
+              />
+              <Bar
+                dataKey="punto"
+                name="Punto de Venta"
+                stackId={weeklyChartType === 'stacked' ? 'pagos' : undefined}
+                fill="#3b82f6"
+                radius={weeklyChartType === 'stacked' ? [0, 0, 0, 0] : [4, 4, 0, 0]}
+              />
+              <Bar
+                dataKey="movil"
+                name="Pago Móvil"
+                stackId={weeklyChartType === 'stacked' ? 'pagos' : undefined}
+                fill="#8b5cf6"
+                radius={weeklyChartType === 'stacked' ? [0, 0, 0, 0] : [4, 4, 0, 0]}
+              />
+              <Bar
+                dataKey="cashea"
+                name="Cashea"
+                stackId={weeklyChartType === 'stacked' ? 'pagos' : undefined}
+                fill="#f59e0b"
+                radius={weeklyChartType === 'stacked' ? [4, 4, 0, 0] : [4, 4, 0, 0]}
+              />
+              {hasOtrosPayments && (
+                <Bar
+                  dataKey="otros"
+                  name="Otros"
+                  stackId={weeklyChartType === 'stacked' ? 'pagos' : undefined}
+                  fill="#94a3b8"
+                  radius={weeklyChartType === 'stacked' ? [4, 4, 0, 0] : [4, 4, 0, 0]}
+                />
+              )}
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+
+        {/* Toggle Expandable 7-Day Table */}
+        <div className="pt-2 border-t border-slate-100">
+          <button
+            type="button"
+            onClick={() => setIsWeeklyTableExpanded(!isWeeklyTableExpanded)}
+            className="flex items-center justify-between w-full text-xs font-semibold text-slate-700 hover:text-indigo-600 transition py-1"
+          >
+            <span className="flex items-center gap-1.5">
+              <span>Desglose detallado día a día de la semana ({weeklyPaymentData.length} días)</span>
+            </span>
+            <span className="flex items-center gap-1 text-slate-500">
+              <span>{isWeeklyTableExpanded ? 'Ocultar tabla' : 'Ver tabla de datos'}</span>
+              {isWeeklyTableExpanded ? (
+                <ChevronUp className="w-4 h-4" />
+              ) : (
+                <ChevronDown className="w-4 h-4" />
+              )}
+            </span>
+          </button>
+
+          {isWeeklyTableExpanded && (
+            <div className="mt-3 overflow-x-auto rounded-xl border border-slate-200">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold">
+                    <th className="py-2.5 px-3">Día / Fecha</th>
+                    <th className="py-2.5 px-3 text-center">Ventas</th>
+                    <th className="py-2.5 px-3 text-right text-emerald-700">Efectivo</th>
+                    <th className="py-2.5 px-3 text-right text-blue-700">Punto de Venta</th>
+                    <th className="py-2.5 px-3 text-right text-purple-700">Pago Móvil</th>
+                    <th className="py-2.5 px-3 text-right text-amber-700">Cashea</th>
+                    {hasOtrosPayments && (
+                      <th className="py-2.5 px-3 text-right text-slate-600">Otros</th>
+                    )}
+                    <th className="py-2.5 px-3 text-right font-bold text-slate-900">Total Día</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {weeklyPaymentData.map((d) => (
+                    <tr key={d.dateKey} className="hover:bg-slate-50/70 transition">
+                      <td className="py-2.5 px-3 font-medium text-slate-800 capitalize">
+                        {d.dayLabel}{' '}
+                        <span className="text-[10px] text-slate-400 font-mono block">
+                          {d.fullDate}
+                        </span>
+                      </td>
+                      <td className="py-2.5 px-3 text-center font-mono text-slate-600">
+                        {d.transacciones}
+                      </td>
+                      <td className="py-2.5 px-3 text-right font-mono font-semibold text-emerald-600">
+                        {weeklyCurrency === 'USD'
+                          ? `$${d.efectivo.toFixed(2)}`
+                          : `${d.efectivo.toLocaleString('es-VE', { maximumFractionDigits: 0 })} Bs`}
+                      </td>
+                      <td className="py-2.5 px-3 text-right font-mono font-semibold text-blue-600">
+                        {weeklyCurrency === 'USD'
+                          ? `$${d.punto.toFixed(2)}`
+                          : `${d.punto.toLocaleString('es-VE', { maximumFractionDigits: 0 })} Bs`}
+                      </td>
+                      <td className="py-2.5 px-3 text-right font-mono font-semibold text-purple-600">
+                        {weeklyCurrency === 'USD'
+                          ? `$${d.movil.toFixed(2)}`
+                          : `${d.movil.toLocaleString('es-VE', { maximumFractionDigits: 0 })} Bs`}
+                      </td>
+                      <td className="py-2.5 px-3 text-right font-mono font-semibold text-amber-600">
+                        {weeklyCurrency === 'USD'
+                          ? `$${d.cashea.toFixed(2)}`
+                          : `${d.cashea.toLocaleString('es-VE', { maximumFractionDigits: 0 })} Bs`}
+                      </td>
+                      {hasOtrosPayments && (
+                        <td className="py-2.5 px-3 text-right font-mono text-slate-500">
+                          {weeklyCurrency === 'USD'
+                            ? `$${d.otros.toFixed(2)}`
+                            : `${d.otros.toLocaleString('es-VE', { maximumFractionDigits: 0 })} Bs`}
+                        </td>
+                      )}
+                      <td className="py-2.5 px-3 text-right font-mono font-bold text-slate-900 bg-slate-50/50">
+                        {weeklyCurrency === 'USD'
+                          ? `$${d.total.toFixed(2)}`
+                          : `${d.total.toLocaleString('es-VE', { maximumFractionDigits: 0 })} Bs`}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="bg-slate-100 font-bold border-t border-slate-300 text-slate-900">
+                    <td className="py-2.5 px-3">Total Semana</td>
+                    <td className="py-2.5 px-3 text-center font-mono">{weeklyTotals.transacciones}</td>
+                    <td className="py-2.5 px-3 text-right font-mono text-emerald-700">
+                      {weeklyCurrency === 'USD'
+                        ? `$${weeklyTotals.efectivo.toFixed(2)}`
+                        : `${weeklyTotals.efectivo.toLocaleString('es-VE', { maximumFractionDigits: 0 })} Bs`}
+                    </td>
+                    <td className="py-2.5 px-3 text-right font-mono text-blue-700">
+                      {weeklyCurrency === 'USD'
+                        ? `$${weeklyTotals.punto.toFixed(2)}`
+                        : `${weeklyTotals.punto.toLocaleString('es-VE', { maximumFractionDigits: 0 })} Bs`}
+                    </td>
+                    <td className="py-2.5 px-3 text-right font-mono text-purple-700">
+                      {weeklyCurrency === 'USD'
+                        ? `$${weeklyTotals.movil.toFixed(2)}`
+                        : `${weeklyTotals.movil.toLocaleString('es-VE', { maximumFractionDigits: 0 })} Bs`}
+                    </td>
+                    <td className="py-2.5 px-3 text-right font-mono text-amber-700">
+                      {weeklyCurrency === 'USD'
+                        ? `$${weeklyTotals.cashea.toFixed(2)}`
+                        : `${weeklyTotals.cashea.toLocaleString('es-VE', { maximumFractionDigits: 0 })} Bs`}
+                    </td>
+                    {hasOtrosPayments && (
+                      <td className="py-2.5 px-3 text-right font-mono text-slate-600">
+                        {weeklyCurrency === 'USD'
+                          ? `$${weeklyTotals.otros.toFixed(2)}`
+                          : `${weeklyTotals.otros.toLocaleString('es-VE', { maximumFractionDigits: 0 })} Bs`}
+                      </td>
+                    )}
+                    <td className="py-2.5 px-3 text-right font-mono text-emerald-600 bg-slate-200/60">
+                      {weeklyCurrency === 'USD'
+                        ? `$${weeklyTotals.total.toFixed(2)}`
+                        : `${weeklyTotals.total.toLocaleString('es-VE', { maximumFractionDigits: 0 })} Bs`}
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Visualización de Datos con Recharts: Volumen Diario de Ventas */}
@@ -565,40 +1421,103 @@ export const SalesReports: React.FC = () => {
 
       {/* Payment Methods Breakdown */}
       <div className="bg-white border border-slate-200 p-4 rounded-xl shadow-xs">
-        <div className="flex items-center justify-between mb-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
           <div className="flex items-center gap-2">
             <DollarSign className="w-4 h-4 text-indigo-600" />
             <h3 className="font-bold text-sm text-slate-900">Cobranza por Métodos de Pago</h3>
           </div>
-          <span className="text-[11px] text-slate-500">Desglose de liquidez multimoneda</span>
+          <span className="text-[11px] text-slate-500">Desglose de recaudación inmediata vs créditos Cashea</span>
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
-          {paymentMethodBreakdown.map((pm) => (
-            <div key={pm.cuenta} className="bg-slate-50 p-2.5 rounded-lg border border-slate-200 text-center">
-              <span className="text-[10px] font-bold uppercase text-slate-500 block truncate">
-                {pm.cuenta}
-              </span>
-              <div className="text-base font-bold font-mono text-slate-900 mt-1">
-                ${pm.montoUsd.toFixed(2)}
+          {paymentMethodBreakdown.map((pm) => {
+            const isCashea = pm.cuenta.toLowerCase().includes('cashea');
+            const isPos = pm.cuenta.toLowerCase().includes('punto') || pm.cuenta.toLowerCase().includes('pos');
+            const isPagoMovil = pm.cuenta.toLowerCase().includes('pago móvil') || pm.cuenta.toLowerCase().includes('pago movil');
+            return (
+              <div
+                key={pm.cuenta}
+                className={`p-2.5 rounded-lg border text-center transition-all ${
+                  isCashea
+                    ? 'bg-amber-50/50 border-amber-200 shadow-2xs'
+                    : isPos || isPagoMovil
+                    ? 'bg-indigo-50/40 border-indigo-200'
+                    : 'bg-slate-50 border-slate-200'
+                }`}
+              >
+                <span className="text-[10px] font-bold uppercase text-slate-600 block truncate">
+                  {pm.cuenta}
+                </span>
+                <div className="text-base font-bold font-mono text-slate-900 mt-1">
+                  ${pm.montoUsd.toFixed(2)}
+                </div>
+                <div className="flex items-center justify-center gap-1.5 mt-1">
+                  <span
+                    className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${
+                      isCashea
+                        ? 'bg-amber-100 text-amber-800 border border-amber-200'
+                        : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                    }`}
+                  >
+                    {isCashea ? 'Por Liquidar' : 'En Cuenta'}
+                  </span>
+                  <span className="text-[10px] font-semibold text-slate-500 font-mono">
+                    {pm.porcentaje.toFixed(1)}%
+                  </span>
+                </div>
               </div>
-              <div className="text-[10px] font-semibold text-indigo-600 mt-0.5">
-                {pm.porcentaje.toFixed(1)}%
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 
       {/* Detailed Sales History Table */}
       <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-xs">
-        <div className="p-3.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+        <div className="p-3.5 bg-slate-50 border-b border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <TrendingUp className="w-4 h-4 text-indigo-600" />
             <h3 className="font-bold text-sm text-slate-900">
-              Historial de Ventas del Período ({filteredSales.length})
+              Historial de Ventas del Período ({displayedSales.length})
             </h3>
           </div>
+
+          {/* Quick Payment Type Filter Tabs */}
+          <div className="flex items-center gap-1.5 bg-slate-200/70 p-1 rounded-lg">
+            <button
+              onClick={() => setPaymentTypeFilter('all')}
+              className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition-all cursor-pointer ${
+                paymentTypeFilter === 'all'
+                  ? 'bg-white text-slate-900 shadow-2xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Todas ({filteredSales.length})
+            </button>
+            <button
+              onClick={() => setPaymentTypeFilter('cashea')}
+              className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                paymentTypeFilter === 'cashea'
+                  ? 'bg-amber-500 text-white shadow-2xs'
+                  : 'text-slate-600 hover:text-amber-800'
+              }`}
+            >
+              <span>Ventas con Cashea</span>
+              <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-white/25 font-mono">
+                {casheaSalesCount}
+              </span>
+            </button>
+            <button
+              onClick={() => setPaymentTypeFilter('direct')}
+              className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition-all cursor-pointer ${
+                paymentTypeFilter === 'direct'
+                  ? 'bg-white text-slate-900 shadow-2xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Contado Directo ({directSalesCount})
+            </button>
+          </div>
+
           <span className="text-xs text-slate-500">
             Total recaudado: <span className="font-bold text-indigo-600 font-mono">${totalRevenueUsd.toFixed(2)}</span>
           </span>
@@ -615,21 +1534,21 @@ export const SalesReports: React.FC = () => {
                 <th className="py-2.5 px-3 text-right font-semibold">Total ($)</th>
                 <th className="py-2.5 px-3 text-right font-semibold">Total (Bs)</th>
                 <th className="py-2.5 px-3 text-right font-semibold">Ganancia ($)</th>
-                <th className="py-2.5 px-3 font-semibold">Forma de Pago</th>
+                <th className="py-2.5 px-3 font-semibold min-w-[200px]">Forma de Pago</th>
                 <th className="py-2.5 px-4 text-center font-semibold">Recibo</th>
                 <th className="py-2.5 px-4 text-center font-semibold">Acciones</th>
               </tr>
             </thead>
 
             <tbody className="divide-y divide-slate-100">
-              {filteredSales.length === 0 ? (
+              {displayedSales.length === 0 ? (
                 <tr>
                   <td colSpan={10} className="py-12 text-center text-slate-400">
-                    No hay ventas registradas en el período seleccionado.
+                    No hay ventas registradas para el filtro seleccionado.
                   </td>
                 </tr>
               ) : (
-                filteredSales.map((sale) => (
+                displayedSales.map((sale) => (
                   <tr key={sale.id} className={`hover:bg-slate-50/80 transition-colors ${sale.estado === 'anulada' ? 'opacity-50' : ''}`}>
                     <td className="py-2.5 px-4 font-mono font-bold text-indigo-600">
                       #{sale.numero_factura}
@@ -726,14 +1645,44 @@ export const SalesReports: React.FC = () => {
                     </td>
 
                     <td className="py-2.5 px-3 text-[11px]">
-                      {sale.pagos.map((p, idx) => (
-                        <span
-                          key={idx}
-                          className="inline-block px-1.5 py-0.5 rounded bg-slate-100 border border-slate-200 mr-1 mb-0.5 font-mono text-[10px] text-slate-700"
-                        >
-                          {p.cuenta}
-                        </span>
-                      ))}
+                      <div className="space-y-1 min-w-[190px]">
+                        {sale.pagos.map((p, idx) => {
+                          const isCashea = p.cuenta.toLowerCase().includes('cashea');
+                          const isPos = p.cuenta.toLowerCase().includes('punto') || p.cuenta.toLowerCase().includes('pos');
+                          const isPagoMovil = p.cuenta.toLowerCase().includes('pago móvil') || p.cuenta.toLowerCase().includes('pago movil');
+                          const isReconciled = p.estado_liquidacion === 'conciliado_en_banco';
+                          return (
+                            <div
+                              key={idx}
+                              className={`flex items-center justify-between gap-1.5 px-2 py-1 rounded text-[10px] font-mono border ${
+                                isCashea
+                                  ? isReconciled
+                                    ? 'bg-emerald-50 border-emerald-200 text-emerald-800 font-semibold'
+                                    : 'bg-amber-50 border-amber-200 text-amber-800 font-semibold'
+                                  : isPos || isPagoMovil
+                                  ? 'bg-indigo-50 border-indigo-200 text-indigo-900 font-semibold'
+                                  : 'bg-slate-100 border-slate-200 text-slate-700'
+                              }`}
+                            >
+                              <span className="truncate">
+                                {isCashea ? '⏳ Cashea' : isPos ? '💳 POS' : isPagoMovil ? '📱 Pago Móvil' : p.cuenta}
+                                {p.referencia ? ` (${p.referencia})` : ''}
+                              </span>
+                              <span className="font-bold shrink-0 ml-1">
+                                ${p.monto_equivalente_usd.toFixed(2)}
+                              </span>
+                            </div>
+                          );
+                        })}
+
+                        {/* If sale includes Cashea and is a split payment */}
+                        {sale.pagos.some((p) => p.cuenta.toLowerCase().includes('cashea')) && sale.pagos.length > 1 && (
+                          <div className="px-1.5 py-0.5 rounded bg-amber-100/70 border border-amber-300/80 text-[9px] font-bold text-amber-900 flex items-center justify-between">
+                            <span>Inicial: ${(sale.total_positivo_inmediato_usd || 0).toFixed(2)}</span>
+                            <span>Cashea: ${(sale.total_cashea_pendiente_usd || 0).toFixed(2)}</span>
+                          </div>
+                        )}
+                      </div>
                     </td>
 
                     <td className="py-2.5 px-4 text-center">

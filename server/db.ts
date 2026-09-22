@@ -36,9 +36,20 @@ export const NUMERIC_FIELDS = {
     'costo_total_usd',
     'ganancia_neta_usd',
     'tasa_cambio',
+    'total_positivo_inmediato_usd',
+    'total_cashea_pendiente_usd',
   ],
   expenses: ['monto', 'tasa_cambio', 'monto_usd', 'monto_bs'],
   bank_reconciliations: ['monto_bs', 'monto_usd'],
+  layaways: [
+    'total_usd',
+    'total_bs',
+    'tasa_cambio',
+    'total_abonado_usd',
+    'total_abonado_bs',
+    'saldo_pendiente_usd',
+    'saldo_pendiente_bs',
+  ],
 };
 
 export function normalizeProducts<T extends Record<string, any>>(rows: T[]): T[] {
@@ -55,6 +66,10 @@ export function normalizeExpenses<T extends Record<string, any>>(rows: T[]): T[]
 
 export function normalizeBankReconciliations<T extends Record<string, any>>(rows: T[]): T[] {
   return normalizeNumericRows(rows, NUMERIC_FIELDS.bank_reconciliations);
+}
+
+export function normalizeLayaways<T extends Record<string, any>>(rows: T[]): T[] {
+  return normalizeNumericRows(rows, NUMERIC_FIELDS.layaways);
 }
 
 export async function getDailyClosures(): Promise<any[]> {
@@ -130,7 +145,12 @@ export async function checkDatabaseConnection(): Promise<{
   tablesCount?: number;
   productsCount?: number;
   salesCount?: number;
+  closuresCount?: number;
+  expensesCount?: number;
+  bankCount?: number;
+  layawaysCount?: number;
   databaseName?: string;
+  tablesSummary?: Record<string, number>;
   error?: string;
 }> {
   const sql = getNeonSql();
@@ -148,16 +168,44 @@ export async function checkDatabaseConnection(): Promise<{
     // Ensure tables exist
     await initDatabaseSchema();
 
-    // Check count of records
-    const prodCount = await sql`SELECT COUNT(*) as count FROM shoe_products`;
-    const salesCount = await sql`SELECT COUNT(*) as count FROM sales_transactions`;
+    // Check count of records across all core business tables
+    const [pRes, sRes, cRes, eRes, bRes, lRes] = await Promise.allSettled([
+      sql`SELECT COUNT(*) as count FROM shoe_products`,
+      sql`SELECT COUNT(*) as count FROM sales_transactions`,
+      sql`SELECT COUNT(*) as count FROM cash_closures`,
+      sql`SELECT COUNT(*) as count FROM expenses`,
+      sql`SELECT COUNT(*) as count FROM bank_reconciliations`,
+      sql`SELECT COUNT(*) as count FROM layaways`,
+    ]);
+
+    const getCount = (res: PromiseSettledResult<any>) =>
+      res.status === 'fulfilled' && res.value[0]?.count ? Number(res.value[0].count) : 0;
+
+    const productsCount = getCount(pRes);
+    const salesCount = getCount(sRes);
+    const closuresCount = getCount(cRes);
+    const expensesCount = getCount(eRes);
+    const bankCount = getCount(bRes);
+    const layawaysCount = getCount(lRes);
 
     return {
       connected: true,
       message: 'Conectado exitosamente a la base de datos Neon PostgreSQL',
       databaseName: dbName,
-      productsCount: Number(prodCount[0]?.count || 0),
-      salesCount: Number(salesCount[0]?.count || 0),
+      productsCount,
+      salesCount,
+      closuresCount,
+      expensesCount,
+      bankCount,
+      layawaysCount,
+      tablesSummary: {
+        shoe_products: productsCount,
+        sales_transactions: salesCount,
+        cash_closures: closuresCount,
+        expenses: expensesCount,
+        bank_reconciliations: bankCount,
+        layaways: layawaysCount,
+      },
     };
   } catch (err: unknown) {
     const errMsg = err instanceof Error ? err.message : String(err);
@@ -269,6 +317,9 @@ export async function initDatabaseSchema() {
     await sql`ALTER TABLE sales_transactions ADD COLUMN IF NOT EXISTS estado VARCHAR(20) DEFAULT 'completada'`;
     await sql`ALTER TABLE sales_transactions ADD COLUMN IF NOT EXISTS motivo_anulacion TEXT`;
     await sql`ALTER TABLE sales_transactions ADD COLUMN IF NOT EXISTS anulada_at TIMESTAMP WITH TIME ZONE`;
+    await sql`ALTER TABLE sales_transactions ADD COLUMN IF NOT EXISTS total_positivo_inmediato_usd NUMERIC(12, 2) DEFAULT 0`;
+    await sql`ALTER TABLE sales_transactions ADD COLUMN IF NOT EXISTS total_cashea_pendiente_usd NUMERIC(12, 2) DEFAULT 0`;
+    await sql`ALTER TABLE sales_transactions ADD COLUMN IF NOT EXISTS estado_cashea VARCHAR(30) DEFAULT 'sin_cashea'`;
     await sql`ALTER TABLE expenses ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()`;
     await sql`ALTER TABLE bank_reconciliations ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()`;
     await sql`ALTER TABLE cash_closures ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()`;
@@ -331,6 +382,34 @@ export async function initDatabaseSchema() {
       );
     `;
 
+    // 7. Table for Layaways (Apartados de Calzado y Abonos)
+    await sql`
+      CREATE TABLE IF NOT EXISTS layaways (
+        id VARCHAR(64) PRIMARY KEY,
+        codigo_apartado VARCHAR(50) NOT NULL,
+        cliente_nombre VARCHAR(120) NOT NULL,
+        cliente_apellido VARCHAR(120),
+        cliente_cedula VARCHAR(50),
+        cliente_telefono VARCHAR(50),
+        items JSONB NOT NULL,
+        total_usd NUMERIC(12, 2) NOT NULL,
+        total_bs NUMERIC(14, 2) NOT NULL,
+        tasa_cambio NUMERIC(10, 2) NOT NULL,
+        total_abonado_usd NUMERIC(12, 2) DEFAULT 0,
+        total_abonado_bs NUMERIC(14, 2) DEFAULT 0,
+        saldo_pendiente_usd NUMERIC(12, 2) DEFAULT 0,
+        saldo_pendiente_bs NUMERIC(14, 2) DEFAULT 0,
+        abonos JSONB NOT NULL,
+        fecha_apartado TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        fecha_vencimiento VARCHAR(30),
+        estado VARCHAR(30) DEFAULT 'activo',
+        usuario VARCHAR(100),
+        notas TEXT,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      );
+    `;
+
     isInitialized = true;
     console.log('✅ Esquema Neon PostgreSQL verificado e inicializado correctamente.');
   } catch (error) {
@@ -350,7 +429,8 @@ export async function insertSale(sale: any): Promise<boolean> {
       id, numero_factura, cliente_nombre, cliente_apellido, cliente_rif,
       cliente_telefono, cliente_correo, subtotal_usd, descuento_usd, aplica_iva,
       porcentaje_iva, iva_monto_usd, total_usd, total_bs, costo_total_usd,
-      ganancia_neta_usd, tasa_cambio, items, pagos, fecha, usuario, notas, estado
+      ganancia_neta_usd, tasa_cambio, items, pagos, fecha, usuario, notas, estado,
+      total_positivo_inmediato_usd, total_cashea_pendiente_usd, estado_cashea
     ) VALUES (
       ${sale.id}, ${sale.numero_factura}, ${sale.cliente_nombre || ''}, ${sale.cliente_apellido || ''},
       ${sale.cliente_rif || ''}, ${sale.cliente_telefono || ''}, ${sale.cliente_correo || ''},
@@ -358,9 +438,19 @@ export async function insertSale(sale: any): Promise<boolean> {
       ${sale.porcentaje_iva || 0}, ${sale.iva_monto_usd || 0}, ${sale.total_usd || 0},
       ${sale.total_bs || 0}, ${sale.costo_total_usd || 0}, ${sale.ganancia_neta_usd || 0},
       ${sale.tasa_cambio || 0}, ${JSON.stringify(sale.items || [])}, ${JSON.stringify(sale.pagos || [])},
-      ${sale.fecha || new Date().toISOString()}, ${sale.usuario || ''}, ${sale.notas || ''}, 'completada'
+      ${sale.fecha || new Date().toISOString()}, ${sale.usuario || ''}, ${sale.notas || ''},
+      ${sale.estado || 'completada'},
+      ${sale.total_positivo_inmediato_usd || 0}, ${sale.total_cashea_pendiente_usd || 0},
+      ${sale.estado_cashea || 'sin_cashea'}
     )
-    ON CONFLICT (id) DO NOTHING;
+    ON CONFLICT (id) DO UPDATE SET
+      pagos = EXCLUDED.pagos,
+      total_positivo_inmediato_usd = EXCLUDED.total_positivo_inmediato_usd,
+      total_cashea_pendiente_usd = EXCLUDED.total_cashea_pendiente_usd,
+      estado_cashea = EXCLUDED.estado_cashea,
+      estado = EXCLUDED.estado,
+      fecha = EXCLUDED.fecha,
+      notas = EXCLUDED.notas;
   `;
   return true;
 }
@@ -371,11 +461,16 @@ export async function updateSale(id: string, updates: Record<string, any>): Prom
   const allowed: Record<string, true> = {
     fecha: true, notas: true, cliente_nombre: true, cliente_apellido: true,
     cliente_rif: true, cliente_telefono: true, cliente_correo: true,
+    pagos: true, total_positivo_inmediato_usd: true, total_cashea_pendiente_usd: true,
+    estado_cashea: true, estado: true, motivo_anulacion: true,
   };
   const keys = Object.keys(updates).filter((k) => allowed[k]);
   if (keys.length === 0) return false;
   for (const key of keys) {
-    await (sql as any).query(`UPDATE sales_transactions SET ${key} = $1 WHERE id = $2`, [updates[key], id]);
+    const val = typeof updates[key] === 'object' && updates[key] !== null
+      ? JSON.stringify(updates[key])
+      : updates[key];
+    await (sql as any).query(`UPDATE sales_transactions SET ${key} = $1 WHERE id = $2`, [val, id]);
   }
   return true;
 }
@@ -574,3 +669,73 @@ export async function getNeonTableData(tableName: string, limit = 50): Promise<{
     throw new Error(msg);
   }
 }
+
+// ==========================================
+// Apartados de Calzado (layaways)
+// ==========================================
+
+export async function getLayawaysFromDb(): Promise<any[]> {
+  const sql = getNeonSql();
+  if (!sql) return [];
+  try {
+    await initDatabaseSchema();
+    const rows = await sql`SELECT * FROM layaways ORDER BY fecha_apartado DESC`;
+    return normalizeLayaways(rows as any[]);
+  } catch (err) {
+    console.error('Error al obtener apartados desde Neon:', err);
+    return [];
+  }
+}
+
+export async function saveLayawayToDb(layaway: any): Promise<boolean> {
+  const sql = getNeonSql();
+  if (!sql || !layaway || !layaway.id) return false;
+  try {
+    await initDatabaseSchema();
+    await sql`
+      INSERT INTO layaways (
+        id, codigo_apartado, cliente_nombre, cliente_apellido, cliente_cedula,
+        cliente_telefono, items, total_usd, total_bs, tasa_cambio,
+        total_abonado_usd, total_abonado_bs, saldo_pendiente_usd, saldo_pendiente_bs,
+        abonos, fecha_apartado, fecha_vencimiento, estado, usuario, notas
+      ) VALUES (
+        ${layaway.id}, ${layaway.codigo_apartado || ''}, ${layaway.cliente_nombre || ''},
+        ${layaway.cliente_apellido || ''}, ${layaway.cliente_cedula || ''},
+        ${layaway.cliente_telefono || ''}, ${JSON.stringify(layaway.items || [])},
+        ${layaway.total_usd || 0}, ${layaway.total_bs || 0}, ${layaway.tasa_cambio || 0},
+        ${layaway.total_abonado_usd || 0}, ${layaway.total_abonado_bs || 0},
+        ${layaway.saldo_pendiente_usd || 0}, ${layaway.saldo_pendiente_bs || 0},
+        ${JSON.stringify(layaway.abonos || [])},
+        ${layaway.fecha_apartado || new Date().toISOString()},
+        ${layaway.fecha_vencimiento || ''}, ${layaway.estado || 'activo'},
+        ${layaway.usuario || ''}, ${layaway.notas || ''}
+      )
+      ON CONFLICT (id) DO UPDATE SET
+        total_abonado_usd = EXCLUDED.total_abonado_usd,
+        total_abonado_bs = EXCLUDED.total_abonado_bs,
+        saldo_pendiente_usd = EXCLUDED.saldo_pendiente_usd,
+        saldo_pendiente_bs = EXCLUDED.saldo_pendiente_bs,
+        abonos = EXCLUDED.abonos,
+        estado = EXCLUDED.estado,
+        notas = EXCLUDED.notas,
+        updated_at = NOW();
+    `;
+    return true;
+  } catch (err) {
+    console.error('Error al guardar apartado en Neon:', err);
+    return false;
+  }
+}
+
+export async function deleteLayawayFromDb(id: string): Promise<boolean> {
+  const sql = getNeonSql();
+  if (!sql) return false;
+  try {
+    await sql`DELETE FROM layaways WHERE id = ${id}`;
+    return true;
+  } catch (err) {
+    console.error('Error al eliminar apartado de Neon:', err);
+    return false;
+  }
+}
+

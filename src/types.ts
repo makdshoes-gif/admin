@@ -160,6 +160,11 @@ export interface NeonDbStatus {
   databaseName?: string;
   productsCount?: number;
   salesCount?: number;
+  closuresCount?: number;
+  expensesCount?: number;
+  bankCount?: number;
+  layawaysCount?: number;
+  tablesSummary?: Record<string, number>;
   error?: string;
 }
 

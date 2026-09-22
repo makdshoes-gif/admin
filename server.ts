@@ -15,7 +15,12 @@ import {
   normalizeSales,
   normalizeExpenses,
   normalizeBankReconciliations,
+  normalizeLayaways,
   voidSale,
+  updateSale,
+  getLayawaysFromDb,
+  saveLayawayToDb,
+  deleteLayawayFromDb,
   getSalesClosures,
   addSalesClosure,
 } from './server/db.js';
@@ -257,12 +262,13 @@ async function startServer() {
     if (sql) {
       try {
         await initDatabaseSchema();
-        const [products, sales, expenses, reconciliations, closures] = await Promise.all([
+        const [products, sales, expenses, reconciliations, closures, layaways] = await Promise.all([
           sql`SELECT * FROM shoe_products ORDER BY nombre ASC`,
           sql`SELECT * FROM sales_transactions ORDER BY fecha DESC`,
           sql`SELECT * FROM expenses ORDER BY fecha DESC, created_at DESC`,
           sql`SELECT * FROM bank_reconciliations ORDER BY fecha DESC, created_at DESC`,
           sql`SELECT * FROM cash_closures ORDER BY fecha DESC, created_at DESC`,
+          sql`SELECT * FROM layaways ORDER BY fecha_apartado DESC`,
         ]);
         const store = readServerStore();
         return res.json({
@@ -275,7 +281,9 @@ async function startServer() {
             cashClosures: closures || [],
             expenses: normalizeExpenses(expenses as any[]),
             accounts: store.accounts || DEFAULT_ACCOUNTS,
-            layaways: store.layaways || [],
+            layaways: (Array.isArray(layaways) && layaways.length > 0)
+              ? normalizeLayaways(layaways as any[])
+              : (store.layaways || []),
             bankMovements: normalizeBankReconciliations(reconciliations as any[]),
             currencyPurchases: store.currencyPurchases || [],
             exchangeRate: store.exchangeRate || 807.39,
@@ -296,6 +304,7 @@ async function startServer() {
         products: normalizeProducts(store.products || []),
         sales: normalizeSales(store.sales || []),
         expenses: normalizeExpenses(store.expenses || []),
+        layaways: normalizeLayaways(store.layaways || []),
       },
     });
   });
@@ -546,20 +555,31 @@ async function startServer() {
         await sql`
           INSERT INTO sales_transactions (
             id, numero_factura, cliente_nombre, cliente_apellido,
-            cliente_rif, cliente_telefono, subtotal_usd, descuento_usd,
+            cliente_rif, cliente_telefono, cliente_correo, subtotal_usd, descuento_usd,
             aplica_iva, porcentaje_iva, iva_monto_usd, total_usd, total_bs,
             costo_total_usd, ganancia_neta_usd, tasa_cambio, items, pagos,
-            fecha, usuario
+            fecha, usuario, notas, estado,
+            total_positivo_inmediato_usd, total_cashea_pendiente_usd, estado_cashea
           ) VALUES (
             ${s.id}, ${s.numero_factura}, ${s.cliente_nombre || ''}, ${s.cliente_apellido || ''},
-            ${s.cliente_rif || null}, ${s.cliente_telefono || null},
+            ${s.cliente_rif || null}, ${s.cliente_telefono || null}, ${s.cliente_correo || null},
             ${s.subtotal_usd}, ${s.descuento_usd || 0}, ${Boolean(s.aplica_iva)},
             ${s.porcentaje_iva || 0}, ${s.iva_monto_usd || 0}, ${s.total_usd}, ${s.total_bs},
             ${s.costo_total_usd || 0}, ${s.ganancia_neta_usd || 0}, ${s.tasa_cambio},
-            ${JSON.stringify(s.items)}, ${JSON.stringify(s.pagos)},
-            ${s.fecha}, ${s.usuario || 'Cajera'}
+            ${JSON.stringify(s.items || [])}, ${JSON.stringify(s.pagos || [])},
+            ${s.fecha}, ${s.usuario || 'Cajera'}, ${s.notas || ''},
+            ${s.estado || 'completada'},
+            ${s.total_positivo_inmediato_usd || 0}, ${s.total_cashea_pendiente_usd || 0},
+            ${s.estado_cashea || 'sin_cashea'}
           )
-          ON CONFLICT (id) DO NOTHING;
+          ON CONFLICT (id) DO UPDATE SET
+            pagos = EXCLUDED.pagos,
+            total_positivo_inmediato_usd = EXCLUDED.total_positivo_inmediato_usd,
+            total_cashea_pendiente_usd = EXCLUDED.total_cashea_pendiente_usd,
+            estado_cashea = EXCLUDED.estado_cashea,
+            estado = EXCLUDED.estado,
+            fecha = EXCLUDED.fecha,
+            notas = EXCLUDED.notas;
         `;
 
         // Also adjust product stock in Neon if items present
@@ -580,7 +600,7 @@ async function startServer() {
     res.json({ saved: true, id: s.id });
   });
 
-  // Update Sale (e.g. modify sale date)
+  // Update Sale (e.g. modify sale date, payments, or cashea reconciliation)
   app.patch('/api/sales/:id', async (req, res) => {
     const { id } = req.params;
     const updates = req.body;
@@ -591,11 +611,11 @@ async function startServer() {
       writeServerStore(store);
 
       const sql = getNeonSql();
-      if (sql && updates.fecha) {
+      if (sql) {
         try {
-          await sql`UPDATE sales_transactions SET fecha = ${updates.fecha} WHERE id = ${id}`;
+          await updateSale(id, updates);
         } catch (err) {
-          console.error('Error updating sale date in Neon:', err);
+          console.error('Error updating sale in Neon:', err);
         }
       }
       return res.json({ success: true, sale: store.sales[saleIndex] });
@@ -604,12 +624,23 @@ async function startServer() {
   });
 
   // Layaways API (Sistema de Apartados)
-  app.get('/api/layaways', (req, res) => {
+  app.get('/api/layaways', async (req, res) => {
+    const sql = getNeonSql();
+    if (sql) {
+      try {
+        const layaways = await getLayawaysFromDb();
+        if (Array.isArray(layaways) && layaways.length > 0) {
+          return res.json({ success: true, data: layaways, source: 'neon_postgres' });
+        }
+      } catch (err) {
+        console.error('Error fetching layaways from Neon:', err);
+      }
+    }
     const store = readServerStore();
-    res.json({ success: true, data: store.layaways || [] });
+    res.json({ success: true, data: store.layaways || [], source: 'server_store' });
   });
 
-  app.post('/api/layaways', (req, res) => {
+  app.post('/api/layaways', async (req, res) => {
     const layaway = req.body;
     if (!layaway || !layaway.id) {
       return res.status(400).json({ success: false, error: 'Datos de apartado inválidos' });
@@ -623,10 +654,17 @@ async function startServer() {
       store.layaways.unshift(layaway);
     }
     writeServerStore(store);
+
+    // Persist to Neon
+    const sql = getNeonSql();
+    if (sql) {
+      saveLayawayToDb(layaway).catch((err) => console.error('Error saving layaway to Neon:', err));
+    }
+
     res.json({ success: true, layaway });
   });
 
-  app.put('/api/layaways/:id', (req, res) => {
+  app.put('/api/layaways/:id', async (req, res) => {
     const { id } = req.params;
     const updates = req.body;
     const store = readServerStore();
@@ -635,17 +673,33 @@ async function startServer() {
     if (index >= 0) {
       store.layaways[index] = { ...store.layaways[index], ...updates };
       writeServerStore(store);
+
+      // Update in Neon
+      const sql = getNeonSql();
+      if (sql) {
+        saveLayawayToDb(store.layaways[index]).catch((err) =>
+          console.error('Error updating layaway in Neon:', err)
+        );
+      }
+
       return res.json({ success: true, layaway: store.layaways[index] });
     }
     res.status(404).json({ success: false, error: 'Apartado no encontrado' });
   });
 
-  app.delete('/api/layaways/:id', (req, res) => {
+  app.delete('/api/layaways/:id', async (req, res) => {
     const { id } = req.params;
     const store = readServerStore();
     if (!store.layaways) store.layaways = [];
     store.layaways = store.layaways.filter((item: any) => item.id !== id);
     writeServerStore(store);
+
+    // Delete in Neon
+    const sql = getNeonSql();
+    if (sql) {
+      deleteLayawayFromDb(id).catch((err) => console.error('Error deleting layaway from Neon:', err));
+    }
+
     res.json({ success: true, id });
   });
 

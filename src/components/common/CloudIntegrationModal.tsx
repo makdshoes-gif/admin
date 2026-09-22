@@ -544,6 +544,94 @@ DATABASE_URL=postgresql://usuario:contraseña@ep-cool-sample.us-east-2.aws.neon.
                 </pre>
               </div>
 
+              {/* Neon Relational Tables Breakdown */}
+              <div className="space-y-2 pt-2">
+                <div className="flex items-center justify-between">
+                  <h4 className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
+                    <span>Estructura de Tablas en Neon PostgreSQL (7 Tablas)</span>
+                  </h4>
+                  <span className="text-[10px] text-slate-500 font-mono bg-slate-100 px-2 py-0.5 rounded">
+                    Esquema Relacional
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {[
+                    {
+                      name: 'shoe_products',
+                      title: 'Inventario & Calzado',
+                      desc: 'Modelos, tallas, marcas, precios USD/Bs, costo, stock y código SKU.',
+                      count: neonStatus?.productsCount,
+                      status: neonStatus?.connected ? 'Activa' : 'Definida',
+                    },
+                    {
+                      name: 'sales_transactions',
+                      title: 'Ventas, Facturas & Cashea',
+                      desc: 'Detalle de compras, clientes, pagos mixtos, inicial Cashea y cuotas.',
+                      count: neonStatus?.salesCount,
+                      status: neonStatus?.connected ? 'Activa' : 'Definida',
+                    },
+                    {
+                      name: 'cash_closures',
+                      title: 'Arqueos & Cierres de Caja',
+                      desc: 'Cierres de turno diarios, diferencias en USD/Bs y desglose por cuenta.',
+                      count: neonStatus?.closuresCount,
+                      status: neonStatus?.connected ? 'Activa' : 'Definida',
+                    },
+                    {
+                      name: 'expenses',
+                      title: 'Gastos y Costos Operativos',
+                      desc: 'Egresos, categorías, beneficiarios y comprobantes de la zapatería.',
+                      count: neonStatus?.expensesCount,
+                      status: neonStatus?.connected ? 'Activa' : 'Definida',
+                    },
+                    {
+                      name: 'bank_reconciliations',
+                      title: 'Conciliación Bancaria',
+                      desc: 'Movimientos de cuentas, transferencias, liquidaciones Cashea y créditos.',
+                      count: neonStatus?.bankCount,
+                      status: neonStatus?.connected ? 'Activa' : 'Definida',
+                    },
+                    {
+                      name: 'layaways',
+                      title: 'Apartados de Calzado',
+                      desc: 'Zapatos apartados por clientes, abonos acumulados y saldo restante.',
+                      count: neonStatus?.layawaysCount,
+                      status: neonStatus?.connected ? 'Activa' : 'Definida',
+                    },
+                    {
+                      name: 'bdv_verifications',
+                      title: 'Validación Pago Móvil BDV',
+                      desc: 'Historial de pagos verificados en línea con el Banco de Venezuela.',
+                      count: undefined,
+                      status: neonStatus?.connected ? 'Activa' : 'Definida',
+                    },
+                  ].map((tbl) => (
+                    <div
+                      key={tbl.name}
+                      className="p-2.5 rounded-lg border border-slate-200 bg-white hover:border-emerald-300 transition space-y-1 shadow-2xs"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-mono text-[11px] font-bold text-slate-800">
+                          {tbl.name}
+                        </span>
+                        <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
+                          {neonStatus?.connected && tbl.count !== undefined
+                            ? `${tbl.count} reg.`
+                            : tbl.status}
+                        </span>
+                      </div>
+                      <div className="text-[11px] font-semibold text-slate-700">
+                        {tbl.title}
+                      </div>
+                      <p className="text-[10px] text-slate-500 line-clamp-2">
+                        {tbl.desc}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
             </div>
           )}
 

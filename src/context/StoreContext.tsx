@@ -2330,6 +2330,23 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     setBankMovements((prev) => [newMovement, ...prev]);
 
+    // Sincronizar actualización de la venta con backend y Neon PostgreSQL
+    fetch(`/api/sales/${targetSale.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        pagos: updatedPagos,
+        total_positivo_inmediato_usd: updatedSale.total_positivo_inmediato_usd,
+        total_cashea_pendiente_usd: updatedSale.total_cashea_pendiente_usd,
+        estado_cashea: updatedSale.estado_cashea,
+      }),
+    }).catch((err) => console.warn('No se pudo sincronizar actualización de venta Cashea con el servidor/Neon:', err));
+
+    // Sincronizar movimiento bancario en Neon PostgreSQL
+    saveBankReconciliationApi(newMovement).catch((err) =>
+      console.warn('No se pudo guardar movimiento de conciliación Cashea en Neon:', err)
+    );
+
     addNotification(
       'Pago Cashea Conciliado',
       `Factura #${targetSale.numero_factura}: Se acreditaron ${targetAcc.moneda === 'Bs' ? `${amountToCredit.toLocaleString('es-VE', { minimumFractionDigits: 2 })} Bs` : `$${amountToCredit.toFixed(2)}`} en ${targetAcc.nombre} (Ref: ${bankReference}).`,
