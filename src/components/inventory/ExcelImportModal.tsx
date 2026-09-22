@@ -13,7 +13,6 @@ import {
   Search,
   Check
 } from 'lucide-react';
-import * as XLSX from 'xlsx';
 import { ShoeProduct, ShoeType, ProductCategory } from '../../types';
 
 interface ExcelImportModalProps {
@@ -75,6 +74,7 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
     setFileName(file.name);
 
     try {
+      const XLSX = await import('xlsx');
       const data = await file.arrayBuffer();
       const workbook = XLSX.read(data, { type: 'array' });
       const firstSheetName = workbook.SheetNames[0];
@@ -313,7 +313,7 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
   };
 
   // Descargar plantilla Excel de ejemplo
-  const downloadSampleTemplate = () => {
+  const downloadSampleTemplate = async () => {
     const sampleData = [
       {
         Nombre: 'Nike Air Force 1 07 Low',
@@ -415,6 +415,7 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
       },
     ];
 
+    const XLSX = await import('xlsx');
     const worksheet = XLSX.utils.json_to_sheet(sampleData);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, 'Inventario');

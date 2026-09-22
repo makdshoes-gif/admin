@@ -48,6 +48,10 @@ import {
   writeBatch,
 } from 'firebase/firestore';
 import { onAuthStateChanged, User } from 'firebase/auth';
+import {
+  sendInventoryWebhook,
+  WebhookSyncResult,
+} from '../services/inventoryWebhookService';
 
 export interface ToastNotification {
   id: string;
@@ -123,6 +127,19 @@ interface StoreContextType {
   adminPin: string;
   setAdminPin: (pin: string) => void;
   verifyAdminPin: (pin: string) => boolean;
+  cajeraPin: string;
+  setCajeraPin: (pin: string) => void;
+  verifyCajeraPin: (pin: string) => boolean;
+  currentSessionUser: UserRole | null;
+  loginSession: (role: UserRole, pin: string) => boolean;
+  logoutSession: () => void;
+  reconcileCasheaPayment: (
+    saleId: string,
+    paymentId: string,
+    targetAccountName: string,
+    bankReference: string,
+    fechaConciliacion?: string
+  ) => boolean;
   clearAllData: () => void;
   syncStatus: 'synced' | 'syncing' | 'error';
   lastSyncedAt: string;
@@ -135,6 +152,17 @@ interface StoreContextType {
   restoreFromBackup: () => void;
   exportStoreBackup: () => void;
   importStoreBackup: (file: File) => Promise<void>;
+  triggerInventoryWebhook: (customProducts?: ShoeProduct[]) => Promise<WebhookSyncResult>;
+}
+
+let autoWebhookTimeout: any = null;
+function dispatchAutoWebhook(productsList: ShoeProduct[], delay = 1200) {
+  if (autoWebhookTimeout) clearTimeout(autoWebhookTimeout);
+  autoWebhookTimeout = setTimeout(() => {
+    sendInventoryWebhook(productsList).catch((err) => {
+      console.log('Auto webhook sync notice:', err?.message);
+    });
+  }, delay);
 }
 
 const StoreContext = createContext<StoreContextType | undefined>(undefined);
@@ -250,6 +278,17 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [isAutoSyncEnabled, setIsAutoSyncEnabled] = useState<boolean>(true);
 
   const [userRole, setUserRole] = useState<UserRole>('cajera');
+
+  const [cajeraPin, setCajeraPinState] = useState<string>(() => {
+    const saved = localStorage.getItem(`${STORAGE_KEY}_cajera_pin`);
+    return saved || '0000';
+  });
+
+  const [currentSessionUser, setCurrentSessionUser] = useState<UserRole | null>(() => {
+    const saved = localStorage.getItem(`${STORAGE_KEY}_session_role`);
+    if (saved === 'admin' || saved === 'cajera') return saved;
+    return null;
+  });
 
   const [adminPin, setAdminPinState] = useState<string>(() => {
     const saved = localStorage.getItem(`${STORAGE_KEY}_admin_pin`);
@@ -986,6 +1025,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       `${newProduct.nombre} (Talla ${newProduct.talla}) agregado con éxito.`,
       'success'
     );
+
+    dispatchAutoWebhook([newProduct, ...products]);
   };
 
   // Add Products Bulk (Excel import or Multi-size model creation)
@@ -1068,11 +1109,14 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       `Se han registrado ${formattedProducts.length} artículos/tallas exitosamente.`,
       'success'
     );
+
+    dispatchAutoWebhook(replaceAll ? formattedProducts : [...formattedProducts, ...products]);
   };
 
   // Update Product
   const updateProduct = (id: string, updates: Partial<ShoeProduct>) => {
     let updatedItem: ShoeProduct | undefined;
+    let nextProductsList: ShoeProduct[] = [];
     setProducts((prev) => {
       const updated = prev.map((p) => {
         if (p.id === id) {
@@ -1081,6 +1125,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         }
         return p;
       });
+      nextProductsList = updated;
       try {
         localStorage.setItem(`${STORAGE_KEY}_products`, JSON.stringify(updated));
       } catch (e) {}
@@ -1119,6 +1164,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
 
     addNotification('Producto Actualizado', 'Información guardada con éxito.', 'info');
+    if (nextProductsList.length > 0) {
+      dispatchAutoWebhook(nextProductsList);
+    }
   };
 
   // Adjust stock in real time (Manual Batch entry, Scrap adjustment, Return)
@@ -1203,6 +1251,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         'success'
       );
     }
+
+    dispatchAutoWebhook(
+      products.map((p) => (p.id === productId ? { ...p, stock: newStock } : p))
+    );
   };
 
   // Delete product
@@ -1219,6 +1271,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
 
     addNotification('Producto Eliminado', `${product.nombre} retirado del catálogo.`, 'info');
+    dispatchAutoWebhook(products.filter((p) => p.id !== id));
   };
 
   // Record Sale (Instant real-time stock deduction, movement logging, financial balance update)
@@ -1294,10 +1347,34 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       setMovements((prev) => [...saleMovements, ...prev]);
     }
 
-    // 4. Update accounts balances based on payments
+    // 4. Classify payments: Cashea stays pending reconciliation, while positive liquid payments (Pago Móvil, Punto de Venta, Efectivo, etc.) enter into balances immediately
+    let totalPositivoInmediatoUsd = 0;
+    let totalCasheaPendienteUsd = 0;
+
+    const enrichedPagos = saleData.pagos.map((pago) => {
+      const isCashea = pago.cuenta.toLowerCase().includes('cashea');
+      if (isCashea) {
+        totalCasheaPendienteUsd += pago.monto_equivalente_usd;
+        return {
+          ...pago,
+          estado_liquidacion: 'pendiente_banco' as const,
+        };
+      } else {
+        totalPositivoInmediatoUsd += pago.monto_equivalente_usd;
+        return {
+          ...pago,
+          estado_liquidacion: 'liquidado_inmediato' as const,
+        };
+      }
+    });
+
+    // Update accounts balances ONLY for positive liquid payments (exclude Cashea pending bank deposits)
     setAccounts((prevAccounts) => {
       const updatedAccounts = [...prevAccounts];
-      saleData.pagos.forEach((pago) => {
+      enrichedPagos.forEach((pago) => {
+        // Cashea does not enter into positive bank balance right now; it waits for bank liquidation
+        if (pago.estado_liquidacion === 'pendiente_banco') return;
+
         const accIndex = updatedAccounts.findIndex((acc) => acc.nombre === pago.cuenta);
         if (accIndex !== -1) {
           updatedAccounts[accIndex] = {
@@ -1311,11 +1388,17 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     // 5. Finalize Sale Record
     const gananciaNeta = saleData.total_usd - totalCosto;
+    const estadoCashea = totalCasheaPendienteUsd > 0 ? ('pendiente_banco' as const) : ('sin_cashea' as const);
+
     const completedSale: Sale = {
       ...saleData,
       id: saleId,
+      pagos: enrichedPagos,
       costo_total_usd: totalCosto,
       ganancia_neta_usd: gananciaNeta,
+      total_positivo_inmediato_usd: totalPositivoInmediatoUsd,
+      total_cashea_pendiente_usd: totalCasheaPendienteUsd,
+      estado_cashea: estadoCashea,
       created_at: timestamp,
     };
 
@@ -1355,6 +1438,15 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       `Factura #${completedSale.numero_factura} por $${completedSale.total_usd.toFixed(2)} (${completedSale.items.reduce((s, i) => s + i.cantidad, 0)} pares)`,
       'success'
     );
+
+    const updatedProductsForWebhook = products.map((prod) => {
+      const soldItem = saleData.items.find((i) => i.producto_id === prod.id);
+      if (soldItem) {
+        return { ...prod, stock: Math.max(0, prod.stock - soldItem.cantidad) };
+      }
+      return prod;
+    });
+    dispatchAutoWebhook(updatedProductsForWebhook, 600);
 
     return completedSale;
   };
@@ -2105,6 +2197,148 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return enteredPin === adminPin;
   };
 
+  const setCajeraPin = (newPin: string) => {
+    if (/^\d{4}$/.test(newPin)) {
+      setCajeraPinState(newPin);
+      localStorage.setItem(`${STORAGE_KEY}_cajera_pin`, newPin);
+      addNotification('Seguridad Actualizada', 'El PIN de 4 dígitos para Cajera ha sido modificado.', 'info');
+    }
+  };
+
+  const verifyCajeraPin = (enteredPin: string): boolean => {
+    return enteredPin === cajeraPin;
+  };
+
+  const loginSession = (role: UserRole, pin: string): boolean => {
+    if (role === 'admin') {
+      if (pin === adminPin) {
+        setCurrentSessionUser('admin');
+        setUserRole('admin');
+        localStorage.setItem(`${STORAGE_KEY}_session_role`, 'admin');
+        addNotification('Sesión Iniciada', 'Bienvenido(a) Administrador General a MAKD SHOP.', 'success');
+        return true;
+      }
+    } else if (role === 'cajera') {
+      if (pin === cajeraPin) {
+        setCurrentSessionUser('cajera');
+        setUserRole('cajera');
+        localStorage.setItem(`${STORAGE_KEY}_session_role`, 'cajera');
+        addNotification('Turno Abierto', 'Bienvenido(a) al Terminal de Ventas de Calzado.', 'success');
+        return true;
+      }
+    }
+    return false;
+  };
+
+  const logoutSession = () => {
+    setCurrentSessionUser(null);
+    localStorage.removeItem(`${STORAGE_KEY}_session_role`);
+    addNotification('Turno Bloqueado', 'Has cerrado la sesión de trabajo. Ingresa tu clave para reanudar.', 'info');
+  };
+
+  // Conciliar pago de Cashea cuando el depósito cae en el banco (ingreso positivo diferido)
+  const reconcileCasheaPayment = (
+    saleId: string,
+    paymentId: string,
+    targetAccountName: string,
+    bankReference: string,
+    fechaConciliacion?: string
+  ): boolean => {
+    const saleIndex = sales.findIndex((s) => s.id === saleId);
+    if (saleIndex === -1) return false;
+
+    const targetSale = sales[saleIndex];
+    const paymentIndex = targetSale.pagos.findIndex((p) => p.id === paymentId);
+    if (paymentIndex === -1) return false;
+
+    const payment = targetSale.pagos[paymentIndex];
+    if (payment.estado_liquidacion === 'conciliado_en_banco') {
+      addNotification('Ya Conciliado', 'Este pago de Cashea ya fue conciliado previamente en el banco.', 'info');
+      return false;
+    }
+
+    const targetAcc =
+      accounts.find((a) => a.nombre.toLowerCase() === targetAccountName.toLowerCase()) ||
+      accounts.find((a) => a.nombre.toLowerCase().includes('pago móvil')) ||
+      accounts.find((a) => a.nombre.toLowerCase().includes('punto de venta')) ||
+      accounts[0];
+
+    const acreditadoDate = fechaConciliacion || new Date().toISOString();
+
+    // Monto a acreditar en la cuenta destino
+    const amountToCredit =
+      targetAcc.moneda === payment.moneda
+        ? payment.monto
+        : targetAcc.moneda === 'Bs'
+        ? payment.monto_equivalente_usd * exchangeRate
+        : payment.monto_equivalente_usd;
+
+    // 1. Ingresar en POSITIVO en el saldo de la cuenta bancaria seleccionada
+    setAccounts((prev) =>
+      prev.map((acc) =>
+        acc.nombre === targetAcc.nombre
+          ? { ...acc, saldo: acc.saldo + amountToCredit }
+          : acc
+      )
+    );
+
+    // 2. Actualizar el pago en la venta como conciliado en banco
+    const updatedPagos = [...targetSale.pagos];
+    updatedPagos[paymentIndex] = {
+      ...payment,
+      estado_liquidacion: 'conciliado_en_banco',
+      banco_acreditado: targetAcc.nombre,
+      referencia_bancaria: bankReference,
+      fecha_conciliacion: acreditadoDate,
+    };
+
+    const remainingPendingCashea = updatedPagos
+      .filter((p) => p.cuenta.toLowerCase().includes('cashea') && p.estado_liquidacion !== 'conciliado_en_banco')
+      .reduce((sum, p) => sum + p.monto_equivalente_usd, 0);
+
+    const updatedSale: Sale = {
+      ...targetSale,
+      pagos: updatedPagos,
+      total_positivo_inmediato_usd: (targetSale.total_positivo_inmediato_usd || 0) + payment.monto_equivalente_usd,
+      total_cashea_pendiente_usd: remainingPendingCashea,
+      estado_cashea: remainingPendingCashea === 0 ? 'conciliado_total' : 'conciliado_parcial',
+    };
+
+    setSales((prev) => {
+      const updated = [...prev];
+      updated[saleIndex] = updatedSale;
+      safeLocalStorageSet(`${STORAGE_KEY}_sales`, JSON.stringify(updated));
+      return updated;
+    });
+
+    // 3. Generar movimiento bancario oficial de ingreso
+    const newMovement: BankMovement = {
+      id: `mov-cashea-${Date.now()}`,
+      fecha: acreditadoDate.split('T')[0],
+      banco: targetAcc.nombre,
+      tipo: 'credito_ingreso',
+      referencia: bankReference || `LIQ-CASHEA-${targetSale.numero_factura}`,
+      descripcion: `Liquidación Cashea Factura #${targetSale.numero_factura} (${targetSale.cliente_nombre})`,
+      monto_bs: targetAcc.moneda === 'Bs' ? amountToCredit : amountToCredit * exchangeRate,
+      monto_usd: payment.monto_equivalente_usd,
+      estado_conciliacion: 'conciliado',
+      vinculado_tipo: 'venta',
+      vinculado_id: targetSale.id,
+      notas: `Conciliado para cuenta ${targetAcc.nombre}`,
+      created_at: new Date().toISOString(),
+    };
+
+    setBankMovements((prev) => [newMovement, ...prev]);
+
+    addNotification(
+      'Pago Cashea Conciliado',
+      `Factura #${targetSale.numero_factura}: Se acreditaron ${targetAcc.moneda === 'Bs' ? `${amountToCredit.toLocaleString('es-VE', { minimumFractionDigits: 2 })} Bs` : `$${amountToCredit.toFixed(2)}`} en ${targetAcc.nombre} (Ref: ${bankReference}).`,
+      'success'
+    );
+
+    return true;
+  };
+
   const clearAllData = () => {
     setProducts([]);
     setMovements([]);
@@ -2188,6 +2422,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     syncFromServer(false);
   }, [syncFromServer]);
 
+  const triggerInventoryWebhook = useCallback(async (customProducts?: ShoeProduct[]) => {
+    return await sendInventoryWebhook(customProducts || products, { force: true });
+  }, [products]);
+
   return (
     <StoreContext.Provider
       value={{
@@ -2241,6 +2479,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         adminPin,
         setAdminPin,
         verifyAdminPin,
+        cajeraPin,
+        setCajeraPin,
+        verifyCajeraPin,
+        currentSessionUser,
+        loginSession,
+        logoutSession,
+        reconcileCasheaPayment,
         clearAllData,
         syncStatus,
         lastSyncedAt,
@@ -2253,6 +2498,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         restoreFromBackup,
         exportStoreBackup,
         importStoreBackup,
+        triggerInventoryWebhook,
       }}
     >
       {children}

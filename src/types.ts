@@ -6,6 +6,11 @@ export type ShoeType =
   | 'Beisbol'
   | 'Runing'
   | 'Microtacos'
+  | 'Botas'
+  | 'Tacones'
+  | 'Sandalias'
+  | 'Mocasines'
+  | 'Infantil'
   | 'Gorras'
   | 'Medias'
   | 'Accesorios'
@@ -78,12 +83,17 @@ export interface SaleItem {
 
 export interface SalePayment {
   id: string;
-  cuenta: string;         // 'Efectivo USD' | 'Efectivo Bs' | 'Pago Móvil' | 'Zelle' | 'Binance' | 'Cashea'
+  cuenta: string;         // 'Efectivo USD' | 'Efectivo Bs' | 'Pago Móvil' | 'Punto de Venta' | 'Zelle' | 'Binance' | 'Cashea'
   moneda: Currency;
   monto: number;          // Monto en la moneda seleccionada
   tasa: number;           // Tasa de cambio aplicada
   monto_equivalente_usd: number;
   referencia?: string;
+  estado_liquidacion?: 'liquidado_inmediato' | 'pendiente_banco' | 'conciliado_en_banco';
+  banco_acreditado?: string;
+  cuenta_banco_liquidacion?: string;
+  referencia_bancaria?: string;
+  fecha_conciliacion?: string;
 }
 
 export interface Sale {
@@ -114,6 +124,9 @@ export interface Sale {
   anulada_motivo?: string;
   modificada_at?: string;
   motivo_modificacion?: string;
+  total_positivo_inmediato_usd?: number; // Monto que entró en positivo inmediatamente (Pago Móvil, Punto de Venta, etc.)
+  total_cashea_pendiente_usd?: number;   // Monto que queda pendiente por conciliar en banco según caiga
+  estado_cashea?: 'sin_cashea' | 'pendiente_banco' | 'conciliado_total' | 'conciliado_parcial';
   created_at: string;
 }
 

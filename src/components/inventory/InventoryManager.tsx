@@ -23,7 +23,8 @@ import {
   FileSpreadsheet,
   Sparkles,
   Globe,
-  UploadCloud
+  UploadCloud,
+  Webhook
 } from 'lucide-react';
 import { useStore } from '../../context/StoreContext';
 import { ShoeProduct, ShoeType, MovementType, ProductCategory } from '../../types';
@@ -34,6 +35,7 @@ import { ExcelImportModal } from './ExcelImportModal';
 import { ShoeAiScannerModal } from './ShoeAiScannerModal';
 import { GitHubSyncModal } from '../catalog/GitHubSyncModal';
 import { BatchWhiteBackgroundModal } from './BatchWhiteBackgroundModal';
+import { InventoryWebhookModal } from './InventoryWebhookModal';
 import { ShoeAiResult } from '../../services/aiShoeService';
 
 export const InventoryManager: React.FC = () => {
@@ -77,6 +79,9 @@ export const InventoryManager: React.FC = () => {
 
   // GitHub Catalog Sync Modal state
   const [isGitHubSyncOpen, setIsGitHubSyncOpen] = useState(false);
+
+  // External Inventory Webhook Sync Modal state
+  const [isWebhookModalOpen, setIsWebhookModalOpen] = useState(false);
 
   // Batch White Studio Background Modal state
   const [isBatchWhiteBgOpen, setIsBatchWhiteBgOpen] = useState(false);
@@ -225,6 +230,18 @@ export const InventoryManager: React.FC = () => {
           >
             <Globe className="w-4 h-4 text-indigo-400" />
             <span>Sincronizar Catálogo Web</span>
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+          </button>
+
+          <button
+            id="sync-webhook-catalog-btn"
+            type="button"
+            onClick={() => setIsWebhookModalOpen(true)}
+            className="px-3.5 py-2 bg-indigo-950/80 hover:bg-indigo-900 active:bg-slate-900 text-indigo-300 hover:text-white font-semibold rounded-lg text-xs flex items-center gap-2 shadow-xs transition-colors cursor-pointer border border-indigo-700/50"
+            title="Sincronizar webhook automático al registrar ventas o inventario"
+          >
+            <Webhook className="w-4 h-4 text-indigo-400" />
+            <span>Webhook Inventario</span>
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
           </button>
 
@@ -1067,6 +1084,13 @@ export const InventoryManager: React.FC = () => {
       <BatchWhiteBackgroundModal
         isOpen={isBatchWhiteBgOpen}
         onClose={() => setIsBatchWhiteBgOpen(false)}
+      />
+
+      {/* Modal: External Inventory Webhook Sync */}
+      <InventoryWebhookModal
+        isOpen={isWebhookModalOpen}
+        onClose={() => setIsWebhookModalOpen(false)}
+        products={products}
       />
 
     </div>

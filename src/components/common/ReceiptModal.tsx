@@ -67,7 +67,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ sale, onClose }) => 
           <div className="text-center border-b border-dashed border-slate-300 pb-3 mb-3">
             <h2 className="text-base font-black tracking-widest text-slate-900">MAKD SHOP</h2>
             <p className="text-[10px] text-slate-500 uppercase">Tienda Especializada en Calzado</p>
-            <p className="text-[10px] text-slate-400">RIF: J-50491823-1</p>
+            <p className="text-[10px] text-slate-500 font-semibold whitespace-nowrap">Razón Social: MAKD SHOP, C.A. • RIF: J-50491823-1</p>
             <p className="text-[10px] text-slate-400">Ciudad Alta Vista II, Local 163, Puerto Ordaz, Edo. Bolívar</p>
             
             <div className="mt-2.5 inline-block px-2.5 py-0.5 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded font-bold text-xs">
@@ -119,16 +119,16 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ sale, onClose }) => 
 
           {/* Customer Details */}
           <div className="border-b border-dashed border-slate-300 pb-2.5 mb-2.5 space-y-1">
-            <div className="flex justify-between">
-              <span className="text-slate-500">Cliente:</span>
-              <span className="font-bold text-slate-900">
+            <div className="flex justify-between items-center text-xs">
+              <span className="text-slate-500 shrink-0">Razón Social:</span>
+              <span className="font-bold text-slate-900 truncate ml-2 text-right">
                 {sale.cliente_nombre} {sale.cliente_apellido || ''}
               </span>
             </div>
             {sale.cliente_rif && (
-              <div className="flex justify-between">
-                <span className="text-slate-500">Cédula/RIF:</span>
-                <span>{sale.cliente_rif}</span>
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-slate-500 shrink-0">Cédula / RIF:</span>
+                <span className="font-mono text-slate-900">{sale.cliente_rif}</span>
               </div>
             )}
             {sale.cliente_telefono && (
@@ -194,18 +194,46 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ sale, onClose }) => 
           </div>
 
           {/* Payments Breakdown */}
-          <div className="border-b border-dashed border-slate-300 pb-2.5 mb-2.5">
-            <div className="text-[10px] font-bold text-slate-400 uppercase mb-1">Formas de Pago</div>
-            {sale.pagos.map((p, idx) => (
-              <div key={idx} className="flex justify-between text-[11px]">
-                <span className="text-slate-600">
-                  {p.cuenta} {p.referencia ? `(Ref: ${p.referencia})` : ''}:
-                </span>
-                <span className="font-semibold text-slate-900">
-                  {p.moneda === 'Bs' ? `${p.monto.toFixed(2)} Bs` : `$${p.monto.toFixed(2)}`}
-                </span>
+          <div className="border-b border-dashed border-slate-300 pb-2.5 mb-2.5 space-y-1">
+            <div className="text-[10px] font-bold text-slate-400 uppercase mb-1">Formas de Pago & Liquidación</div>
+            {sale.pagos.map((p, idx) => {
+              const isCashea = p.cuenta.toLowerCase().includes('cashea');
+              return (
+                <div key={idx} className="flex justify-between text-[11px] items-center">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-slate-700 font-medium">
+                      {p.cuenta} {p.referencia ? `(Ref: ${p.referencia})` : ''}:
+                    </span>
+                    {isCashea && (
+                      <span className={`px-1.5 py-0.2 rounded text-[9px] font-bold ${
+                        p.estado_liquidacion === 'conciliado_en_banco'
+                          ? 'bg-emerald-100 text-emerald-800'
+                          : 'bg-amber-100 text-amber-800'
+                      }`}>
+                        {p.estado_liquidacion === 'conciliado_en_banco' ? 'Acreditado en Banco' : 'Por Conciliar'}
+                      </span>
+                    )}
+                  </div>
+                  <span className="font-semibold text-slate-900 font-mono">
+                    {p.moneda === 'Bs' ? `${p.monto.toFixed(2)} Bs` : `$${p.monto.toFixed(2)}`}
+                  </span>
+                </div>
+              );
+            })}
+
+            {/* Breakdown for Cashea vs Positive Immediate Income */}
+            {(sale.total_cashea_pendiente_usd !== undefined && sale.total_cashea_pendiente_usd > 0) && (
+              <div className="mt-2 pt-1.5 border-t border-slate-200 text-[10px] space-y-0.5">
+                <div className="flex justify-between text-emerald-700 font-bold">
+                  <span>Ingreso en Positivo (Caja/Banco):</span>
+                  <span>${(sale.total_positivo_inmediato_usd || 0).toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between text-amber-700 font-bold">
+                  <span>Cashea por Conciliar en Banco:</span>
+                  <span>${sale.total_cashea_pendiente_usd.toFixed(2)}</span>
+                </div>
               </div>
-            ))}
+            )}
           </div>
 
           {/* Footer Note */}

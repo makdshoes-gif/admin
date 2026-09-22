@@ -21,10 +21,32 @@ import { BdvFileImportModal } from './BdvFileImportModal';
 import { GoogleSheetsSyncModal } from '../common/GoogleSheetsSyncModal';
 
 export const BankReconciliationView: React.FC = () => {
-  const { bankMovements, addBankMovement, updateBankMovement, sales, expenses, exchangeRate } = useStore();
+  const {
+    bankMovements,
+    addBankMovement,
+    updateBankMovement,
+    sales,
+    expenses,
+    exchangeRate,
+    accounts,
+    reconcileCasheaPayment,
+  } = useStore();
 
+  const [activeReconciliationTab, setActiveReconciliationTab] = useState<'bancos' | 'cashea'>('bancos');
   const [isBdvModalOpen, setIsBdvModalOpen] = useState(false);
   const [isSheetsModalOpen, setIsSheetsModalOpen] = useState(false);
+
+  // Cashea Reconciliation Target State
+  const [casheaReconcileTarget, setCasheaReconcileTarget] = useState<{
+    saleId: string;
+    paymentId: string;
+    factura: string;
+    cliente: string;
+    montoUsd: number;
+    montoBs: number;
+  } | null>(null);
+  const [casheaBankDest, setCasheaBankDest] = useState('Banco de Venezuela (0102)');
+  const [casheaBankRef, setCasheaBankRef] = useState('');
 
   // Bank reconciliation filters
   const [bankFilter, setBankFilter] = useState<string>('todos');
@@ -80,6 +102,82 @@ export const BankReconciliationView: React.FC = () => {
       .filter((m) => m.estado_conciliacion === 'pendiente')
       .reduce((sum, m) => sum + m.monto_bs, 0);
   }, [bankMovements]);
+
+  // Cashea Payments Extraction (Pending bank credit vs already credited)
+  const casheaItems = useMemo(() => {
+    const pending: Array<{
+      saleId: string;
+      factura: string;
+      cliente: string;
+      fecha: string;
+      totalFacturaUsd: number;
+      paymentId: string;
+      montoUsd: number;
+      montoBs: number;
+      estado: string;
+      referencia?: string;
+    }> = [];
+
+    const conciliados: Array<{
+      saleId: string;
+      factura: string;
+      cliente: string;
+      fecha: string;
+      totalFacturaUsd: number;
+      paymentId: string;
+      montoUsd: number;
+      montoBs: number;
+      estado: string;
+      referencia?: string;
+      bancoReceptor?: string;
+    }> = [];
+
+    sales.forEach((s) => {
+      s.pagos.forEach((p) => {
+        if (p.cuenta.toLowerCase().includes('cashea')) {
+          const item = {
+            saleId: s.id,
+            factura: s.numero_factura,
+            cliente: `${s.cliente_nombre} ${s.cliente_apellido || ''}`.trim(),
+            fecha: s.fecha,
+            totalFacturaUsd: s.total_usd,
+            paymentId: p.id,
+            montoUsd: p.monto_equivalente_usd,
+            montoBs: p.monto_equivalente_usd * exchangeRate,
+            estado: p.estado_liquidacion || 'pendiente_banco',
+            referencia: p.referencia,
+            bancoReceptor: p.cuenta_banco_liquidacion,
+          };
+          if (p.estado_liquidacion === 'conciliado_en_banco') {
+            conciliados.push(item);
+          } else {
+            pending.push(item);
+          }
+        }
+      });
+    });
+
+    return { pending, conciliados };
+  }, [sales, exchangeRate]);
+
+  const totalCasheaPendingUsd = useMemo(() => {
+    return casheaItems.pending.reduce((sum, item) => sum + item.montoUsd, 0);
+  }, [casheaItems.pending]);
+
+  const handleConfirmCasheaReconciliation = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!casheaReconcileTarget) return;
+
+    reconcileCasheaPayment(
+      casheaReconcileTarget.saleId,
+      casheaReconcileTarget.paymentId,
+      casheaBankDest,
+      casheaBankRef.trim() || undefined
+    );
+
+    setCasheaReconcileTarget(null);
+    setCasheaBankRef('');
+  };
 
   // Auto-reconciliation algorithm: match bank movements with POS sales references
   const handleAutoReconcile = () => {
@@ -202,7 +300,7 @@ export const BankReconciliationView: React.FC = () => {
       {/* RECONCILIATION DASHBOARD */}
       <div className="space-y-6">
           {/* Metric cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5">
             <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-xs">
               <div className="flex items-center justify-between text-slate-500 text-xs font-semibold uppercase">
                 <span>Créditos / Ingresos Banco</span>
@@ -250,13 +348,13 @@ export const BankReconciliationView: React.FC = () => {
                 </span>
               </div>
               <p className="text-[11px] text-emerald-600 mt-1">
-                Verificados y cuadrados con POS/Gastos
+                Verificados y cuadrados en banco
               </p>
             </div>
 
             <div className="bg-white p-5 rounded-xl border border-amber-200 bg-amber-50/20 shadow-xs">
               <div className="flex items-center justify-between text-amber-700 text-xs font-semibold uppercase">
-                <span>Pendiente por Conciliar</span>
+                <span>Bancos Pendiente</span>
                 <div className="p-1.5 bg-amber-100 text-amber-700 rounded-md">
                   <Clock className="w-4 h-4" />
                 </div>
@@ -267,13 +365,249 @@ export const BankReconciliationView: React.FC = () => {
                 </span>
               </div>
               <p className="text-[11px] text-amber-600 mt-1">
-                Requiere cruce con factura o referencia
+                Por cruzar con referencia POS
+              </p>
+            </div>
+
+            {/* 5th Card: Cashea por Conciliar */}
+            <div
+              onClick={() => setActiveReconciliationTab('cashea')}
+              className={`p-5 rounded-xl border shadow-xs transition cursor-pointer ${
+                activeReconciliationTab === 'cashea'
+                  ? 'bg-amber-500 text-white border-amber-600 ring-2 ring-amber-400'
+                  : 'bg-amber-50/70 border-amber-200 text-slate-900 hover:bg-amber-100/50'
+              }`}
+            >
+              <div className="flex items-center justify-between text-xs font-semibold uppercase">
+                <span className={activeReconciliationTab === 'cashea' ? 'text-amber-100' : 'text-amber-800 font-bold'}>
+                  Cashea en Banco
+                </span>
+                <span className={`px-1.5 py-0.5 rounded text-[10px] font-black ${
+                  activeReconciliationTab === 'cashea' ? 'bg-amber-600 text-white' : 'bg-amber-200 text-amber-900'
+                }`}>
+                  {casheaItems.pending.length} Pend.
+                </span>
+              </div>
+              <div className="mt-2">
+                <span className="text-xl font-bold">
+                  ${totalCasheaPendingUsd.toFixed(2)} USD
+                </span>
+              </div>
+              <p className={`text-[11px] mt-1 ${activeReconciliationTab === 'cashea' ? 'text-amber-100' : 'text-amber-700 font-medium'}`}>
+                ≈ {(totalCasheaPendingUsd * exchangeRate).toLocaleString('es-VE', { minimumFractionDigits: 2 })} Bs
               </p>
             </div>
           </div>
 
-          {/* Action Bar & Filters */}
-          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-3">
+          {/* Module Tabs */}
+          <div className="flex border-b border-slate-200 gap-4">
+            <button
+              type="button"
+              onClick={() => setActiveReconciliationTab('bancos')}
+              className={`pb-3 text-xs md:text-sm font-bold flex items-center gap-2 border-b-2 transition cursor-pointer ${
+                activeReconciliationTab === 'bancos'
+                  ? 'border-indigo-600 text-indigo-700'
+                  : 'border-transparent text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              <Landmark className="w-4 h-4" />
+              <span>Movimientos de Cuentas Bancarias</span>
+              <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 font-normal">
+                {bankMovements.length}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveReconciliationTab('cashea')}
+              className={`pb-3 text-xs md:text-sm font-bold flex items-center gap-2 border-b-2 transition cursor-pointer ${
+                activeReconciliationTab === 'cashea'
+                  ? 'border-amber-500 text-amber-800'
+                  : 'border-transparent text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              <Clock className="w-4 h-4 text-amber-600" />
+              <span>Liquidaciones Cashea en Banco</span>
+              <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${
+                casheaItems.pending.length > 0 ? 'bg-amber-100 text-amber-900 border border-amber-300' : 'bg-slate-100 text-slate-600'
+              }`}>
+                {casheaItems.pending.length} por conciliar
+              </span>
+            </button>
+          </div>
+
+          {/* VIEW: CASHEA RECONCILIATION */}
+          {activeReconciliationTab === 'cashea' && (
+            <div className="space-y-4">
+              {/* Guidance banner */}
+              <div className="bg-amber-50 border border-amber-200 p-4 rounded-xl flex items-start gap-3">
+                <div className="p-2 bg-amber-500 text-white rounded-lg shrink-0">
+                  <Clock className="w-5 h-5" />
+                </div>
+                <div className="text-xs text-amber-950 space-y-1">
+                  <p className="font-bold text-sm">Conciliación de Liquidaciones Cashea en Banco</p>
+                  <p className="text-amber-800 leading-relaxed">
+                    Las facturas cobradas con Cashea quedan registradas en el sistema. La <strong>Inicial</strong> pagada con Punto de Venta o Pago Móvil ingresó en positivo de inmediato a tu caja. El <strong>saldo financiado por Cashea</strong> queda registrado aquí para ser acreditado en positivo a tu cuenta bancaria cuando Cashea liquide los fondos.
+                  </p>
+                </div>
+              </div>
+
+              {/* Pending Cashea Invoices */}
+              <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
+                <div className="p-4 border-b border-slate-100 flex items-center justify-between">
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-800">
+                      Ventas con Cuotas Cashea Pendientes por Recibir en Banco
+                    </h3>
+                    <p className="text-xs text-slate-500">
+                      Selecciona una factura para marcar la liquidación recibida en tu banco
+                    </p>
+                  </div>
+                  <span className="text-xs font-bold text-amber-700 bg-amber-50 px-3 py-1 rounded-full border border-amber-200">
+                    Total: ${totalCasheaPendingUsd.toFixed(2)} USD
+                  </span>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs text-slate-600">
+                    <thead className="bg-slate-50 text-slate-500 uppercase text-[10px] tracking-wider border-b border-slate-200">
+                      <tr>
+                        <th className="py-3 px-4 font-semibold">Factura</th>
+                        <th className="py-3 px-4 font-semibold">Fecha Venta</th>
+                        <th className="py-3 px-4 font-semibold">Cliente</th>
+                        <th className="py-3 px-4 font-semibold text-right">Total Factura</th>
+                        <th className="py-3 px-4 font-semibold text-right">Por Liquidar Cashea (USD)</th>
+                        <th className="py-3 px-4 font-semibold text-right">Por Liquidar Cashea (Bs)</th>
+                        <th className="py-3 px-4 font-semibold text-center">Estado</th>
+                        <th className="py-3 px-4 font-semibold text-center">Acción</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {casheaItems.pending.length === 0 ? (
+                        <tr>
+                          <td colSpan={8} className="py-10 text-center text-slate-400">
+                            <CheckCircle2 className="w-8 h-8 text-emerald-500 mx-auto mb-2 opacity-80" />
+                            <p className="font-semibold text-slate-700">¡Al día! No hay ventas Cashea pendientes por conciliar.</p>
+                            <p className="text-[11px] text-slate-400 mt-0.5">Todas las liquidaciones han sido acreditadas en tus cuentas bancarias.</p>
+                          </td>
+                        </tr>
+                      ) : (
+                        casheaItems.pending.map((item) => (
+                          <tr key={`${item.saleId}-${item.paymentId}`} className="hover:bg-slate-50 transition-colors">
+                            <td className="py-3 px-4 font-mono font-bold text-indigo-700 whitespace-nowrap">
+                              {item.factura}
+                            </td>
+                            <td className="py-3 px-4 text-slate-500 whitespace-nowrap">
+                              {item.fecha}
+                            </td>
+                            <td className="py-3 px-4 font-medium text-slate-900">
+                              {item.cliente || 'Cliente General'}
+                            </td>
+                            <td className="py-3 px-4 text-right font-semibold text-slate-600 whitespace-nowrap">
+                              ${item.totalFacturaUsd.toFixed(2)}
+                            </td>
+                            <td className="py-3 px-4 text-right font-bold text-amber-700 whitespace-nowrap">
+                              ${item.montoUsd.toFixed(2)} USD
+                            </td>
+                            <td className="py-3 px-4 text-right font-medium text-slate-700 whitespace-nowrap">
+                              {item.montoBs.toLocaleString('es-VE', { minimumFractionDigits: 2 })} Bs
+                            </td>
+                            <td className="py-3 px-4 text-center whitespace-nowrap">
+                              <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                                <Clock className="w-3 h-3 text-amber-600" />
+                                <span>Pendiente en Banco</span>
+                              </span>
+                            </td>
+                            <td className="py-3 px-4 text-center whitespace-nowrap">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setCasheaReconcileTarget({
+                                    saleId: item.saleId,
+                                    paymentId: item.paymentId,
+                                    factura: item.factura,
+                                    cliente: item.cliente,
+                                    montoUsd: item.montoUsd,
+                                    montoBs: item.montoBs,
+                                  });
+                                  setCasheaBankRef('');
+                                }}
+                                className="px-3 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-[11px] font-bold shadow-2xs transition cursor-pointer"
+                              >
+                                Conciliar en Banco
+                              </button>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Reconciled Cashea Invoices History */}
+              {casheaItems.conciliados.length > 0 && (
+                <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
+                  <div className="p-4 border-b border-slate-100">
+                    <h3 className="text-sm font-bold text-slate-800">
+                      Historial de Liquidaciones Cashea Acreditadas en Banco ({casheaItems.conciliados.length})
+                    </h3>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs text-slate-600">
+                      <thead className="bg-slate-50 text-slate-500 uppercase text-[10px] tracking-wider border-b border-slate-200">
+                        <tr>
+                          <th className="py-3 px-4 font-semibold">Factura</th>
+                          <th className="py-3 px-4 font-semibold">Fecha Venta</th>
+                          <th className="py-3 px-4 font-semibold">Cliente</th>
+                          <th className="py-3 px-4 font-semibold">Banco Receptor</th>
+                          <th className="py-3 px-4 font-semibold">Referencia / Lote</th>
+                          <th className="py-3 px-4 font-semibold text-right">Monto Acreditado (USD)</th>
+                          <th className="py-3 px-4 font-semibold text-center">Estado</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {casheaItems.conciliados.map((item) => (
+                          <tr key={`conc-${item.saleId}-${item.paymentId}`} className="hover:bg-slate-50">
+                            <td className="py-3 px-4 font-mono font-bold text-slate-900 whitespace-nowrap">
+                              {item.factura}
+                            </td>
+                            <td className="py-3 px-4 text-slate-500 whitespace-nowrap">
+                              {item.fecha}
+                            </td>
+                            <td className="py-3 px-4 font-medium text-slate-800">
+                              {item.cliente || 'Cliente General'}
+                            </td>
+                            <td className="py-3 px-4 font-semibold text-slate-700 whitespace-nowrap">
+                              {item.bancoReceptor || 'Banco de Venezuela (0102)'}
+                            </td>
+                            <td className="py-3 px-4 font-mono text-slate-600 whitespace-nowrap">
+                              {item.referencia || 'N/A'}
+                            </td>
+                            <td className="py-3 px-4 text-right font-bold text-emerald-700 whitespace-nowrap">
+                              +${item.montoUsd.toFixed(2)} USD
+                            </td>
+                            <td className="py-3 px-4 text-center whitespace-nowrap">
+                              <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                <span>Acreditado en Banco</span>
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* VIEW: BANK MOVEMENTS (BDV, Banesco, etc.) */}
+          {activeReconciliationTab === 'bancos' && (
+            <>
+              {/* Action Bar & Filters */}
+              <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-3">
             <div className="flex flex-wrap items-center gap-2 flex-1">
               <div className="relative min-w-[200px] flex-1 max-w-sm">
                 <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
@@ -462,7 +796,100 @@ export const BankReconciliationView: React.FC = () => {
               </table>
             </div>
           </div>
+        </>
+      )}
+      </div>
+
+      {/* Modal: Conciliar Liquidación Cashea en Banco */}
+      {casheaReconcileTarget && (
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-md w-full overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="p-4 bg-amber-600 text-white flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <Clock className="w-5 h-5 text-amber-200" />
+                <h3 className="font-bold text-sm">Conciliar Liquidación Cashea en Banco</h3>
+              </div>
+              <button
+                onClick={() => setCasheaReconcileTarget(null)}
+                className="text-amber-200 hover:text-white p-1 rounded-lg hover:bg-amber-700/50 transition cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4">
+              <div className="bg-amber-50 p-3 rounded-xl border border-amber-200 text-xs space-y-1">
+                <div className="flex justify-between font-bold text-slate-800">
+                  <span>Factura: {casheaReconcileTarget.factura}</span>
+                  <span className="text-amber-800">${casheaReconcileTarget.montoUsd.toFixed(2)} USD</span>
+                </div>
+                <div className="flex justify-between text-slate-600">
+                  <span>Cliente: {casheaReconcileTarget.cliente || 'General'}</span>
+                  <span>{casheaReconcileTarget.montoBs.toLocaleString('es-VE', { minimumFractionDigits: 2 })} Bs</span>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Cuenta Bancaria donde cayó la liquidación *
+                </label>
+                <select
+                  value={casheaBankDest}
+                  onChange={(e) => setCasheaBankDest(e.target.value)}
+                  className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:border-amber-500 font-medium"
+                >
+                  <option value="Banco de Venezuela (0102)">Banco de Venezuela (0102)</option>
+                  <option value="Banesco (0134)">Banesco (0134)</option>
+                  <option value="Mercantil (0105)">Mercantil (0105)</option>
+                  <option value="Bancamiga (0172)">Bancamiga (0172)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  N° Referencia Bancaria / Lote Cashea *
+                </label>
+                <input
+                  type="text"
+                  placeholder="Ej: CSH-884920 o ref de transferencia"
+                  value={casheaBankRef}
+                  onChange={(e) => setCasheaBankRef(e.target.value)}
+                  className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:border-amber-500 font-mono"
+                  required
+                />
+              </div>
+
+              <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200 text-[11px] text-emerald-800 space-y-0.5">
+                <p className="font-bold flex items-center gap-1 text-emerald-900">
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  Efecto contable automático
+                </p>
+                <p>
+                  Al confirmar, se creará un <strong>Crédito (+) en {casheaBankDest}</strong> por <strong>{casheaReconcileTarget.montoBs.toLocaleString('es-VE', { minimumFractionDigits: 2 })} Bs</strong> (${casheaReconcileTarget.montoUsd.toFixed(2)} USD) aumentando tu saldo real en banco, y la cuota de la factura quedará 100% conciliada.
+                </p>
+              </div>
+
+              <div className="flex space-x-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setCasheaReconcileTarget(null)}
+                  className="flex-1 py-2 text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmCasheaReconciliation}
+                  disabled={!casheaBankRef.trim()}
+                  className="flex-1 py-2 text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 disabled:opacity-50 rounded-lg transition shadow-xs cursor-pointer"
+                >
+                  Confirmar en Banco
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
+      )}
 
       {/* Modal: Registrar Movimiento Bancario */}
       {isNewMovModalOpen && (

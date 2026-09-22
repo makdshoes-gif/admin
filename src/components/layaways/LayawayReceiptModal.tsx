@@ -61,7 +61,7 @@ export const LayawayReceiptModal: React.FC<LayawayReceiptModalProps> = ({ layawa
           <div className="text-center border-b border-dashed border-slate-300 pb-3 mb-3">
             <h2 className="text-base font-black tracking-widest text-slate-900">MAKD SHOP</h2>
             <p className="text-[10px] text-slate-500 uppercase">Tienda Especializada en Calzado</p>
-            <p className="text-[10px] text-slate-400">RIF: J-50491823-1</p>
+            <p className="text-[10px] text-slate-500 font-semibold whitespace-nowrap">Razón Social: MAKD SHOP, C.A. • RIF: J-50491823-1</p>
             <p className="text-[10px] text-slate-400">Ciudad Alta Vista II, Local 163, Puerto Ordaz, Edo. Bolívar</p>
             
             <div className="mt-2.5 inline-block px-2.5 py-0.5 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded font-bold text-xs">

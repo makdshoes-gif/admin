@@ -3,22 +3,38 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
+import React, { useState, lazy, Suspense } from 'react';
 import { StoreProvider, useStore } from './context/StoreContext';
 import { Sidebar, Header, NavigationTab } from './components/Navbar';
-import { PointOfSale } from './components/pos/PointOfSale';
-import { InventoryManager } from './components/inventory/InventoryManager';
-import { SalesReports } from './components/reports/SalesReports';
-import { CashClosure } from './components/cash/CashClosure';
-import { ExpensesManager } from './components/expenses/ExpensesManager';
-import { BankReconciliationView } from './components/banking/BankReconciliationView';
-import { LayawaysManager } from './components/layaways/LayawaysManager';
-import { AdidasCatalogView } from './components/catalog/AdidasCatalogView';
+import { LoginPage } from './components/auth/LoginPage';
+
+// Lazy load view components for maximum initial load performance and lightweight bundle
+const PointOfSale = lazy(() => import('./components/pos/PointOfSale').then((m) => ({ default: m.PointOfSale })));
+const InventoryManager = lazy(() => import('./components/inventory/InventoryManager').then((m) => ({ default: m.InventoryManager })));
+const SalesReports = lazy(() => import('./components/reports/SalesReports').then((m) => ({ default: m.SalesReports })));
+const CashClosure = lazy(() => import('./components/cash/CashClosure').then((m) => ({ default: m.CashClosure })));
+const ExpensesManager = lazy(() => import('./components/expenses/ExpensesManager').then((m) => ({ default: m.ExpensesManager })));
+const BankReconciliationView = lazy(() => import('./components/banking/BankReconciliationView').then((m) => ({ default: m.BankReconciliationView })));
+const LayawaysManager = lazy(() => import('./components/layaways/LayawaysManager').then((m) => ({ default: m.LayawaysManager })));
+const AdidasCatalogView = lazy(() => import('./components/catalog/AdidasCatalogView').then((m) => ({ default: m.AdidasCatalogView })));
+
+function ViewFallback() {
+  return (
+    <div className="flex flex-col items-center justify-center min-h-[400px] w-full py-12">
+      <div className="w-9 h-9 border-3 border-indigo-200 border-t-indigo-600 rounded-full animate-spin mb-4" />
+      <p className="text-xs font-semibold text-slate-500 tracking-wide uppercase">Cargando módulo...</p>
+    </div>
+  );
+}
 
 function AppContent() {
   const [activeTab, setActiveTab] = useState<NavigationTab>('pos');
   const [mobileOpen, setMobileOpen] = useState(false);
-  const { userRole, products, criticalStockProducts } = useStore();
+  const { userRole, currentSessionUser, products, criticalStockProducts } = useStore();
+
+  if (!currentSessionUser) {
+    return <LoginPage />;
+  }
 
   return (
     <div className="flex min-h-screen bg-slate-50 font-sans text-slate-900 selection:bg-indigo-500 selection:text-white">
@@ -41,16 +57,18 @@ function AppContent() {
           onToggleMobile={() => setMobileOpen(!mobileOpen)}
         />
 
-        {/* Dynamic Page Views */}
+        {/* Dynamic Page Views with Suspense */}
         <main className="flex-1 p-4 sm:p-6 overflow-y-auto">
-          {activeTab === 'pos' && <PointOfSale onNavigateToLayaways={() => setActiveTab('layaways')} />}
-          {activeTab === 'inventory' && <InventoryManager />}
-          {activeTab === 'layaways' && <LayawaysManager />}
-          {activeTab === 'catalogo' && <AdidasCatalogView />}
-          {activeTab === 'reports' && <SalesReports />}
-          {activeTab === 'cash' && <CashClosure />}
-          {activeTab === 'expenses' && <ExpensesManager />}
-          {activeTab === 'conciliacion' && <BankReconciliationView />}
+          <Suspense fallback={<ViewFallback />}>
+            {activeTab === 'pos' && <PointOfSale onNavigateToLayaways={() => setActiveTab('layaways')} />}
+            {activeTab === 'inventory' && <InventoryManager />}
+            {activeTab === 'layaways' && <LayawaysManager />}
+            {activeTab === 'catalogo' && <AdidasCatalogView />}
+            {activeTab === 'reports' && <SalesReports />}
+            {activeTab === 'cash' && <CashClosure />}
+            {activeTab === 'expenses' && <ExpensesManager />}
+            {activeTab === 'conciliacion' && <BankReconciliationView />}
+          </Suspense>
         </main>
 
         {/* High Density Sub-Footer (matching Design HTML) */}
