@@ -265,7 +265,13 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
 
       if (!response.ok) {
         const errJson = await response.json().catch(() => null);
-        throw new Error(errJson?.error || `Error del servidor (${response.status}) al escanear la factura.`);
+        let errorMsg = errJson?.error || `Error del servidor (${response.status}) al escanear la factura.`;
+        if (errorMsg.includes('503') || errorMsg.includes('high demand') || errorMsg.includes('UNAVAILABLE')) {
+          errorMsg = 'Los servidores de IA están saturados temporalmente por alta demanda. Pulsa "Reintentar Escaneo" o completa los datos manualmente con la foto.';
+        } else if (errorMsg.includes('429') || errorMsg.includes('RESOURCE_EXHAUSTED')) {
+          errorMsg = 'Límite de solicitudes momentáneo. Espera unos segundos y pulsa "Reintentar Escaneo".';
+        }
+        throw new Error(errorMsg);
       }
 
       const data = await response.json();
@@ -570,19 +576,48 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
             </div>
           )}
 
-          {/* Analysis Error Alert */}
+          {/* Analysis Error Alert with Quick Actions */}
           {analysisError && (
-            <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-xl text-rose-800 text-xs flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
-                <span>{analysisError}</span>
+            <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-xl text-rose-900 text-xs space-y-2.5 animate-in fade-in">
+              <div className="flex items-start gap-2.5">
+                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <span className="font-semibold text-rose-950">Aviso del Escáner: </span>
+                  <span>{analysisError}</span>
+                </div>
               </div>
-              <button
-                onClick={handleRetake}
-                className="text-[11px] font-bold underline hover:text-rose-900 shrink-0"
-              >
-                Volver a intentar
-              </button>
+
+              <div className="flex flex-wrap items-center justify-end gap-2 pt-2 border-t border-rose-100">
+                {capturedImage && (
+                  <>
+                    <button
+                      type="button"
+                      disabled={isAnalyzing}
+                      onClick={() => analyzeInvoice(capturedImage)}
+                      className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white font-bold rounded-lg text-[11px] flex items-center gap-1.5 transition shadow-2xs cursor-pointer"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${isAnalyzing ? 'animate-spin' : ''}`} />
+                      <span>{isAnalyzing ? 'Reintentando...' : 'Reintentar Escaneo con IA'}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setAnalysisError(null)}
+                      className="px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 font-semibold rounded-lg text-[11px] transition cursor-pointer"
+                    >
+                      Completar datos manualmente
+                    </button>
+                  </>
+                )}
+
+                <button
+                  type="button"
+                  onClick={handleRetake}
+                  className="text-[11px] font-semibold text-rose-700 hover:text-rose-900 underline px-2 py-1"
+                >
+                  Tomar otra foto
+                </button>
+              </div>
             </div>
           )}
 

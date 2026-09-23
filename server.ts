@@ -863,7 +863,7 @@ async function startServer() {
     }
   });
 
-  // 7.1 Invoice & Receipt Scanner AI (Gemini 3.8 Flash)
+  // 7.1 Invoice & Receipt Scanner AI (Gemini Vision with Lite/Flash Fallbacks)
   const handleReceiptScan = async (req: express.Request, res: express.Response) => {
     try {
       const { imageBase64, exchangeRate } = req.body || {};
@@ -880,9 +880,17 @@ async function startServer() {
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error('[API scan-receipt error]:', msg);
+
+      let cleanError = msg;
+      if (msg.includes('503') || msg.includes('high demand') || msg.includes('UNAVAILABLE')) {
+        cleanError = 'Los servidores de IA están temporalmente saturados por alta demanda. Por favor, pulsa "Reintentar" o completa los campos manualmente con la foto.';
+      } else if (msg.includes('429') || msg.includes('RESOURCE_EXHAUSTED')) {
+        cleanError = 'Límite de solicitudes momentáneo. Espera unos segundos y vuelve a intentar.';
+      }
+
       res.status(500).json({
         success: false,
-        error: msg,
+        error: cleanError,
       });
     }
   };

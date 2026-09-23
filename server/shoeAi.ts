@@ -75,7 +75,9 @@ export async function analyzeShoeImage(
     throw new Error('Servicio de IA no disponible: GEMINI_API_KEY no está configurada.');
   }
 
-  const modelsToTry = ['gemini-3.1-flash-lite', 'gemini-3.8-flash'];
+  const modelsToTry = ['gemini-3.1-flash-lite', 'gemini-flash-latest', 'gemini-3.8-flash'];
+  let lastError: any = null;
+  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
   const prompt = `Eres el mayor experto en calzado, zapatillas urbanas (sneakers) y autenticación visual para el catálogo de "MAKD SHOP".
 Examina atentamente la fotografía adjunta y analiza cada detalle visual del calzado:
@@ -116,82 +118,112 @@ IMPORTANTE: Responde ÚNICAMENTE con un objeto JSON válido (sin formato markdow
   "detalles_estilo": "Consejo breve de combinación con ropa urbana o casual."
 }`;
 
-  let lastError: any = null;
-
   for (const model of modelsToTry) {
-    try {
-      console.log(`[Gemini Shoe AI] Analizando imagen de calzado con modelo: ${model}...`);
-      const imagePart = {
-        inlineData: {
-          mimeType: mimeType.includes('png') ? 'image/png' : mimeType.includes('webp') ? 'image/webp' : 'image/jpeg',
-          data,
-        },
-      };
-      const textPart = {
-        text: prompt,
-      };
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        console.log(`[Gemini Shoe AI] Analizando imagen de calzado con modelo: ${model} (intento ${attempt})...`);
+        const imagePart = {
+          inlineData: {
+            mimeType: mimeType.includes('png') ? 'image/png' : mimeType.includes('webp') ? 'image/webp' : 'image/jpeg',
+            data,
+          },
+        };
+        const textPart = {
+          text: prompt,
+        };
 
-      const response = await ai.models.generateContent({
-        model,
-        contents: { parts: [imagePart, textPart] },
-        config: {
-          responseMimeType: 'application/json',
-          temperature: 0.15,
-        },
-      });
+        const response = await ai.models.generateContent({
+          model,
+          contents: { parts: [imagePart, textPart] },
+          config: {
+            responseMimeType: 'application/json',
+            temperature: 0.15,
+          },
+        });
 
-      const rawText = response.text || '';
-      console.log(`[Gemini Shoe AI] Respuesta recibida (${rawText.length} caracteres) con modelo ${model}`);
+        const rawText = response.text || '';
+        console.log(`[Gemini Shoe AI] Respuesta recibida (${rawText.length} caracteres) con modelo ${model}`);
 
-      // Clean markdown code blocks if any
-      const cleaned = rawText
-        .replace(/^```json\s*/i, '')
-        .replace(/^```\s*/i, '')
-        .replace(/\s*```$/i, '')
-        .trim();
+        // Clean markdown code blocks if any
+        const cleaned = rawText
+          .replace(/^```json\s*/i, '')
+          .replace(/^```\s*/i, '')
+          .replace(/\s*```$/i, '')
+          .trim();
 
-      const parsed = JSON.parse(cleaned);
+        const parsed = JSON.parse(cleaned);
 
-      const marca = (parsed.marca && parsed.marca !== 'null') ? parsed.marca.trim() : 'Genérica';
-      const modelo = (parsed.modelo && parsed.modelo !== 'null') ? parsed.modelo.trim() : 'Silueta Urbana';
-      const nombre = (parsed.nombre && parsed.nombre !== 'null') ? parsed.nombre.trim() : `${marca} ${modelo}`.trim();
-      const color = parsed.color || 'Multicolor';
+        const marca = (parsed.marca && parsed.marca !== 'null') ? parsed.marca.trim() : 'Genérica';
+        const modelo = (parsed.modelo && parsed.modelo !== 'null') ? parsed.modelo.trim() : 'Silueta Urbana';
+        const nombre = (parsed.nombre && parsed.nombre !== 'null') ? parsed.nombre.trim() : `${marca} ${modelo}`.trim();
+        const color = parsed.color || 'Multicolor';
 
-      return {
-        success: true,
-        marca,
-        modelo,
-        nombre,
-        categoria: 'Calzado',
-        tipo: validateTipo(parsed.tipo),
-        genero: validateGenero(parsed.genero),
-        color,
-        material: parsed.material || 'Material sintético con suela vulcanizada',
-        descripcion_comercial: parsed.descripcion_comercial || `${nombre}. Calzado en tendencia con excelente amortiguación y estilo urbano para el uso diario en MAKD SHOP.`,
-        copy_social: parsed.copy_social || `🔥 ¡Llegaron los nuevos ${nombre}! 👟 Calidad garantizada. ¡Escríbenos al WhatsApp de MAKD SHOP para apartar tu talla! 📦🚀`,
-        hashtags: Array.isArray(parsed.hashtags) && parsed.hashtags.length > 0 
-          ? parsed.hashtags 
-          : [`#${marca.replace(/\s+/g, '')}`, '#SneakersVenezuela', '#MakdShop', '#ModaUrbana'],
-        precio_sugerido_usd: Number(parsed.precio_sugerido_usd) > 0 ? Number(parsed.precio_sugerido_usd) : 45.0,
-        caracteristicas_clave: Array.isArray(parsed.caracteristicas_clave) && parsed.caracteristicas_clave.length > 0 
-          ? parsed.caracteristicas_clave 
-          : ['Suela antideslizante con agarre firme', 'Plantilla anatómica de alta comodidad', 'Diseño icónico urbano'],
-        tallas_sugeridas: Array.isArray(parsed.tallas_sugeridas) && parsed.tallas_sugeridas.length > 0 
-          ? parsed.tallas_sugeridas 
-          : ['38', '39', '40', '41', '42', '43', '44'],
-        modelo_ia_usado: model,
-        detalles_estilo: parsed.detalles_estilo || 'Combina excelente con jeans rectos, joggers o bermudas deportivas.',
-      };
-    } catch (err: any) {
-      console.warn(`[Gemini Shoe AI] Falló modelo ${model}:`, err.message || err);
-      lastError = err;
+        return {
+          success: true,
+          marca,
+          modelo,
+          nombre,
+          categoria: 'Calzado',
+          tipo: validateTipo(parsed.tipo),
+          genero: validateGenero(parsed.genero),
+          color,
+          material: parsed.material || 'Material sintético con suela vulcanizada',
+          descripcion_comercial: parsed.descripcion_comercial || `${nombre}. Calzado en tendencia con excelente amortiguación y estilo urbano para el uso diario en MAKD SHOP.`,
+          copy_social: parsed.copy_social || `🔥 ¡Llegaron los nuevos ${nombre}! 👟 Calidad garantizada. ¡Escríbenos al WhatsApp de MAKD SHOP para apartar tu talla! 📦🚀`,
+          hashtags: Array.isArray(parsed.hashtags) && parsed.hashtags.length > 0 
+            ? parsed.hashtags 
+            : [`#${marca.replace(/\s+/g, '')}`, '#SneakersVenezuela', '#MakdShop', '#ModaUrbana'],
+          precio_sugerido_usd: Number(parsed.precio_sugerido_usd) > 0 ? Number(parsed.precio_sugerido_usd) : 45.0,
+          caracteristicas_clave: Array.isArray(parsed.caracteristicas_clave) && parsed.caracteristicas_clave.length > 0 
+            ? parsed.caracteristicas_clave 
+            : ['Suela antideslizante con agarre firme', 'Plantilla anatómica de alta comodidad', 'Diseño icónico urbano'],
+          tallas_sugeridas: Array.isArray(parsed.tallas_sugeridas) && parsed.tallas_sugeridas.length > 0 
+            ? parsed.tallas_sugeridas 
+            : ['38', '39', '40', '41', '42', '43', '44'],
+          modelo_ia_usado: model,
+          detalles_estilo: parsed.detalles_estilo || 'Combina excelente con jeans rectos, joggers o bermudas deportivas.',
+        };
+      } catch (err: any) {
+        const errMsg = err?.message || String(err);
+        console.warn(`[Gemini Shoe AI] Falló modelo ${model} (intento ${attempt}):`, errMsg);
+        lastError = err;
+
+        const isTransientOverload =
+          errMsg.includes('503') ||
+          errMsg.includes('high demand') ||
+          errMsg.includes('UNAVAILABLE') ||
+          errMsg.includes('429') ||
+          errMsg.includes('RESOURCE_EXHAUSTED');
+
+        if (isTransientOverload && attempt === 1) {
+          console.log(`[Gemini Shoe AI] Esperando 1.2s antes de reintentar por sobrecarga en ${model}...`);
+          await sleep(1200);
+          continue;
+        }
+        break;
+      }
     }
   }
 
-  // If both models fail, throw clear error with details so user gets real feedback
-  const errorDetails = lastError?.message || 'Error desconocido al procesar la imagen con Gemini.';
-  console.error('[Gemini Shoe AI] No se pudo analizar la imagen con los modelos disponibles:', errorDetails);
-  throw new Error(`No se pudo reconocer la zapatilla: ${errorDetails}`);
+  const rawErrMsg = lastError?.message || '';
+  let friendlyMsg = 'No se pudo reconocer el calzado con IA.';
+  if (rawErrMsg.includes('503') || rawErrMsg.includes('high demand') || rawErrMsg.includes('UNAVAILABLE')) {
+    friendlyMsg = 'Los servidores de IA están saturados por alta demanda momentánea. Por favor, pulsa "Reintentar" o ingresa los datos manualmente.';
+  } else if (rawErrMsg.includes('429') || rawErrMsg.includes('RESOURCE_EXHAUSTED')) {
+    friendlyMsg = 'Límite de solicitudes momentáneo. Espera unos segundos y pulsa "Reintentar".';
+  } else if (rawErrMsg) {
+    try {
+      const parsedErr = JSON.parse(rawErrMsg);
+      if (parsedErr?.error?.message) {
+        friendlyMsg = parsedErr.error.message;
+      }
+    } catch {
+      friendlyMsg = rawErrMsg;
+    }
+  }
+
+  console.error('[Gemini Shoe AI] No se pudo analizar la imagen:', friendlyMsg);
+  throw new Error(friendlyMsg);
 }
 
 function validateTipo(val: string): 'Deportivo' | 'Casual' | 'Botas' | 'Tacones' | 'Sandalias' | 'Mocasines' | 'Infantil' | 'Otros' {

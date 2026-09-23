@@ -41,7 +41,7 @@ const handleShoeAnalysis = async (req: express.Request, res: express.Response) =
 app.post('/api/ai/analyze-shoe', handleShoeAnalysis);
 app.post('/api/analyze-shoe', handleShoeAnalysis);
 
-// API: Escáner de facturas / comprobantes de gastos con IA (Gemini 3.8 Flash)
+// API: Escáner de facturas / comprobantes de gastos con IA (Gemini Vision with Lite/Flash Fallbacks)
 const handleReceiptAnalysis = async (req: express.Request, res: express.Response) => {
   try {
     const { imageBase64, exchangeRate } = req.body || {};
@@ -53,8 +53,15 @@ const handleReceiptAnalysis = async (req: express.Request, res: express.Response
     res.json(result);
   } catch (error: any) {
     console.error('Error al escanear la factura con Gemini:', error);
+    const msg = error?.message || String(error);
+    let cleanError = msg;
+    if (msg.includes('503') || msg.includes('high demand') || msg.includes('UNAVAILABLE')) {
+      cleanError = 'Los servidores de IA están saturados temporalmente por alta demanda. Por favor, pulsa "Reintentar" o completa los campos manualmente con la foto.';
+    } else if (msg.includes('429') || msg.includes('RESOURCE_EXHAUSTED')) {
+      cleanError = 'Límite de solicitudes momentáneo. Espera unos segundos y pulsa "Reintentar".';
+    }
     res.status(500).json({
-      error: error?.message || 'No se pudo escanear la factura con IA.',
+      error: cleanError,
     });
   }
 };

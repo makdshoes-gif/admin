@@ -150,93 +150,133 @@ IMPORTANTE: Responde ÚNICAMENTE con un JSON válido sin bloques markdown, con e
   ]
 }`;
 
-  const modelsToTry = ['gemini-3.8-flash', 'gemini-3.1-flash-lite'];
+  // Model priority: start with gemini-3.1-flash-lite (high throughput, resistant to 503 spikes)
+  // followed by gemini-flash-latest and gemini-3.8-flash
+  const modelsToTry = ['gemini-3.1-flash-lite', 'gemini-flash-latest', 'gemini-3.8-flash'];
   let lastErr: any = null;
 
+  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
   for (const model of modelsToTry) {
-    try {
-      console.log(`[Gemini Receipt AI] Escaneando factura con ${model}...`);
-      const imagePart = {
-        inlineData: {
-          mimeType: mimeType.includes('png')
-            ? 'image/png'
-            : mimeType.includes('webp')
-            ? 'image/webp'
-            : 'image/jpeg',
-          data,
-        },
-      };
-      const textPart = { text: prompt };
+    // Attempt up to 2 times per model if a transient 503 or 429 error occurs
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        console.log(`[Gemini Receipt AI] Escaneando factura con ${model} (intento ${attempt})...`);
+        const imagePart = {
+          inlineData: {
+            mimeType: mimeType.includes('png')
+              ? 'image/png'
+              : mimeType.includes('webp')
+              ? 'image/webp'
+              : 'image/jpeg',
+            data,
+          },
+        };
+        const textPart = { text: prompt };
 
-      const response = await ai.models.generateContent({
-        model,
-        contents: { parts: [imagePart, textPart] },
-        config: {
-          responseMimeType: 'application/json',
-          temperature: 0.1,
-        },
-      });
+        const response = await ai.models.generateContent({
+          model,
+          contents: { parts: [imagePart, textPart] },
+          config: {
+            responseMimeType: 'application/json',
+            temperature: 0.1,
+          },
+        });
 
-      const rawText = response.text || '';
-      console.log(`[Gemini Receipt AI] Respuesta recibida (${rawText.length} caracteres) con ${model}`);
+        const rawText = response.text || '';
+        console.log(`[Gemini Receipt AI] Respuesta recibida (${rawText.length} caracteres) con ${model}`);
 
-      const cleaned = rawText
-        .replace(/^```json\s*/i, '')
-        .replace(/^```\s*/i, '')
-        .replace(/\s*```$/i, '')
-        .trim();
+        const cleaned = rawText
+          .replace(/^```json\s*/i, '')
+          .replace(/^```\s*/i, '')
+          .replace(/\s*```$/i, '')
+          .trim();
 
-      const parsed = JSON.parse(cleaned);
+        const parsed = JSON.parse(cleaned);
 
-      const moneda: 'USD' | 'Bs' = parsed.moneda === 'Bs' ? 'Bs' : 'USD';
-      const monto = Number(parsed.monto) > 0 ? Number(Number(parsed.monto).toFixed(2)) : 0;
-      
-      let monto_usd = 0;
-      let monto_bs = 0;
+        const moneda: 'USD' | 'Bs' = parsed.moneda === 'Bs' ? 'Bs' : 'USD';
+        const monto = Number(parsed.monto) > 0 ? Number(Number(parsed.monto).toFixed(2)) : 0;
+        
+        let monto_usd = 0;
+        let monto_bs = 0;
 
-      if (moneda === 'USD') {
-        monto_usd = monto;
-        monto_bs = Number((monto * exchangeRate).toFixed(2));
-      } else {
-        monto_bs = monto;
-        monto_usd = exchangeRate > 0 ? Number((monto / exchangeRate).toFixed(2)) : 0;
+        if (moneda === 'USD') {
+          monto_usd = monto;
+          monto_bs = Number((monto * exchangeRate).toFixed(2));
+        } else {
+          monto_bs = monto;
+          monto_usd = exchangeRate > 0 ? Number((monto / exchangeRate).toFixed(2)) : 0;
+        }
+
+        // Validar categoría
+        let categoria = parsed.categoria;
+        if (!VALID_CATEGORIES.includes(categoria)) {
+          categoria = 'Otros Gastos Operativos';
+        }
+
+        // Validar fecha
+        let fecha = parsed.fecha || todayIso;
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) {
+          fecha = todayIso;
+        }
+
+        return {
+          success: true,
+          monto,
+          moneda,
+          monto_usd,
+          monto_bs,
+          categoria,
+          descripcion: parsed.descripcion || 'Gasto operativo registrado por foto de factura',
+          beneficiario: parsed.beneficiario || 'Proveedor no especificado',
+          fecha,
+          comprobante_ref: parsed.comprobante_ref || '',
+          cuenta_sugerida: parsed.cuenta_sugerida || (moneda === 'USD' ? 'Efectivo USD' : 'Pago Móvil (BDV)'),
+          detalles_detectados: parsed.detalles_detectados || '',
+          confianza: ['alta', 'media', 'baja'].includes(parsed.confianza) ? parsed.confianza : 'media',
+          items: Array.isArray(parsed.items) ? parsed.items : [],
+        };
+      } catch (err: any) {
+        const errMsg = err?.message || String(err);
+        console.warn(`[Gemini Receipt AI] Falló con modelo ${model} (intento ${attempt}):`, errMsg);
+        lastErr = err;
+
+        const isTransientOverload =
+          errMsg.includes('503') ||
+          errMsg.includes('high demand') ||
+          errMsg.includes('UNAVAILABLE') ||
+          errMsg.includes('429') ||
+          errMsg.includes('RESOURCE_EXHAUSTED');
+
+        if (isTransientOverload && attempt === 1) {
+          console.log(`[Gemini Receipt AI] Esperando 1.2s antes de reintentar por sobrecarga temporal en ${model}...`);
+          await sleep(1200);
+          continue; // Try attempt 2 on same model
+        }
+        // If not transient or already tried twice, break to try next fallback model
+        break;
       }
-
-      // Validar categoría
-      let categoria = parsed.categoria;
-      if (!VALID_CATEGORIES.includes(categoria)) {
-        categoria = 'Otros Gastos Operativos';
-      }
-
-      // Validar fecha
-      let fecha = parsed.fecha || todayIso;
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) {
-        fecha = todayIso;
-      }
-
-      return {
-        success: true,
-        monto,
-        moneda,
-        monto_usd,
-        monto_bs,
-        categoria,
-        descripcion: parsed.descripcion || 'Gasto operativo registrado por foto de factura',
-        beneficiario: parsed.beneficiario || 'Proveedor no especificado',
-        fecha,
-        comprobante_ref: parsed.comprobante_ref || '',
-        cuenta_sugerida: parsed.cuenta_sugerida || (moneda === 'USD' ? 'Efectivo USD' : 'Pago Móvil (BDV)'),
-        detalles_detectados: parsed.detalles_detectados || '',
-        confianza: ['alta', 'media', 'baja'].includes(parsed.confianza) ? parsed.confianza : 'media',
-        items: Array.isArray(parsed.items) ? parsed.items : [],
-      };
-    } catch (err: any) {
-      console.warn(`[Gemini Receipt AI] Falló con modelo ${model}:`, err.message || err);
-      lastErr = err;
     }
   }
 
-  const errDetail = lastErr?.message || 'No se pudo procesar la imagen de la factura con Gemini.';
-  console.error('[Gemini Receipt AI] Error general:', errDetail);
-  throw new Error(`Error al leer la factura: ${errDetail}`);
+  const rawErrMsg = lastErr?.message || '';
+  let friendlyMsg = 'No se pudo procesar la imagen de la factura con IA.';
+
+  if (rawErrMsg.includes('503') || rawErrMsg.includes('high demand') || rawErrMsg.includes('UNAVAILABLE')) {
+    friendlyMsg = 'Los servidores de IA están saturados por alta demanda momentánea. Por favor, pulsa "Reintentar" o ingresa el monto manualmente con la foto.';
+  } else if (rawErrMsg.includes('429') || rawErrMsg.includes('RESOURCE_EXHAUSTED')) {
+    friendlyMsg = 'Límite de solicitudes momentáneo alcanzado. Espera unos segundos y pulsa "Reintentar".';
+  } else if (rawErrMsg) {
+    try {
+      const parsedErr = JSON.parse(rawErrMsg);
+      if (parsedErr?.error?.message) {
+        friendlyMsg = parsedErr.error.message;
+      }
+    } catch {
+      friendlyMsg = rawErrMsg;
+    }
+  }
+
+  console.error('[Gemini Receipt AI] Error general:', friendlyMsg);
+  throw new Error(friendlyMsg);
 }
