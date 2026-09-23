@@ -49,7 +49,15 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
   onClose,
   onExpenseAdded,
 }) => {
-  const { addExpense, accounts, exchangeRate, currentUser } = useStore();
+  const {
+    addExpense,
+    accounts,
+    exchangeRate,
+    historicalRates,
+    getExchangeRateForDate,
+    setExchangeRateForDate,
+    currentUser,
+  } = useStore();
 
   // Mode: camera vs file upload
   const [activeTab, setActiveTab] = useState<'camera' | 'upload'>('camera');
@@ -68,6 +76,8 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
   // Extracted / editable expense fields
   const todayIso = new Date().toISOString().split('T')[0];
   const [fecha, setFecha] = useState(todayIso);
+  const [tasaInput, setTasaInput] = useState<string>(() => exchangeRate.toString());
+  const [isCustomTasa, setIsCustomTasa] = useState<boolean>(false);
   const [categoria, setCategoria] = useState<ExpenseCategory>('Otros Gastos Operativos');
   const [descripcion, setDescripcion] = useState('');
   const [beneficiario, setBeneficiario] = useState('');
@@ -260,6 +270,7 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
         body: JSON.stringify({
           imageBase64,
           exchangeRate,
+          historicalRates,
         }),
       });
 
@@ -288,6 +299,12 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
       const detectedBenef = data.beneficiario || '';
       const detectedFecha = data.fecha || todayIso;
       const detectedRef = data.comprobante_ref || '';
+
+      const detectedRate = (data.tasa_aplicada && Number(data.tasa_aplicada) > 0)
+        ? Number(data.tasa_aplicada)
+        : getExchangeRateForDate(detectedFecha);
+      setTasaInput(detectedRate.toString());
+      setIsCustomTasa(false);
 
       // Pick matching account
       let bestAccount = accounts[0]?.nombre || 'Efectivo USD';
@@ -322,6 +339,7 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
           descripcionVal: detectedDesc,
           beneficiarioVal: detectedBenef,
           fechaVal: detectedFecha,
+          tasaCambio: detectedRate,
           comprobanteVal: detectedRef,
           cuentaVal: bestAccount,
           fotoFactura: imageBase64,
@@ -344,6 +362,7 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
     descripcionVal: string;
     beneficiarioVal: string;
     fechaVal: string;
+    tasaCambio?: number;
     comprobanteVal: string;
     cuentaVal: string;
     fotoFactura?: string;
@@ -356,21 +375,26 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
       descripcionVal,
       beneficiarioVal,
       fechaVal,
+      tasaCambio,
       comprobanteVal,
       cuentaVal,
       fotoFactura,
       detallesVal,
     } = params;
 
+    const effectiveRate = (tasaCambio && tasaCambio > 0)
+      ? tasaCambio
+      : (parseFloat(tasaInput) > 0 ? parseFloat(tasaInput) : getExchangeRateForDate(fechaVal));
+
     let monto_usd = 0;
     let monto_bs = 0;
 
     if (monedaVal === 'USD') {
       monto_usd = montoNum;
-      monto_bs = Number((montoNum * exchangeRate).toFixed(2));
+      monto_bs = Number((montoNum * effectiveRate).toFixed(2));
     } else {
       monto_bs = montoNum;
-      monto_usd = exchangeRate > 0 ? Number((montoNum / exchangeRate).toFixed(2)) : 0;
+      monto_usd = effectiveRate > 0 ? Number((montoNum / effectiveRate).toFixed(2)) : 0;
     }
 
     addExpense({
@@ -381,7 +405,7 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
       cuenta_origen: cuentaVal,
       moneda: monedaVal,
       monto: montoNum,
-      tasa_cambio: exchangeRate,
+      tasa_cambio: effectiveRate,
       monto_usd,
       monto_bs,
       comprobante_ref: comprobanteVal,
@@ -389,6 +413,8 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
       notas: detallesVal ? `[Escaneado IA]: ${detallesVal}` : 'Escaneado automáticamente con foto',
       foto_factura: fotoFactura,
     });
+
+    setExchangeRateForDate(fechaVal, effectiveRate);
 
     // Record in current session list
     const newSessionItem = {
@@ -435,6 +461,8 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
       return;
     }
 
+    const effectiveTasa = parseFloat(tasaInput) > 0 ? parseFloat(tasaInput) : getExchangeRateForDate(fecha);
+
     executeDirectUpload({
       montoNum: parsedMonto,
       monedaVal: moneda,
@@ -442,6 +470,7 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
       descripcionVal: descripcion || 'Gasto operativo registrado por factura',
       beneficiarioVal: beneficiario,
       fechaVal: fecha,
+      tasaCambio: effectiveTasa,
       comprobanteVal: comprobanteRef,
       cuentaVal: cuentaOrigen,
       fotoFactura: capturedImage || undefined,
@@ -848,16 +877,62 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
                       </div>
                     </div>
 
-                    {/* Real-time Exchange Equivalence */}
-                    {parseFloat(montoInput) > 0 && (
+                    {/* Real-time Exchange Equivalence based on invoice date rate */}
+                    {parseFloat(montoInput) > 0 && parseFloat(tasaInput) > 0 && (
                       <div className="text-[11px] text-slate-600 bg-white p-1.5 rounded border border-slate-200 flex items-center justify-between">
-                        <span>Equivalente cambio ({exchangeRate.toFixed(2)} Bs/$):</span>
-                        <span className="font-bold text-indigo-700">
+                        <span>Equivalente ({parseFloat(tasaInput).toFixed(2)} Bs/$ de esa fecha):</span>
+                        <span className="font-bold text-indigo-700 font-mono">
                           {moneda === 'USD'
-                            ? `${(parseFloat(montoInput) * exchangeRate).toLocaleString('es-VE', { minimumFractionDigits: 2 })} Bs`
-                            : `$${(parseFloat(montoInput) / exchangeRate).toFixed(2)} USD`}
+                            ? `${(parseFloat(montoInput) * parseFloat(tasaInput)).toLocaleString('es-VE', { minimumFractionDigits: 2 })} Bs`
+                            : `$${(parseFloat(montoInput) / parseFloat(tasaInput)).toFixed(2)} USD`}
                         </span>
                       </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Tasa de cambio aplicada a la fecha de la factura */}
+                <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl space-y-1.5">
+                  <div className="flex items-center justify-between text-xs font-semibold text-slate-700">
+                    <span className="flex items-center gap-1.5">
+                      <DollarSign className="w-3.5 h-3.5 text-indigo-600" />
+                      Tasa de Cambio ({fecha !== todayIso ? `Día ${fecha}` : 'Hoy'})
+                    </span>
+                    {fecha !== todayIso ? (
+                      <span className="text-[10px] font-bold text-amber-800 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                        📅 Factura de fecha anterior: tasa fijada para ese día
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                        Tasa de hoy
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={tasaInput}
+                      onChange={(e) => {
+                        setTasaInput(e.target.value);
+                        setIsCustomTasa(true);
+                      }}
+                      className="w-full text-xs font-mono font-bold p-1.5 bg-white border border-slate-300 rounded focus:border-indigo-500"
+                      placeholder="Ej: 52.40"
+                    />
+                    <span className="text-xs text-slate-500 font-mono font-medium">Bs/USD</span>
+                    {isCustomTasa && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const originalRate = getExchangeRateForDate(fecha);
+                          setTasaInput(originalRate.toString());
+                          setIsCustomTasa(false);
+                        }}
+                        className="text-[10px] text-indigo-600 hover:text-indigo-800 underline whitespace-nowrap cursor-pointer"
+                      >
+                        Restaurar
+                      </button>
                     )}
                   </div>
                 </div>
@@ -889,8 +964,15 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
                       type="date"
                       required
                       value={fecha}
-                      onChange={(e) => setFecha(e.target.value)}
-                      className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg focus:bg-white"
+                      onChange={(e) => {
+                        const newDate = e.target.value;
+                        setFecha(newDate);
+                        if (!isCustomTasa) {
+                          const rateForDate = getExchangeRateForDate(newDate);
+                          setTasaInput(rateForDate.toString());
+                        }
+                      }}
+                      className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg focus:bg-white font-mono"
                     />
                   </div>
                 </div>

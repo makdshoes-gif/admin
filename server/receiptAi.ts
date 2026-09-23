@@ -14,6 +14,7 @@ export interface ScannedReceiptData {
   cuenta_sugerida: string;
   detalles_detectados: string;
   confianza: 'alta' | 'media' | 'baja';
+  tasa_aplicada?: number;
   items?: Array<{ descripcion: string; cantidad?: number; total?: number }>;
   error?: string;
 }
@@ -70,7 +71,8 @@ function parseBase64Image(input: string, defaultMime = 'image/jpeg'): { data: st
  */
 export async function analyzeReceiptImage(
   imageBase64: string,
-  exchangeRate = 1
+  exchangeRate = 1,
+  historicalRates?: Record<string, number>
 ): Promise<ScannedReceiptData> {
   const { data, mimeType } = parseBase64Image(imageBase64);
 
@@ -194,6 +196,18 @@ IMPORTANTE: Responde ÚNICAMENTE con un JSON válido sin bloques markdown, con e
 
         const parsed = JSON.parse(cleaned);
 
+        // Validar fecha
+        let fecha = parsed.fecha || todayIso;
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) {
+          fecha = todayIso;
+        }
+
+        // Determinar tasa efectiva para la fecha detectada de la factura
+        let effectiveRate = exchangeRate;
+        if (historicalRates && fecha && historicalRates[fecha] && Number(historicalRates[fecha]) > 0) {
+          effectiveRate = Number(historicalRates[fecha]);
+        }
+
         const moneda: 'USD' | 'Bs' = parsed.moneda === 'Bs' ? 'Bs' : 'USD';
         const monto = Number(parsed.monto) > 0 ? Number(Number(parsed.monto).toFixed(2)) : 0;
         
@@ -202,10 +216,10 @@ IMPORTANTE: Responde ÚNICAMENTE con un JSON válido sin bloques markdown, con e
 
         if (moneda === 'USD') {
           monto_usd = monto;
-          monto_bs = Number((monto * exchangeRate).toFixed(2));
+          monto_bs = Number((monto * effectiveRate).toFixed(2));
         } else {
           monto_bs = monto;
-          monto_usd = exchangeRate > 0 ? Number((monto / exchangeRate).toFixed(2)) : 0;
+          monto_usd = effectiveRate > 0 ? Number((monto / effectiveRate).toFixed(2)) : 0;
         }
 
         // Validar categoría
@@ -214,18 +228,13 @@ IMPORTANTE: Responde ÚNICAMENTE con un JSON válido sin bloques markdown, con e
           categoria = 'Otros Gastos Operativos';
         }
 
-        // Validar fecha
-        let fecha = parsed.fecha || todayIso;
-        if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) {
-          fecha = todayIso;
-        }
-
         return {
           success: true,
           monto,
           moneda,
           monto_usd,
           monto_bs,
+          tasa_aplicada: effectiveRate,
           categoria,
           descripcion: parsed.descripcion || 'Gasto operativo registrado por foto de factura',
           beneficiario: parsed.beneficiario || 'Proveedor no especificado',

@@ -52,7 +52,9 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
     exchangeRate,
     accounts,
     recordSale,
-    userRole
+    userRole,
+    getExchangeRateForDate,
+    setExchangeRateForDate,
   } = useStore();
 
   // Search & Filter State
@@ -71,11 +73,22 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
   const ivaPercent = 16;
 
   // Invoice & Customer Data
+  const todayIso = new Date().toISOString().split('T')[0];
   const [invoiceDate, setInvoiceDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
+  const [customSaleRate, setCustomSaleRate] = useState<string>('');
+  const [isCustomSaleRate, setIsCustomSaleRate] = useState(false);
   const [customerName, setCustomerName] = useState('');
   const [customerLastName, setCustomerLastName] = useState('');
   const [customerRif, setCustomerRif] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
+
+  // Effective exchange rate for this sale (matches invoice date or custom rate)
+  const effectiveExchangeRate = useMemo(() => {
+    if (isCustomSaleRate && parseFloat(customSaleRate) > 0) {
+      return parseFloat(customSaleRate);
+    }
+    return getExchangeRateForDate(invoiceDate);
+  }, [invoiceDate, isCustomSaleRate, customSaleRate, getExchangeRateForDate]);
 
   // Payment State (Mixed payments)
   const [isMixedPaymentOpen, setIsMixedPaymentOpen] = useState(false);
@@ -166,7 +179,7 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
   }, [subtotalUsd, discountUsd, applyIva, ivaPercent]);
 
   const totalUsd = Math.max(0, subtotalUsd - discountUsd + ivaUsd);
-  const totalBs = totalUsd * exchangeRate;
+  const totalBs = totalUsd * effectiveExchangeRate;
 
   // Add to Cart
   const handleAddToCart = (product: ShoeProduct) => {
@@ -272,7 +285,7 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
 
     let eqUsd = 0;
     if (acc.moneda === 'Bs') {
-      eqUsd = amountInput / exchangeRate;
+      eqUsd = effectiveExchangeRate > 0 ? amountInput / effectiveExchangeRate : 0;
     } else {
       eqUsd = amountInput;
     }
@@ -282,7 +295,7 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
       cuenta: acc.nombre,
       moneda: acc.moneda,
       monto: amountInput,
-      tasa: acc.moneda === 'Bs' ? exchangeRate : 1,
+      tasa: acc.moneda === 'Bs' ? effectiveExchangeRate : 1,
       monto_equivalente_usd: eqUsd,
       referencia: ref || undefined,
     };
@@ -302,14 +315,14 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
 
     const downAcc = accounts.find((a) => a.nombre === casheaDownAccount) || accounts.find((a) => a.nombre === 'Punto de Venta') || accounts[0];
     const isDownBs = downAcc.moneda === 'Bs';
-    const downAmount = isDownBs ? Number((downUsd * exchangeRate).toFixed(2)) : downUsd;
+    const downAmount = isDownBs ? Number((downUsd * effectiveExchangeRate).toFixed(2)) : downUsd;
 
     const initialPay: SalePayment = {
       id: `pay-inicial-${Date.now()}`,
       cuenta: downAcc.nombre,
       moneda: downAcc.moneda,
       monto: downAmount,
-      tasa: isDownBs ? exchangeRate : 1,
+      tasa: isDownBs ? effectiveExchangeRate : 1,
       monto_equivalente_usd: downUsd,
       referencia: `Inicial ${casheaDownPercent}% Cashea`,
       estado_liquidacion: 'conciliado_en_banco',
@@ -353,7 +366,7 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
           cuenta: singlePaymentAccount,
           moneda: isBs ? 'Bs' : 'USD',
           monto: isBs ? totalBs : totalUsd,
-          tasa: isBs ? exchangeRate : 1,
+          tasa: isBs ? effectiveExchangeRate : 1,
           monto_equivalente_usd: totalUsd,
           referencia: (singlePaymentAccount || '').includes('Pago Móvil') && bdvVerifiedData ? bdvVerifiedData.referencia : undefined,
         },
@@ -398,11 +411,13 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
       iva_monto_usd: ivaUsd,
       total_usd: totalUsd,
       total_bs: totalBs,
-      tasa_cambio: exchangeRate,
+      tasa_cambio: effectiveExchangeRate,
       pagos: finalPayments,
       fecha: finalSaleDate,
       usuario: userRole === 'admin' ? 'Admin' : 'Cajera',
     });
+
+    setExchangeRateForDate(invoiceDate, effectiveExchangeRate);
 
     // Confetti celebration
     try {
@@ -1192,18 +1207,69 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
                           id="invoice-date-picker"
                           value={invoiceDate}
                           max={new Date().toISOString().split('T')[0]}
-                          onChange={(e) => setInvoiceDate(e.target.value)}
+                          onChange={(e) => {
+                            const newDate = e.target.value;
+                            setInvoiceDate(newDate);
+                            if (!isCustomSaleRate) {
+                              setCustomSaleRate(getExchangeRateForDate(newDate).toString());
+                            }
+                          }}
                           className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs text-slate-900 focus:outline-none focus:border-indigo-500 font-mono cursor-pointer"
                         />
                         {invoiceDate !== new Date().toISOString().split('T')[0] && (
                           <button
                             type="button"
-                            onClick={() => setInvoiceDate(new Date().toISOString().split('T')[0])}
+                            onClick={() => {
+                              const today = new Date().toISOString().split('T')[0];
+                              setInvoiceDate(today);
+                              if (!isCustomSaleRate) {
+                                setCustomSaleRate(getExchangeRateForDate(today).toString());
+                              }
+                            }}
                             className="text-[10px] text-indigo-600 hover:text-indigo-800 font-semibold whitespace-nowrap underline cursor-pointer"
                           >
                             Hoy
                           </button>
                         )}
+                      </div>
+
+                      {/* Tasa aplicada a esta venta */}
+                      <div className="mt-2 p-2 bg-indigo-50/70 rounded-lg border border-indigo-100 flex items-center justify-between gap-2">
+                        <div className="text-[11px] text-slate-700 min-w-0">
+                          <span className="font-semibold block truncate">
+                            Tasa de la Venta ({invoiceDate !== todayIso ? `Día ${invoiceDate}` : 'Hoy'}):
+                          </span>
+                          <span className="text-[10px] text-slate-500">
+                            {invoiceDate !== todayIso
+                              ? 'Fecha anterior: Bs calculados con la tasa de esa fecha'
+                              : 'Tasa oficial del día'}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={isCustomSaleRate ? customSaleRate : effectiveExchangeRate.toFixed(2)}
+                            onChange={(e) => {
+                              setCustomSaleRate(e.target.value);
+                              setIsCustomSaleRate(true);
+                            }}
+                            className="w-20 px-1.5 py-1 text-xs font-mono font-bold bg-white border border-slate-300 rounded text-right focus:border-indigo-500"
+                          />
+                          <span className="text-[10px] font-mono text-slate-500 font-bold">Bs/$</span>
+                          {isCustomSaleRate && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIsCustomSaleRate(false);
+                                setCustomSaleRate('');
+                              }}
+                              className="text-[10px] text-indigo-600 hover:text-indigo-800 underline cursor-pointer"
+                            >
+                              Reset
+                            </button>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>

@@ -69,6 +69,9 @@ interface StoreContextType {
   accounts: AccountBalance[];
   paymentAccounts: AccountBalance[];
   exchangeRate: number;
+  historicalRates: Record<string, number>;
+  getExchangeRateForDate: (dateStr: string) => number;
+  setExchangeRateForDate: (dateStr: string, rate: number) => void;
   userRole: UserRole;
   cashClosures: DailyCashClosure[];
   notifications: ToastNotification[];
@@ -258,6 +261,16 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return saved ? Number(saved) : INITIAL_EXCHANGE_RATE;
   });
 
+  const [historicalRates, setHistoricalRates] = useState<Record<string, number>>(() => {
+    try {
+      const saved = localStorage.getItem(`${STORAGE_KEY}_historical_rates`);
+      if (saved) {
+        return JSON.parse(saved);
+      }
+    } catch {}
+    return {};
+  });
+
   const [bcvInfo, setBcvInfo] = useState<BcvRateInfo>(() => {
     const saved = localStorage.getItem(`${STORAGE_KEY}_bcv_info`);
     if (saved) {
@@ -340,6 +353,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   useEffect(() => {
     safeLocalStorageSet(`${STORAGE_KEY}_rate`, exchangeRate.toString());
   }, [exchangeRate]);
+
+  useEffect(() => {
+    safeLocalStorageSet(`${STORAGE_KEY}_historical_rates`, JSON.stringify(historicalRates));
+  }, [historicalRates]);
 
   useEffect(() => {
     safeLocalStorageSet(`${STORAGE_KEY}_closures`, JSON.stringify(cashClosures));
@@ -525,6 +542,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         }
         if (typeof d.exchangeRate === 'number' && d.exchangeRate > 0) {
           setExchangeRateState(d.exchangeRate);
+        }
+        if (d.historicalRates && typeof d.historicalRates === 'object') {
+          setHistoricalRates((prev) => ({ ...prev, ...d.historicalRates }));
         }
         if (d.adminPin) {
           setAdminPinState(d.adminPin);
@@ -759,6 +779,19 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       (err) => handleFirestoreError(err, OperationType.GET, 'store_config/main')
     );
 
+    const unsubHistoricalRates = onSnapshot(
+      doc(db, 'store_config', 'historical_rates'),
+      (snap) => {
+        if (snap.exists()) {
+          const data = snap.data();
+          if (data?.rates && typeof data.rates === 'object') {
+            setHistoricalRates((prev) => ({ ...prev, ...data.rates }));
+          }
+        }
+      },
+      () => {}
+    );
+
     return () => {
       unsubProducts();
       unsubSales();
@@ -767,6 +800,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       unsubExpenses();
       unsubClosures();
       unsubConfig();
+      unsubHistoricalRates();
     };
   }, [currentUser]);
 
@@ -908,6 +942,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const setExchangeRate = (rate: number, isManual = true) => {
     setExchangeRateState(rate);
+    const todayKey = new Date().toISOString().split('T')[0];
+    setHistoricalRates((prev) => {
+      const updated = { ...prev, [todayKey]: rate };
+      safeLocalStorageSet(`${STORAGE_KEY}_historical_rates`, JSON.stringify(updated));
+      return updated;
+    });
+
     if (isManual) {
       setBcvInfo((prev) => ({
         ...prev,
@@ -920,7 +961,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     fetch('/api/store/sync', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ exchangeRate: rate }),
+      body: JSON.stringify({ exchangeRate: rate, historicalRates: { [todayKey]: rate } }),
     }).catch(() => {});
 
     if (currentUser) {
@@ -935,6 +976,104 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       'info'
     );
   };
+
+  // Pre-cargar tasas de ventas y gastos históricos registrados
+  useEffect(() => {
+    if (sales.length === 0 && expenses.length === 0) return;
+    setHistoricalRates((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      sales.forEach((s) => {
+        if (s.fecha && s.tasa_cambio > 0) {
+          const key = s.fecha.includes('T') ? s.fecha.split('T')[0] : s.fecha.trim();
+          if (!next[key]) {
+            next[key] = s.tasa_cambio;
+            changed = true;
+          }
+        }
+      });
+      expenses.forEach((e) => {
+        if (e.fecha && e.tasa_cambio > 0) {
+          const key = e.fecha.includes('T') ? e.fecha.split('T')[0] : e.fecha.trim();
+          if (!next[key]) {
+            next[key] = e.tasa_cambio;
+            changed = true;
+          }
+        }
+      });
+      return changed ? next : prev;
+    });
+  }, [sales, expenses]);
+
+  const getExchangeRateForDate = useCallback(
+    (dateStr: string): number => {
+      if (!dateStr) return exchangeRate;
+      const key = dateStr.includes('T') ? dateStr.split('T')[0] : dateStr.trim();
+
+      // 1. Tasa en histórico registrado
+      if (historicalRates[key] && historicalRates[key] > 0) {
+        return historicalRates[key];
+      }
+
+      // 2. Tasa registrada en ventas de ese día
+      const saleOnDate = sales.find(
+        (s) => s.fecha && (s.fecha === key || s.fecha.startsWith(key)) && s.tasa_cambio > 0
+      );
+      if (saleOnDate) return saleOnDate.tasa_cambio;
+
+      // 3. Tasa registrada en gastos de ese día
+      const expOnDate = expenses.find(
+        (e) => e.fecha && (e.fecha === key || e.fecha.startsWith(key)) && e.tasa_cambio > 0
+      );
+      if (expOnDate) return expOnDate.tasa_cambio;
+
+      // 4. Buscar fecha anterior más cercana en el histórico
+      const sortedKeys = Object.keys(historicalRates).sort();
+      const priorKeys = sortedKeys.filter((k) => k <= key);
+      if (priorKeys.length > 0) {
+        const closestKey = priorKeys[priorKeys.length - 1];
+        if (historicalRates[closestKey] > 0) {
+          return historicalRates[closestKey];
+        }
+      }
+
+      return exchangeRate;
+    },
+    [historicalRates, sales, expenses, exchangeRate]
+  );
+
+  const setExchangeRateForDate = useCallback(
+    (dateStr: string, rate: number) => {
+      if (!dateStr || !rate || rate <= 0) return;
+      const key = dateStr.includes('T') ? dateStr.split('T')[0] : dateStr.trim();
+      const numRate = Number(rate.toFixed(4));
+
+      setHistoricalRates((prev) => {
+        if (prev[key] === numRate) return prev;
+        const updated = { ...prev, [key]: numRate };
+        safeLocalStorageSet(`${STORAGE_KEY}_historical_rates`, JSON.stringify(updated));
+        return updated;
+      });
+
+      fetch('/api/store/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ historicalRates: { [key]: numRate } }),
+      }).catch(() => {});
+
+      if (currentUser) {
+        setDoc(
+          doc(db, 'store_config', 'historical_rates'),
+          {
+            rates: { [key]: numRate },
+            updatedAt: new Date().toISOString(),
+          },
+          { merge: true }
+        ).catch(() => {});
+      }
+    },
+    [currentUser]
+  );
 
   const criticalStockProducts = useMemo(() => {
     return products.filter((p) => p.activo && p.stock <= p.stock_minimo);
@@ -1404,6 +1543,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     setSales((prev) => [completedSale, ...prev]);
 
+    // Track historical rate for this date
+    if (completedSale.tasa_cambio > 0) {
+      const saleDateKey = (saleData.fecha || timestamp).split('T')[0];
+      setExchangeRateForDate(saleDateKey, completedSale.tasa_cambio);
+    }
+
     // Persist sale to server
     fetch('/api/sales', {
       method: 'POST',
@@ -1457,9 +1602,14 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (saleIndex === -1) return false;
 
     const currentSale = sales[saleIndex];
+    const newDateKey = newDateIso.split('T')[0];
+    const targetRate = currentSale.tasa_cambio > 0 ? currentSale.tasa_cambio : getExchangeRateForDate(newDateKey);
+
     const updatedSale: Sale = {
       ...currentSale,
       fecha: newDateIso,
+      tasa_cambio: targetRate,
+      total_bs: currentSale.total_bs > 0 ? currentSale.total_bs : currentSale.total_usd * targetRate,
     };
 
     setSales((prev) => {
@@ -2452,6 +2602,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         accounts,
         paymentAccounts: accounts,
         exchangeRate,
+        historicalRates,
+        getExchangeRateForDate,
+        setExchangeRateForDate,
         userRole,
         cashClosures,
         notifications,

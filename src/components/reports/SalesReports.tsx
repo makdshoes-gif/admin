@@ -143,12 +143,13 @@ export const SalesReports: React.FC = () => {
         s.pagos.forEach((p) => {
           const cuentaLower = (p.cuenta || '').toLowerCase().trim();
           const baseUsd = Number(p.monto_equivalente_usd) || 0;
+          const saleHistoricalRate = s.tasa_cambio > 0 ? s.tasa_cambio : exchangeRate;
           const val =
             weeklyCurrency === 'USD'
               ? baseUsd
               : p.moneda === 'Bs'
               ? Number(p.monto) || 0
-              : baseUsd * exchangeRate;
+              : baseUsd * saleHistoricalRate;
 
           if (cuentaLower.includes('cashea')) {
             targetDay.cashea += val;
@@ -288,6 +289,13 @@ export const SalesReports: React.FC = () => {
 
   const netProfitUsd = totalRevenueUsd - totalCostUsd;
   const profitMarginPercent = totalRevenueUsd > 0 ? (netProfitUsd / totalRevenueUsd) * 100 : 0;
+
+  const netProfitBs = useMemo(() => {
+    return filteredSales.reduce((acc, s) => {
+      const saleRate = s.tasa_cambio > 0 ? s.tasa_cambio : exchangeRate;
+      return acc + (s.ganancia_neta_usd * saleRate);
+    }, 0);
+  }, [filteredSales, exchangeRate]);
 
   const totalPairsSold = useMemo(() => {
     return filteredSales.reduce(
@@ -648,7 +656,7 @@ export const SalesReports: React.FC = () => {
             +${netProfitUsd.toFixed(2)}
           </div>
           <div className="text-xs text-slate-400 font-mono mt-0.5">
-            {(netProfitUsd * exchangeRate).toFixed(0)} Bs de utilidad
+            {netProfitBs.toLocaleString('es-VE', { minimumFractionDigits: 0, maximumFractionDigits: 0 })} Bs de utilidad
           </div>
         </div>
 

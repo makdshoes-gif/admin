@@ -44,12 +44,12 @@ app.post('/api/analyze-shoe', handleShoeAnalysis);
 // API: Escáner de facturas / comprobantes de gastos con IA (Gemini Vision with Lite/Flash Fallbacks)
 const handleReceiptAnalysis = async (req: express.Request, res: express.Response) => {
   try {
-    const { imageBase64, exchangeRate } = req.body || {};
+    const { imageBase64, exchangeRate, historicalRates } = req.body || {};
     if (!imageBase64 || typeof imageBase64 !== 'string') {
       return res.status(400).json({ error: 'No se recibió ninguna imagen de la factura.' });
     }
     const rate = Number(exchangeRate) > 0 ? Number(exchangeRate) : 1;
-    const result = await analyzeReceiptImage(imageBase64, rate);
+    const result = await analyzeReceiptImage(imageBase64, rate, historicalRates);
     res.json(result);
   } catch (error: any) {
     console.error('Error al escanear la factura con Gemini:', error);

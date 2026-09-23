@@ -48,6 +48,7 @@ export interface ServerStoreState {
   bankMovements: any[];
   currencyPurchases: any[];
   exchangeRate: number;
+  historicalRates?: Record<string, number>;
   adminPin: string;
   updatedAt: string;
 }
@@ -77,6 +78,7 @@ function readServerStore(): ServerStoreState {
         bankMovements: Array.isArray(data.bankMovements) ? data.bankMovements : [],
         currencyPurchases: Array.isArray(data.currencyPurchases) ? data.currencyPurchases : [],
         exchangeRate: typeof data.exchangeRate === 'number' ? data.exchangeRate : 68.50,
+        historicalRates: (data.historicalRates && typeof data.historicalRates === 'object') ? data.historicalRates : {},
         adminPin: data.adminPin || '1234',
         updatedAt: data.updatedAt || new Date().toISOString(),
       };
@@ -108,6 +110,7 @@ function readServerStore(): ServerStoreState {
     bankMovements: [],
     currencyPurchases: [],
     exchangeRate: 68.50,
+    historicalRates: {},
     adminPin: '1234',
     updatedAt: new Date().toISOString(),
   };
@@ -288,6 +291,7 @@ async function startServer() {
             bankMovements: normalizeBankReconciliations(reconciliations as any[]),
             currencyPurchases: store.currencyPurchases || [],
             exchangeRate: store.exchangeRate || 807.39,
+            historicalRates: store.historicalRates || {},
             adminPin: store.adminPin || '1234',
             updatedAt: new Date().toISOString(),
           },
@@ -341,6 +345,9 @@ async function startServer() {
     if (Array.isArray(updates.cashClosures)) current.cashClosures = updates.cashClosures;
     if (Array.isArray(updates.expenses)) current.expenses = updates.expenses;
     if (typeof updates.exchangeRate === 'number') current.exchangeRate = updates.exchangeRate;
+    if (updates.historicalRates && typeof updates.historicalRates === 'object') {
+      current.historicalRates = { ...(current.historicalRates || {}), ...updates.historicalRates };
+    }
     if (typeof updates.adminPin === 'string') current.adminPin = updates.adminPin;
 
     writeServerStore(current);
@@ -866,7 +873,7 @@ async function startServer() {
   // 7.1 Invoice & Receipt Scanner AI (Gemini Vision with Lite/Flash Fallbacks)
   const handleReceiptScan = async (req: express.Request, res: express.Response) => {
     try {
-      const { imageBase64, exchangeRate } = req.body || {};
+      const { imageBase64, exchangeRate, historicalRates } = req.body || {};
       if (!imageBase64 || typeof imageBase64 !== 'string') {
         return res.status(400).json({
           success: false,
@@ -875,7 +882,7 @@ async function startServer() {
       }
 
       const rate = Number(exchangeRate) > 0 ? Number(exchangeRate) : 1;
-      const result = await analyzeReceiptImage(imageBase64, rate);
+      const result = await analyzeReceiptImage(imageBase64, rate, historicalRates);
       res.json(result);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);

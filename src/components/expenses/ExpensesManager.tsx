@@ -58,6 +58,8 @@ export const ExpensesManager: React.FC = () => {
     accounts,
     currencyPurchases,
     deleteCurrencyPurchase,
+    getExchangeRateForDate,
+    setExchangeRateForDate,
   } = useStore();
 
   // Filter state
@@ -73,6 +75,8 @@ export const ExpensesManager: React.FC = () => {
   // Form State
   const todayIso = new Date().toISOString().split('T')[0];
   const [fecha, setFecha] = useState(todayIso);
+  const [tasaGasto, setTasaGasto] = useState<string>(() => exchangeRate.toString());
+  const [isCustomTasa, setIsCustomTasa] = useState(false);
   const [categoria, setCategoria] = useState<ExpenseCategory>('Alquiler de Local');
   const [descripcion, setDescripcion] = useState('');
   const [beneficiario, setBeneficiario] = useState('');
@@ -225,15 +229,17 @@ export const ExpensesManager: React.FC = () => {
       return;
     }
 
+    const effectiveTasa = parseFloat(tasaGasto) > 0 ? parseFloat(tasaGasto) : getExchangeRateForDate(fecha);
+
     let montoUsd = 0;
     let montoBs = 0;
 
     if (moneda === 'USD') {
       montoUsd = numMonto;
-      montoBs = numMonto * exchangeRate;
+      montoBs = numMonto * effectiveTasa;
     } else {
       montoBs = numMonto;
-      montoUsd = numMonto / exchangeRate;
+      montoUsd = effectiveTasa > 0 ? numMonto / effectiveTasa : 0;
     }
 
     addExpense({
@@ -244,13 +250,15 @@ export const ExpensesManager: React.FC = () => {
       cuenta_origen: cuentaOrigen,
       moneda,
       monto: numMonto,
-      tasa_cambio: exchangeRate,
+      tasa_cambio: effectiveTasa,
       monto_usd: Number(montoUsd.toFixed(2)),
       monto_bs: Number(montoBs.toFixed(2)),
       comprobante_ref: comprobanteRef.trim() || undefined,
       registrado_por: 'Admin / Gerencia',
       notas: notas.trim() || undefined,
     });
+
+    setExchangeRateForDate(fecha, effectiveTasa);
 
     // Reset Form
     setDescripcion('');
@@ -837,6 +845,11 @@ export const ExpensesManager: React.FC = () => {
                         <div className="text-[11px] text-slate-400">
                           {exp.monto_bs.toLocaleString('es-VE', { minimumFractionDigits: 2 })} Bs
                         </div>
+                        {exp.tasa_cambio > 0 && (
+                          <div className="text-[10px] text-indigo-600 font-mono font-medium" title="Tasa fijada a la fecha de este gasto">
+                            Tasa: {exp.tasa_cambio.toFixed(2)} Bs/$
+                          </div>
+                        )}
                       </td>
                       <td className="py-3 px-2 text-center">
                         <button
@@ -922,8 +935,14 @@ export const ExpensesManager: React.FC = () => {
                     type="date"
                     required
                     value={fecha}
-                    onChange={(e) => setFecha(e.target.value)}
-                    className="w-full text-xs p-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:border-indigo-500 focus:bg-white"
+                    onChange={(e) => {
+                      const newDate = e.target.value;
+                      setFecha(newDate);
+                      if (!isCustomTasa) {
+                        setTasaGasto(getExchangeRateForDate(newDate).toString());
+                      }
+                    }}
+                    className="w-full text-xs p-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:border-indigo-500 focus:bg-white font-mono"
                   />
                 </div>
 
@@ -942,6 +961,51 @@ export const ExpensesManager: React.FC = () => {
                       </option>
                     ))}
                   </select>
+                </div>
+              </div>
+
+              {/* Tasa de Cambio para la fecha del gasto */}
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-1.5">
+                <div className="flex items-center justify-between text-xs font-semibold text-slate-700">
+                  <span className="flex items-center gap-1.5">
+                    <DollarSign className="w-3.5 h-3.5 text-indigo-600" />
+                    Tasa de Cambio ({fecha !== todayIso ? `Fecha: ${fecha}` : 'Hoy'})
+                  </span>
+                  {fecha !== todayIso ? (
+                    <span className="text-[10px] font-bold text-amber-800 bg-amber-100 px-2 py-0.5 rounded border border-amber-300">
+                      📅 Fecha anterior (tasa congelada de ese día)
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded border border-emerald-300">
+                      Tasa de hoy
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={tasaGasto}
+                    onChange={(e) => {
+                      setTasaGasto(e.target.value);
+                      setIsCustomTasa(true);
+                    }}
+                    className="w-full text-xs font-mono font-bold p-1.5 bg-white border border-slate-300 rounded focus:border-indigo-500"
+                    placeholder="Ej: 52.40"
+                  />
+                  <span className="text-xs text-slate-500 font-mono font-medium">Bs/USD</span>
+                  {isCustomTasa && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setTasaGasto(getExchangeRateForDate(fecha).toString());
+                        setIsCustomTasa(false);
+                      }}
+                      className="text-[10px] text-indigo-600 hover:text-indigo-800 underline whitespace-nowrap cursor-pointer"
+                    >
+                      Restaurar
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -1024,14 +1088,14 @@ export const ExpensesManager: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Equivalencia en tiempo real */}
-                {parseFloat(montoInput) > 0 && (
+                {/* Equivalencia en tiempo real con tasa de la fecha */}
+                {parseFloat(montoInput) > 0 && parseFloat(tasaGasto) > 0 && (
                   <div className="text-[11px] text-slate-600 bg-white p-2 rounded border border-slate-200 flex items-center justify-between">
-                    <span>Equivalente al cambio ({exchangeRate.toFixed(2)} Bs/USD):</span>
-                    <span className="font-bold text-indigo-700">
+                    <span>Equivalente cambio de esa fecha ({parseFloat(tasaGasto).toFixed(2)} Bs/USD):</span>
+                    <span className="font-bold text-indigo-700 font-mono">
                       {moneda === 'USD'
-                        ? `${(parseFloat(montoInput) * exchangeRate).toLocaleString('es-VE', { minimumFractionDigits: 2 })} Bs`
-                        : `$${(parseFloat(montoInput) / exchangeRate).toFixed(2)} USD`}
+                        ? `${(parseFloat(montoInput) * parseFloat(tasaGasto)).toLocaleString('es-VE', { minimumFractionDigits: 2 })} Bs`
+                        : `$${(parseFloat(montoInput) / parseFloat(tasaGasto)).toFixed(2)} USD`}
                     </span>
                   </div>
                 )}
