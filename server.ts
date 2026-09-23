@@ -26,6 +26,7 @@ import {
 } from './server/db.js';
 import { verifyBdvPayment, getBdvApiConfig, getRecentVerifications } from './server/bdv.js';
 import { analyzeShoeImage } from './server/shoeAi.js';
+import { analyzeReceiptImage } from './server/receiptAi.js';
 
 const DATA_DIR = path.join(process.cwd(), 'server', 'data');
 if (!fs.existsSync(DATA_DIR)) {
@@ -840,11 +841,11 @@ async function startServer() {
         INSERT INTO expenses (
           id, fecha, categoria, descripcion, beneficiario,
           cuenta_origen, moneda, monto, tasa_cambio, monto_usd, monto_bs,
-          comprobante_ref, registrado_por, notas
+          comprobante_ref, registrado_por, notas, foto_factura
         ) VALUES (
           ${exp.id}, ${exp.fecha}, ${exp.categoria}, ${exp.descripcion}, ${exp.beneficiario || ''},
           ${exp.cuenta_origen}, ${exp.moneda}, ${exp.monto}, ${exp.tasa_cambio}, ${exp.monto_usd}, ${exp.monto_bs},
-          ${exp.comprobante_ref || null}, ${exp.registrado_por || 'Admin'}, ${exp.notas || ''}
+          ${exp.comprobante_ref || null}, ${exp.registrado_por || 'Admin'}, ${exp.notas || ''}, ${exp.foto_factura || null}
         )
         ON CONFLICT (id) DO UPDATE SET
           fecha = EXCLUDED.fecha,
@@ -852,7 +853,8 @@ async function startServer() {
           descripcion = EXCLUDED.descripcion,
           monto = EXCLUDED.monto,
           monto_usd = EXCLUDED.monto_usd,
-          monto_bs = EXCLUDED.monto_bs;
+          monto_bs = EXCLUDED.monto_bs,
+          foto_factura = COALESCE(EXCLUDED.foto_factura, expenses.foto_factura);
       `;
       res.json({ saved: true, id: exp.id });
     } catch (err: unknown) {
@@ -860,6 +862,33 @@ async function startServer() {
       res.status(500).json({ saved: false, error: String(err) });
     }
   });
+
+  // 7.1 Invoice & Receipt Scanner AI (Gemini 3.8 Flash)
+  const handleReceiptScan = async (req: express.Request, res: express.Response) => {
+    try {
+      const { imageBase64, exchangeRate } = req.body || {};
+      if (!imageBase64 || typeof imageBase64 !== 'string') {
+        return res.status(400).json({
+          success: false,
+          error: 'Se requiere una imagen en formato Base64 de la factura o comprobante.',
+        });
+      }
+
+      const rate = Number(exchangeRate) > 0 ? Number(exchangeRate) : 1;
+      const result = await analyzeReceiptImage(imageBase64, rate);
+      res.json(result);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error('[API scan-receipt error]:', msg);
+      res.status(500).json({
+        success: false,
+        error: msg,
+      });
+    }
+  };
+
+  app.post('/api/expenses/scan-receipt', handleReceiptScan);
+  app.post('/api/ai/scan-receipt', handleReceiptScan);
 
   app.delete('/api/expenses/:id', async (req, res) => {
     const sql = getNeonSql();

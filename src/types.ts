@@ -232,6 +232,7 @@ export interface Expense {
   comprobante_ref?: string;
   registrado_por: string;
   notas?: string;
+  foto_factura?: string;
   created_at: string;
 }
 

@@ -25,10 +25,14 @@ import {
   Receipt,
   Scale,
   HelpCircle,
-  ExternalLink
+  ExternalLink,
+  Camera,
+  Sparkles,
+  Eye
 } from 'lucide-react';
 import { CurrencyPurchaseModal } from './CurrencyPurchaseModal';
 import { GoogleSheetsSyncModal } from '../common/GoogleSheetsSyncModal';
+import { ReceiptScannerModal } from './ReceiptScannerModal';
 
 const CATEGORIES: ExpenseCategory[] = [
   'Alquiler de Local',
@@ -63,6 +67,8 @@ export const ExpensesManager: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isCurrencyModalOpen, setIsCurrencyModalOpen] = useState(false);
   const [isSheetsModalOpen, setIsSheetsModalOpen] = useState(false);
+  const [isScannerModalOpen, setIsScannerModalOpen] = useState(false);
+  const [viewingPhoto, setViewingPhoto] = useState<string | null>(null);
 
   // Form State
   const todayIso = new Date().toISOString().split('T')[0];
@@ -359,6 +365,16 @@ export const ExpensesManager: React.FC = () => {
           >
             <FileSpreadsheet className="w-4 h-4" />
             <span>Google Sheets</span>
+          </button>
+
+          <button
+            onClick={() => setIsScannerModalOpen(true)}
+            className="flex items-center space-x-1.5 px-3.5 py-2 bg-gradient-to-r from-indigo-600 via-indigo-700 to-indigo-800 hover:from-indigo-500 hover:to-indigo-700 text-white rounded-lg text-xs font-bold shadow-sm hover:shadow-indigo-500/25 transition-all cursor-pointer"
+            title="Tomar foto a la factura para extraer datos y subir el gasto automáticamente con IA"
+          >
+            <Camera className="w-4 h-4 text-indigo-200" />
+            <span>Tomar Foto a Factura</span>
+            <span className="text-[10px] px-1.5 py-0.2 bg-white/20 rounded font-mono font-bold">IA</span>
           </button>
 
           <button
@@ -793,9 +809,22 @@ export const ExpensesManager: React.FC = () => {
                           </p>
                         )}
                         {exp.comprobante_ref && (
-                          <span className="text-[10px] font-mono text-indigo-600 bg-indigo-50 px-1 rounded">
+                          <span className="text-[10px] font-mono text-indigo-600 bg-indigo-50 px-1 rounded inline-block mr-1">
                             Ref: {exp.comprobante_ref}
                           </span>
+                        )}
+                        {exp.foto_factura && (
+                          <div className="mt-1">
+                            <button
+                              type="button"
+                              onClick={() => setViewingPhoto(exp.foto_factura || null)}
+                              className="inline-flex items-center gap-1 text-[10px] font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-1.5 py-0.5 rounded transition cursor-pointer shadow-2xs"
+                              title="Ver comprobante o factura escaneada"
+                            >
+                              <Camera className="w-3 h-3 text-indigo-600" />
+                              <span>Ver Factura</span>
+                            </button>
+                          </div>
                         )}
                       </td>
                       <td className="py-3 px-3 whitespace-nowrap">
@@ -864,6 +893,25 @@ export const ExpensesManager: React.FC = () => {
                   <span>{formError}</span>
                 </div>
               )}
+
+              {/* Fast Photo Scan banner */}
+              <div className="p-3 bg-indigo-50/70 border border-indigo-200/80 rounded-xl flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2 text-indigo-950">
+                  <Camera className="w-4 h-4 text-indigo-600 shrink-0" />
+                  <span className="text-xs">¿Tienes la factura física o comprobante a mano?</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsModalOpen(false);
+                    setIsScannerModalOpen(true);
+                  }}
+                  className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-bold rounded-lg shadow-2xs transition flex items-center gap-1 shrink-0 cursor-pointer"
+                >
+                  <Sparkles className="w-3 h-3 text-indigo-200" />
+                  <span>Tomar Foto con IA</span>
+                </button>
+              </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -1049,6 +1097,49 @@ export const ExpensesManager: React.FC = () => {
         onClose={() => setIsSheetsModalOpen(false)}
         periodLabel={periodLabel}
       />
+
+      {/* Modal: Escáner de Facturas con IA y Cámara */}
+      <ReceiptScannerModal
+        isOpen={isScannerModalOpen}
+        onClose={() => setIsScannerModalOpen(false)}
+      />
+
+      {/* Modal: Visor de Foto de Factura en Alta Resolución */}
+      {viewingPhoto && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-xs flex items-center justify-center z-50 p-3 sm:p-5 animate-in fade-in">
+          <div className="bg-white rounded-2xl overflow-hidden max-w-lg w-full shadow-2xl border border-slate-700 flex flex-col max-h-[90vh]">
+            <div className="p-3.5 bg-slate-900 text-white flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-2">
+                <Camera className="w-4 h-4 text-indigo-400" />
+                <h3 className="font-bold text-xs sm:text-sm">Comprobante / Factura Adjunta</h3>
+              </div>
+              <button
+                onClick={() => setViewingPhoto(null)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-white/10 transition"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-3 bg-slate-950 flex items-center justify-center overflow-auto flex-1">
+              <img
+                src={viewingPhoto}
+                alt="Factura completa"
+                className="max-h-[65vh] w-auto object-contain rounded-lg shadow-lg border border-slate-800"
+              />
+            </div>
+            <div className="p-3 bg-slate-100 flex items-center justify-between text-xs text-slate-600 shrink-0">
+              <span className="text-[11px] text-slate-500">Documento guardado con el registro de gasto</span>
+              <button
+                type="button"
+                onClick={() => setViewingPhoto(null)}
+                className="px-3.5 py-1.5 bg-slate-800 hover:bg-slate-900 text-white font-semibold rounded-lg text-xs transition"
+              >
+                Cerrar Visor
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

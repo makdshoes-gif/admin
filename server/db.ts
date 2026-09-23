@@ -321,6 +321,7 @@ export async function initDatabaseSchema() {
     await sql`ALTER TABLE sales_transactions ADD COLUMN IF NOT EXISTS total_cashea_pendiente_usd NUMERIC(12, 2) DEFAULT 0`;
     await sql`ALTER TABLE sales_transactions ADD COLUMN IF NOT EXISTS estado_cashea VARCHAR(30) DEFAULT 'sin_cashea'`;
     await sql`ALTER TABLE expenses ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()`;
+    await sql`ALTER TABLE expenses ADD COLUMN IF NOT EXISTS foto_factura TEXT`;
     await sql`ALTER TABLE bank_reconciliations ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()`;
     await sql`ALTER TABLE cash_closures ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()`;
 

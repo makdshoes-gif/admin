@@ -16,6 +16,7 @@ import {
   addSalesClosure,
 } from './db.js';
 import { analyzeShoeImage } from './shoeAi.js';
+import { analyzeReceiptImage } from './receiptAi.js';
 
 export const app = express();
 // límite ampliado: las fotos del escáner de calzado llegan como base64 (~1-4mb)
@@ -39,6 +40,26 @@ const handleShoeAnalysis = async (req: express.Request, res: express.Response) =
 };
 app.post('/api/ai/analyze-shoe', handleShoeAnalysis);
 app.post('/api/analyze-shoe', handleShoeAnalysis);
+
+// API: Escáner de facturas / comprobantes de gastos con IA (Gemini 3.8 Flash)
+const handleReceiptAnalysis = async (req: express.Request, res: express.Response) => {
+  try {
+    const { imageBase64, exchangeRate } = req.body || {};
+    if (!imageBase64 || typeof imageBase64 !== 'string') {
+      return res.status(400).json({ error: 'No se recibió ninguna imagen de la factura.' });
+    }
+    const rate = Number(exchangeRate) > 0 ? Number(exchangeRate) : 1;
+    const result = await analyzeReceiptImage(imageBase64, rate);
+    res.json(result);
+  } catch (error: any) {
+    console.error('Error al escanear la factura con Gemini:', error);
+    res.status(500).json({
+      error: error?.message || 'No se pudo escanear la factura con IA.',
+    });
+  }
+};
+app.post('/api/expenses/scan-receipt', handleReceiptAnalysis);
+app.post('/api/ai/scan-receipt', handleReceiptAnalysis);
 
 // API Store State
 app.get('/api/store/state', async (_req, res) => {
