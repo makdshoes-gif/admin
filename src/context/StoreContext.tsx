@@ -1471,23 +1471,43 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const saleMovements: StockMovement[] = [];
 
     const updatedProducts = products.map((prod) => {
-      const item = saleData.items.find((i) => i.producto_id === prod.id);
-      if (!item) return prod;
+      // Find all items sold that match this product (by ID, SKU, or Name + Talla)
+      const matchingItems = saleData.items.filter((item) => {
+        if (item.producto_id && prod.id && String(item.producto_id).trim() === String(prod.id).trim()) {
+          return true;
+        }
+        if (item.sku && prod.sku && item.sku.trim().toLowerCase() === prod.sku.trim().toLowerCase()) {
+          return true;
+        }
+        if (
+          item.nombre_producto && prod.nombre &&
+          item.nombre_producto.trim().toLowerCase() === prod.nombre.trim().toLowerCase() &&
+          item.talla && prod.talla &&
+          String(item.talla).trim() === String(prod.talla).trim()
+        ) {
+          return true;
+        }
+        return false;
+      });
 
-      const stockAnterior = prod.stock;
-      const stockNuevo = Math.max(0, stockAnterior - item.cantidad);
-      const itemCosto = typeof item.costo_unitario === 'number' ? item.costo_unitario : prod.costo;
-      totalCosto += itemCosto * item.cantidad;
+      const totalSold = matchingItems.reduce((acc, it) => acc + (Number(it.cantidad) || 0), 0);
+      if (totalSold === 0) return prod;
 
+      const stockAnterior = Number(prod.stock) || 0;
+      const stockNuevo = Math.max(0, stockAnterior - totalSold);
+      const itemCosto = typeof prod.costo === 'number' ? prod.costo : 0;
+      totalCosto += itemCosto * totalSold;
+
+      const cleanMovementId = `mov-${Date.now()}-${prod.id.replace(/[^a-zA-Z0-9_-]/g, '_')}-${Math.random().toString(36).substring(2, 6)}`;
       saleMovements.push({
-        id: `mov-${Date.now()}-${item.producto_id}`,
+        id: cleanMovementId,
         producto_id: prod.id,
         producto_nombre: prod.nombre,
         sku: prod.sku,
         talla: prod.talla,
         marca: prod.marca,
         tipo: 'venta',
-        cantidad: -item.cantidad,
+        cantidad: -totalSold,
         stock_anterior: stockAnterior,
         stock_nuevo: stockNuevo,
         motivo: `Venta Factura #${saleData.numero_factura}`,
@@ -1517,7 +1537,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     // Also account for any items whose product wasn't found in current memory list
     saleData.items.forEach((item) => {
-      const exists = updatedProducts.some((p) => p.id === item.producto_id);
+      const exists = updatedProducts.some(
+        (p) =>
+          p.id === item.producto_id ||
+          (p.sku && item.sku && p.sku.trim().toLowerCase() === item.sku.trim().toLowerCase())
+      );
       if (!exists) {
         totalCosto += (item.costo_unitario || 0) * item.cantidad;
       }
@@ -1606,27 +1630,33 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       body: JSON.stringify({ sale: completedSale, updatedProducts }),
     }).catch((e) => console.log('Backend sale sync info:', e));
 
-    fetch('/api/store/sync', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ products: updatedProducts, sales: [completedSale] }),
-    }).catch(() => {});
-
-    if (currentUser) {
+    if (db) {
       try {
         const batch = writeBatch(db);
-        batch.set(doc(db, 'sales', completedSale.id), completedSale);
+        const cleanSaleId = completedSale.id.replace(/[^a-zA-Z0-9_.-]/g, '_');
+        batch.set(doc(db, 'sales', cleanSaleId), completedSale);
         saleMovements.forEach((m) => {
-          batch.set(doc(db, 'movements', m.id), m);
+          const cleanMovId = m.id.replace(/[^a-zA-Z0-9_.-]/g, '_');
+          batch.set(doc(db, 'movements', cleanMovId), m);
         });
         saleData.items.forEach((item) => {
-          const prod = updatedProducts.find((p) => p.id === item.producto_id);
+          const prod = updatedProducts.find((p) =>
+            p.id === item.producto_id ||
+            (p.sku && item.sku && p.sku.trim().toLowerCase() === item.sku.trim().toLowerCase()) ||
+            (
+              item.nombre_producto && p.nombre &&
+              p.nombre.trim().toLowerCase() === item.nombre_producto.trim().toLowerCase() &&
+              item.talla && p.talla &&
+              String(item.talla).trim() === String(prod.talla).trim()
+            )
+          );
           if (prod) {
-            batch.set(doc(db, 'products', prod.id), prod, { merge: true });
+            const cleanProdId = prod.id.replace(/[^a-zA-Z0-9_.-]/g, '_');
+            batch.set(doc(db, 'products', cleanProdId), { ...prod, stock: prod.stock }, { merge: true });
           }
         });
         batch.commit().catch((err) =>
-          handleFirestoreError(err, OperationType.WRITE, `sales/${completedSale.id}`)
+          handleFirestoreError(err, OperationType.WRITE, `sales/${cleanSaleId}`)
         );
       } catch (err) {
         console.warn('Firestore sale write warning:', err);
@@ -1720,8 +1750,18 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     // Restaurar stock localmente
     setProducts((prev) => {
       const updated = prev.map((p) => {
-        const item = sale.items.find((i) => i.producto_id === p.id);
-        return item ? { ...p, stock: p.stock + item.cantidad } : p;
+        const matching = sale.items.filter((item) =>
+          (item.producto_id && p.id && String(item.producto_id).trim() === String(p.id).trim()) ||
+          (item.sku && p.sku && item.sku.trim().toLowerCase() === p.sku.trim().toLowerCase()) ||
+          (
+            item.nombre_producto && p.nombre &&
+            item.nombre_producto.trim().toLowerCase() === p.nombre.trim().toLowerCase() &&
+            item.talla && p.talla &&
+            String(item.talla).trim() === String(p.talla).trim()
+          )
+        );
+        const qtyToRestore = matching.reduce((sum, it) => sum + (Number(it.cantidad) || 0), 0);
+        return qtyToRestore > 0 ? { ...p, stock: Number(p.stock || 0) + qtyToRestore } : p;
       });
       try { localStorage.setItem(`${STORAGE_KEY}_products`, JSON.stringify(updated)); } catch {}
       return updated;

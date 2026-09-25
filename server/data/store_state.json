@@ -91,7 +91,7 @@
       "id": "acc-1",
       "nombre": "Efectivo USD",
       "moneda": "USD",
-      "saldo": 0,
+      "saldo": 75,
       "icono": "Banknote"
     },
     {
@@ -141,7 +141,10 @@
   "expenses": [],
   "bankMovements": [],
   "currencyPurchases": [],
-  "exchangeRate": 68.5,
+  "exchangeRate": 855.66,
+  "historicalRates": {
+    "2026-09-25": 855.66
+  },
   "adminPin": "1234",
-  "updatedAt": "2026-09-21T22:19:40.469Z"
+  "updatedAt": "2026-09-25T19:26:50.705Z"
 }

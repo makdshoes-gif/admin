@@ -1,1 +1,32 @@
-[]
+[
+  {
+    "id": "test-sale-1",
+    "numero_factura": "MK-TEST",
+    "subtotal_usd": 75,
+    "total_usd": 75,
+    "total_bs": 5000,
+    "tasa_cambio": 68.5,
+    "items": [
+      {
+        "producto_id": "prod-adizero-purehustle-40",
+        "sku": "ADI-ADZ-WHTSLV-40",
+        "nombre_producto": "Adidas Adizero PureHustle Cleats White & Silver",
+        "talla": "40",
+        "cantidad": 1,
+        "precio_unitario": 75,
+        "costo_unitario": 42,
+        "subtotal": 75
+      }
+    ],
+    "pagos": [
+      {
+        "id": "p1",
+        "cuenta": "Efectivo USD",
+        "moneda": "USD",
+        "monto": 75,
+        "monto_equivalente_usd": 75
+      }
+    ],
+    "fecha": "2026-09-25T19:26:00.000Z"
+  }
+]

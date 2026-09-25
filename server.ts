@@ -343,13 +343,27 @@ async function startServer() {
 
     const current = readServerStore();
     if (Array.isArray(updates.products)) {
-      if (updates.products.length > 0 || updates.allowEmpty) {
+      if (updates.allowReplaceProducts) {
         current.products = updates.products;
+      } else if (updates.products.length > 0) {
+        const prodMap = new Map((current.products || []).map((p: any) => [p.id, p]));
+        updates.products.forEach((p: any) => {
+          if (p && p.id) {
+            prodMap.set(p.id, { ...(prodMap.get(p.id) || {}), ...p });
+          }
+        });
+        current.products = Array.from(prodMap.values());
       }
     }
     if (Array.isArray(updates.sales)) {
-      if (updates.sales.length > 0 || updates.allowEmpty) {
+      if (updates.allowReplaceSales) {
         current.sales = updates.sales;
+      } else if (updates.sales.length > 0) {
+        const salesMap = new Map((current.sales || []).map((s: any) => [s.id, s]));
+        updates.sales.forEach((s: any) => {
+          if (s && s.id) salesMap.set(s.id, s);
+        });
+        current.sales = Array.from(salesMap.values());
       }
     }
     if (Array.isArray(updates.layaways)) {
@@ -562,44 +576,41 @@ async function startServer() {
       store.sales.unshift(s);
     }
 
-    // Si el cliente envía la lista completa de productos actualizados post-venta
-    if (Array.isArray(body?.updatedProducts) && body.updatedProducts.length > 0) {
-      const updatedMap = new Map(body.updatedProducts.map((p: any) => [p.id, p]));
-      // Mezclar para no perder productos que ya estaban en el servidor
-      store.products = store.products.map((p: any) => {
-        if (updatedMap.has(p.id)) {
-          const fresh = updatedMap.get(p.id) as Record<string, any>;
-          updatedMap.delete(p.id);
-          return Object.assign({}, p, fresh);
-        }
-        return p;
-      });
-      // Agregar los que falten
-      for (const fresh of updatedMap.values()) {
-        store.products.push(fresh);
-      }
-    } else if (Array.isArray(s.items)) {
-      // Descontar inventario producto por producto
+    // 1. Descontar inventario de cada ítem vendido de forma infalible (por ID, SKU o Nombre + Talla)
+    if (Array.isArray(s.items) && s.items.length > 0) {
       s.items.forEach((item: any) => {
-        const prodIndex = store.products.findIndex((p: any) => p.id === item.producto_id);
+        const qtyToDeduct = Math.max(1, Number(item.cantidad) || 1);
+        const prodIndex = store.products.findIndex((p: any) =>
+          (item.producto_id && p.id && String(p.id).trim() === String(item.producto_id).trim()) ||
+          (item.sku && p.sku && p.sku.trim().toLowerCase() === item.sku.trim().toLowerCase()) ||
+          (
+            item.nombre_producto && p.nombre &&
+            p.nombre.trim().toLowerCase() === item.nombre_producto.trim().toLowerCase() &&
+            item.talla && p.talla &&
+            String(p.talla).trim() === String(item.talla).trim()
+          )
+        );
+
         if (prodIndex >= 0) {
           const prev = Number(store.products[prodIndex].stock || 0);
-          const next = Math.max(0, prev - Number(item.cantidad || 0));
+          const next = Math.max(0, prev - qtyToDeduct);
           store.products[prodIndex].stock = next;
-        } else {
-          // Si el producto no estaba en el store_state del servidor, lo insertamos
-          store.products.push({
-            id: item.producto_id,
-            nombre: item.nombre_producto || 'Calzado',
-            sku: item.sku || `SKU-${item.producto_id}`,
-            talla: String(item.talla || '38'),
-            marca: item.marca || 'Genérica',
-            precio: Number(item.precio_unitario || 0),
-            costo: Number(item.costo_unitario || 0),
-            stock: 0,
-            stock_minimo: 2,
-            activo: true,
-          });
+          console.log(`[Venta] Stock descontado para ${store.products[prodIndex].nombre} (${store.products[prodIndex].talla}): ${prev} -> ${next}`);
+        }
+      });
+    }
+
+    // 2. Si el cliente también envió updatedProducts explícitos, sincronizar
+    if (Array.isArray(body?.updatedProducts) && body.updatedProducts.length > 0) {
+      body.updatedProducts.forEach((fresh: any) => {
+        const idx = store.products.findIndex((p: any) =>
+          (fresh.id && p.id && String(p.id).trim() === String(fresh.id).trim()) ||
+          (fresh.sku && p.sku && p.sku.trim().toLowerCase() === fresh.sku.trim().toLowerCase())
+        );
+        if (idx >= 0) {
+          store.products[idx] = { ...store.products[idx], ...fresh };
+        } else if (fresh.id) {
+          store.products.push(fresh);
         }
       });
     }

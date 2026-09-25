@@ -56,7 +56,7 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
     historicalRates,
     getExchangeRateForDate,
     setExchangeRateForDate,
-    currentUser,
+    userRole,
   } = useStore();
 
   // Mode: camera vs file upload
@@ -409,7 +409,7 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
       monto_usd,
       monto_bs,
       comprobante_ref: comprobanteVal,
-      registrado_por: currentUser?.displayName || currentUser?.email || 'Admin',
+      registrado_por: userRole === 'admin' ? 'Administrador' : 'Cajera Turno',
       notas: detallesVal ? `[Escaneado IA]: ${detallesVal}` : 'Escaneado automáticamente con foto',
       foto_factura: fotoFactura,
     });
