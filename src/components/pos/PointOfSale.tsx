@@ -31,7 +31,9 @@ import {
   Receipt,
   LayoutGrid,
   ShoppingBag,
-  Clock
+  Clock,
+  ArrowRight,
+  ArrowLeft
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { useStore } from '../../context/StoreContext';
@@ -120,6 +122,9 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
   // Billing View Mode when cart has items: 'expanded' (wide principal workbench) | 'split' | 'fullscreen'
   const [billingViewMode, setBillingViewMode] = useState<'expanded' | 'split' | 'fullscreen'>('expanded');
 
+  // Mobile Active View: 'catalog' | 'billing' (optimizes phone screens)
+  const [mobileActiveView, setMobileActiveView] = useState<'catalog' | 'billing'>('catalog');
+
   // Extract unique brands and types
   const brands = useMemo(() => {
     const list = Array.from(new Set(products.map((p) => p.marca).filter(Boolean))).sort();
@@ -185,6 +190,7 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
 
   const totalUsd = Math.max(0, subtotalUsd - discountUsd + ivaUsd);
   const totalBs = totalUsd * effectiveExchangeRate;
+  const totalCartQuantity = useMemo(() => cart.reduce((sum, item) => sum + item.quantity, 0), [cart]);
 
   // Add to Cart
   const handleAddToCart = (product: ShoeProduct) => {
@@ -275,6 +281,7 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
     setMixedPayments([]);
     setBdvVerifiedData(null);
     setEditingPricingId(null);
+    setMobileActiveView('catalog');
   };
 
   // Mixed Payment Helper
@@ -442,25 +449,56 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
     <div className="max-w-7xl mx-auto space-y-5">
       
       {/* Top Banner / Stats */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-3.5 sm:p-4 rounded-2xl border border-slate-200 shadow-xs">
         <div>
-          <h1 className="text-base sm:text-lg font-bold text-slate-900 flex items-center gap-2">
+          <h1 className="text-base sm:text-lg font-black text-slate-900 flex items-center gap-2">
             <span>Terminal de Ventas & Facturación</span>
-            <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-bold">
-              Descuento en Tiempo Real
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold uppercase tracking-wider">
+              En Vivo
             </span>
           </h1>
           <p className="text-xs text-slate-500 mt-0.5">
-            Selecciona el modelo de calzado, ajusta tallas, aplica descuentos y factura en multimoneda con rebaja automática de inventario.
+            Selecciona el modelo de calzado, ajusta tallas, aplica descuentos y factura en multimoneda.
           </p>
         </div>
 
-        <div className="flex items-center gap-3 self-end md:self-auto">
-          <div className="text-right">
-            <span className="text-[10px] uppercase font-bold text-slate-400 block">Tasa BCV del Día</span>
-            <span className="text-sm font-mono font-bold text-indigo-600">1 USD = {exchangeRate.toFixed(2)} Bs</span>
+        <div className="flex items-center justify-between sm:justify-end gap-3 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100">
+          <div className="text-left sm:text-right">
+            <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">Tasa BCV del Día</span>
+            <span className="text-sm sm:text-base font-mono font-black text-indigo-600">1 USD = {exchangeRate.toFixed(2)} Bs</span>
           </div>
         </div>
+      </div>
+
+      {/* Mobile Segmented View Switcher (Optimizado para Teléfonos) */}
+      <div className="lg:hidden flex items-center bg-slate-200/80 p-1 rounded-2xl text-xs font-bold w-full shadow-2xs">
+        <button
+          type="button"
+          onClick={() => setMobileActiveView('catalog')}
+          className={`flex-1 py-2.5 rounded-xl flex items-center justify-center gap-2 transition cursor-pointer ${
+            mobileActiveView === 'catalog'
+              ? 'bg-white text-indigo-700 shadow-sm font-black'
+              : 'text-slate-600 hover:text-slate-900 font-semibold'
+          }`}
+        >
+          <ShoppingBag className="w-4 h-4" />
+          <span>Catálogo ({filteredProducts.length})</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setMobileActiveView('billing')}
+          className={`flex-1 py-2.5 rounded-xl flex items-center justify-center gap-2 transition cursor-pointer relative ${
+            mobileActiveView === 'billing'
+              ? 'bg-white text-indigo-700 shadow-sm font-black'
+              : 'text-slate-600 hover:text-slate-900 font-semibold'
+          }`}
+        >
+          <Receipt className="w-4 h-4" />
+          <span>Factura {cart.length > 0 ? `(${totalCartQuantity} pares • $${totalUsd.toFixed(2)})` : '(0)'}</span>
+          {cart.length > 0 && (
+            <span className="w-2.5 h-2.5 rounded-full bg-indigo-600 ring-2 ring-white"></span>
+          )}
+        </button>
       </div>
 
       {/* Main Grid: Catalog + Cart & Facturación */}
@@ -469,6 +507,8 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
         {/* Shoe Catalog Column */}
         <div
           className={`space-y-4 transition-all duration-200 ${
+            mobileActiveView === 'billing' ? 'hidden lg:block' : 'block'
+          } ${
             cart.length === 0
               ? 'lg:col-span-7 xl:col-span-8'
               : billingViewMode === 'fullscreen'
@@ -480,10 +520,10 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
         >
           
           {/* Search & Filter Bar */}
-          <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs space-y-3">
-            {/* Category Quick Filter Pills */}
-            <div className="flex flex-wrap items-center gap-1.5 pb-2 border-b border-slate-100 text-xs">
-              <span className="text-slate-400 font-semibold mr-1 text-[11px]">Categoría:</span>
+          <div className="bg-white p-3.5 sm:p-4 rounded-2xl border border-slate-200 shadow-xs space-y-3">
+            {/* Category Quick Filter Pills - Horizontally scrollable on mobile */}
+            <div className="flex items-center gap-1.5 pb-2.5 border-b border-slate-100 text-xs overflow-x-auto no-scrollbar scroll-smooth py-0.5">
+              <span className="text-slate-400 font-bold mr-1 text-[11px] shrink-0 uppercase tracking-wider">Categoría:</span>
               {[
                 { id: 'Todas', label: 'Todas' },
                 { id: 'Calzado', label: '👟 Calzado' },
@@ -497,10 +537,10 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
                   key={cat.id}
                   type="button"
                   onClick={() => setSelectedCategory(cat.id)}
-                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer shrink-0 ${
                     selectedCategory === cat.id
-                      ? 'bg-indigo-600 text-white font-bold shadow-xs'
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                      ? 'bg-indigo-600 text-white font-black shadow-xs'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900'
                   }`}
                 >
                   {cat.label}
@@ -509,19 +549,19 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
             </div>
 
             <div className="relative">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
               <input
                 type="text"
                 id="pos-search-input"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Buscar por modelo, marca (Nike, Adidas...), SKU o talla..."
-                className="w-full pl-9 pr-14 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:bg-white"
+                placeholder="Buscar por modelo, marca, SKU o talla..."
+                className="w-full pl-9 pr-16 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:bg-white focus:ring-1 focus:ring-indigo-500 transition"
               />
               {searchQuery && (
                 <button
                   onClick={() => setSearchQuery('')}
-                  className="absolute right-3 top-2 text-xs text-slate-400 hover:text-slate-700 cursor-pointer"
+                  className="absolute right-3 top-2.5 px-2 py-0.5 text-xs font-bold text-slate-500 hover:text-slate-800 bg-slate-200/80 rounded-lg cursor-pointer"
                 >
                   Limpiar
                 </button>
@@ -529,18 +569,18 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
             </div>
 
             {/* Quick Filters */}
-            <div className="flex flex-wrap gap-1.5 items-center text-xs">
-              <span className="text-slate-500 font-semibold flex items-center gap-1 mr-1 text-[11px]">
-                <Layers className="w-3 h-3 text-indigo-600" /> Talla:
+            <div className="flex items-center gap-1.5 text-xs overflow-x-auto no-scrollbar py-0.5">
+              <span className="text-slate-500 font-bold flex items-center gap-1 mr-1 text-[11px] shrink-0 uppercase tracking-wider">
+                <Layers className="w-3.5 h-3.5 text-indigo-600" /> Talla:
               </span>
               {shoeSizes.map((sz) => (
                 <button
                   key={sz}
                   onClick={() => setSelectedSize(sz)}
-                  className={`px-2 py-0.5 rounded font-mono text-[11px] transition-colors cursor-pointer ${
+                  className={`px-2.5 py-1 rounded-lg font-mono text-xs transition-colors cursor-pointer shrink-0 ${
                     selectedSize === sz
-                      ? 'bg-indigo-600 text-white font-bold'
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                      ? 'bg-indigo-600 text-white font-black shadow-2xs'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200 font-semibold'
                   }`}
                 >
                   {sz}
@@ -549,15 +589,15 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
             </div>
 
             {/* Filter by Brand & Type */}
-            <div className="grid grid-cols-2 gap-2 pt-1 border-t border-slate-100">
+            <div className="grid grid-cols-2 gap-2.5 pt-2 border-t border-slate-100">
               <div>
-                <label className="text-[10px] uppercase font-bold text-slate-400 block mb-1">
+                <label className="text-[10px] uppercase font-bold text-slate-500 block mb-1 tracking-wider">
                   Marca de Calzado
                 </label>
                 <select
                   value={selectedBrand}
                   onChange={(e) => setSelectedBrand(e.target.value)}
-                  className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 focus:outline-none focus:border-indigo-500 focus:bg-white"
+                  className="w-full px-2.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:border-indigo-500 focus:bg-white"
                 >
                   {brands.map((b, idx) => (
                     <option key={`pos-brand-${b}-${idx}`} value={b}>{b}</option>
@@ -566,13 +606,13 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
               </div>
 
               <div>
-                <label className="text-[10px] uppercase font-bold text-slate-400 block mb-1">
+                <label className="text-[10px] uppercase font-bold text-slate-500 block mb-1 tracking-wider">
                   Tipo de Calzado
                 </label>
                 <select
                   value={selectedType}
                   onChange={(e) => setSelectedType(e.target.value)}
-                  className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 focus:outline-none focus:border-indigo-500 focus:bg-white"
+                  className="w-full px-2.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:border-indigo-500 focus:bg-white"
                 >
                   {shoeTypes.map((t, idx) => (
                     <option key={`pos-type-${t}-${idx}`} value={t}>{t}</option>
@@ -697,6 +737,8 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
         {/* Facturación & Checkout Panel */}
         <div
           className={`space-y-4 transition-all duration-200 ${
+            mobileActiveView === 'catalog' ? 'hidden lg:block' : 'block'
+          } ${
             cart.length === 0
               ? 'lg:col-span-5 xl:col-span-4'
               : billingViewMode === 'fullscreen'
@@ -734,33 +776,43 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
               {/* Top Toolbar: Title, View Switcher & Action buttons */}
               <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-slate-100">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-xs shrink-0">
-                    <Receipt className="w-5 h-5" />
+                  <div className="w-11 h-11 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-sm shrink-0">
+                    <Receipt className="w-6 h-6" />
                   </div>
                   <div>
                     <div className="flex items-center gap-2">
-                      <h2 className="font-black text-base sm:text-lg text-slate-900 tracking-tight">
+                      <h2 className="font-black text-lg sm:text-xl text-slate-900 tracking-tight">
                         Mesa de Facturación & Cobro
                       </h2>
-                      <span className="px-2.5 py-0.5 rounded-full bg-indigo-50 border border-indigo-200 text-indigo-700 font-bold text-xs">
+                      <span className="px-3 py-1 rounded-full bg-indigo-100 border border-indigo-300 text-indigo-800 font-black text-xs sm:text-sm">
                         {cart.reduce((s, i) => s + i.quantity, 0)} {cart.reduce((s, i) => s + i.quantity, 0) === 1 ? 'par' : 'pares'}
                       </span>
                     </div>
-                    <p className="text-[11px] text-slate-500">
-                      MAKD SHOP • Alta Vista II • Tasa Oficial BCV: <span className="font-mono font-bold text-slate-800">{exchangeRate.toFixed(2)} Bs/USD</span>
+                    <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
+                      MAKD SHOP • Alta Vista II • Tasa Oficial BCV: <span className="font-mono font-black text-slate-900">{exchangeRate.toFixed(2)} Bs/USD</span>
                     </p>
                   </div>
                 </div>
 
                 {/* View Switchers & Action buttons */}
                 <div className="flex items-center gap-2">
-                  {/* View Mode Switcher Pills */}
-                  <div className="hidden sm:flex items-center bg-slate-100 p-0.5 rounded-lg border border-slate-200 text-xs">
+                  {/* Mobile Back to Catalog Button */}
+                  <button
+                    type="button"
+                    onClick={() => setMobileActiveView('catalog')}
+                    className="lg:hidden text-xs sm:text-sm text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-3 py-2 rounded-xl font-bold flex items-center gap-1.5 transition cursor-pointer"
+                  >
+                    <ArrowLeft className="w-4 h-4" />
+                    <span>+ Agregar Calzados</span>
+                  </button>
+
+                  {/* View Mode Switcher Pills on Desktop */}
+                  <div className="hidden sm:flex items-center bg-slate-100 p-0.5 rounded-xl border border-slate-200 text-xs">
                     <button
                       type="button"
                       onClick={() => setBillingViewMode('expanded')}
-                      title="Vista Principal Ampliada (8 columnas)"
-                      className={`px-2.5 py-1 rounded-md font-semibold flex items-center gap-1 transition cursor-pointer ${
+                      title="Vista Principal Ampliada"
+                      className={`px-3 py-1.5 rounded-lg font-bold flex items-center gap-1.5 transition cursor-pointer ${
                         billingViewMode === 'expanded'
                           ? 'bg-white text-indigo-700 shadow-xs'
                           : 'text-slate-600 hover:text-slate-900'
@@ -773,7 +825,7 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
                       type="button"
                       onClick={() => setBillingViewMode('split')}
                       title="Vista Dividida (50/50)"
-                      className={`px-2.5 py-1 rounded-md font-semibold flex items-center gap-1 transition cursor-pointer ${
+                      className={`px-3 py-1.5 rounded-lg font-bold flex items-center gap-1.5 transition cursor-pointer ${
                         billingViewMode === 'split'
                           ? 'bg-white text-indigo-700 shadow-xs'
                           : 'text-slate-600 hover:text-slate-900'
@@ -785,8 +837,8 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
                     <button
                       type="button"
                       onClick={() => setBillingViewMode('fullscreen')}
-                      title="Facturación Pantalla Completa (12 columnas)"
-                      className={`px-2.5 py-1 rounded-md font-semibold flex items-center gap-1 transition cursor-pointer ${
+                      title="Facturación Pantalla Completa"
+                      className={`px-3 py-1.5 rounded-lg font-bold flex items-center gap-1.5 transition cursor-pointer ${
                         billingViewMode === 'fullscreen'
                           ? 'bg-white text-indigo-700 shadow-xs'
                           : 'text-slate-600 hover:text-slate-900'
@@ -801,10 +853,10 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
                     <button
                       type="button"
                       onClick={() => setBillingViewMode('expanded')}
-                      className="text-xs text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-2.5 py-1.5 rounded-lg font-bold flex items-center gap-1 transition cursor-pointer"
+                      className="text-xs text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-3 py-2 rounded-xl font-bold flex items-center gap-1.5 transition cursor-pointer"
                       title="Ver catálogo para agregar más calzados"
                     >
-                      <Plus className="w-3.5 h-3.5" />
+                      <Plus className="w-4 h-4" />
                       <span>+ Agregar Calzado</span>
                     </button>
                   )}
@@ -813,10 +865,10 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
                     <button
                       type="button"
                       onClick={onNavigateToLayaways}
-                      className="text-xs text-amber-800 hover:text-amber-900 bg-amber-50 hover:bg-amber-100 border border-amber-200 px-2.5 py-1.5 rounded-lg font-semibold flex items-center gap-1 transition cursor-pointer"
+                      className="text-xs sm:text-sm text-amber-800 hover:text-amber-900 bg-amber-50 hover:bg-amber-100 border border-amber-200 px-3 py-2 rounded-xl font-bold flex items-center gap-1.5 transition cursor-pointer"
                       title="Ver o gestionar apartados de clientes"
                     >
-                      <BookmarkCheck className="w-3.5 h-3.5 text-amber-600" />
+                      <BookmarkCheck className="w-4 h-4 text-amber-600" />
                       <span className="hidden sm:inline">Apartados</span>
                     </button>
                   )}
@@ -824,10 +876,10 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
                   <button
                     type="button"
                     onClick={handleClearCart}
-                    className="text-xs text-rose-600 hover:text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 px-2.5 py-1.5 rounded-lg flex items-center gap-1 font-semibold transition cursor-pointer"
+                    className="text-xs sm:text-sm text-rose-700 hover:text-rose-800 bg-rose-50 hover:bg-rose-100 border border-rose-200 px-3 py-2 rounded-xl flex items-center gap-1.5 font-bold transition cursor-pointer"
                     title="Vaciar carrito actual"
                   >
-                    <Trash2 className="w-3.5 h-3.5" />
+                    <Trash2 className="w-4 h-4" />
                     <span>Vaciar</span>
                   </button>
                 </div>
@@ -843,16 +895,16 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
                 {/* Left Section: Calzados a Facturar & Descuentos */}
                 <div className={`${billingViewMode === 'split' ? 'space-y-4' : 'xl:col-span-7 space-y-4'}`}>
                   
-                  <div className="flex items-center justify-between text-xs font-bold text-slate-700 uppercase tracking-wider pb-1 border-b border-slate-100">
-                    <span className="flex items-center gap-1.5">
+                  <div className="flex items-center justify-between text-xs sm:text-sm font-black text-slate-800 uppercase tracking-wider pb-1.5 border-b border-slate-200">
+                    <span className="flex items-center gap-2">
                       <ShoppingBag className="w-4 h-4 text-indigo-600" />
                       <span>Calzados a Facturar ({cart.length})</span>
                     </span>
-                    <span className="text-slate-400 font-normal">Precios en USD y Bs</span>
+                    <span className="text-slate-500 font-semibold lowercase">precios en USD y Bs</span>
                   </div>
 
                   {/* Cart Items List */}
-                  <div className="max-h-[500px] overflow-y-auto divide-y divide-slate-100 pr-1">
+                  <div className="max-h-[520px] overflow-y-auto divide-y divide-slate-100 pr-1">
                     {cart.map((item, idx) => {
                       const unitPrice = item.customPrice !== undefined ? item.customPrice : item.product.precio;
                       const unitCost = item.customCost !== undefined ? item.customCost : item.product.costo;
@@ -862,12 +914,12 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
                       const marginPercent = unitPrice > 0 ? ((unitPrice - unitCost) / unitPrice) * 100 : 0;
 
                       return (
-                        <div key={item.product.id ? `cart-item-${item.product.id}-${idx}` : `cart-item-${idx}`} className="py-3.5 space-y-2.5">
+                        <div key={item.product.id ? `cart-item-${item.product.id}-${idx}` : `cart-item-${idx}`} className="py-4 space-y-3">
                           <div className="flex items-start sm:items-center justify-between gap-3">
                             
                             {/* Product Thumbnail & Details */}
-                            <div className="flex items-center gap-3 min-w-0 flex-1">
-                              <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl overflow-hidden bg-slate-100 border border-slate-200 shrink-0 flex items-center justify-center">
+                            <div className="flex items-center gap-3.5 min-w-0 flex-1">
+                              <div className="w-18 h-18 sm:w-22 sm:h-22 rounded-2xl overflow-hidden bg-slate-100 border border-slate-200 shrink-0 flex items-center justify-center shadow-2xs">
                                 {item.product.imagen ? (
                                   <img
                                     src={item.product.imagen}
@@ -876,51 +928,51 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
                                     referrerPolicy="no-referrer"
                                   />
                                 ) : (
-                                  <span className="text-2xl">👟</span>
+                                  <span className="text-3xl">👟</span>
                                 )}
                               </div>
 
-                              <div className="min-w-0 flex-1">
+                              <div className="min-w-0 flex-1 space-y-1">
                                 <div className="flex items-center gap-2">
-                                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                                  <span className="text-xs font-black text-indigo-600 uppercase tracking-wider">
                                     {item.product.marca}
                                   </span>
                                   {item.product.es_original !== undefined && (
-                                    <span className={`px-1.5 py-0.2 rounded text-[9px] font-bold uppercase ${
+                                    <span className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider ${
                                       item.product.es_original
-                                        ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                                        : 'bg-indigo-100 text-indigo-800 border border-indigo-200'
+                                        ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                                        : 'bg-indigo-100 text-indigo-800 border border-indigo-300'
                                     }`}>
                                       {item.product.es_original ? 'Original' : 'Réplica'}
                                     </span>
                                   )}
                                   {(isPriceModified || isCostModified) && (
-                                    <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
+                                    <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
                                       Modificado
                                     </span>
                                   )}
                                 </div>
 
-                                <h4 className="font-bold text-sm sm:text-base text-slate-900 truncate mt-0.5">
+                                <h4 className="font-black text-base sm:text-lg text-slate-900 leading-snug line-clamp-2">
                                   {item.product.nombre}
                                 </h4>
 
-                                <div className="flex flex-wrap items-center gap-2 mt-1 text-xs text-slate-500">
-                                  <span className="px-2 py-0.5 rounded-md font-bold bg-indigo-50 border border-indigo-200 text-indigo-700 text-xs">
+                                <div className="flex flex-wrap items-center gap-2.5 pt-0.5 text-xs sm:text-sm">
+                                  <span className="px-2.5 py-1 rounded-lg font-black bg-indigo-50 border border-indigo-200 text-indigo-800 text-xs sm:text-sm shadow-2xs">
                                     Talla: {item.product.talla}
                                   </span>
-                                  <span className="font-mono text-slate-700 font-bold">
+                                  <span className="font-mono text-slate-900 font-black text-sm sm:text-base">
                                     ${unitPrice.toFixed(2)} c/u
                                   </span>
-                                  <span className="text-[11px] text-slate-400 font-mono">
-                                    (~{(unitPrice * exchangeRate).toFixed(2)} Bs)
+                                  <span className="text-xs sm:text-sm text-slate-500 font-mono font-semibold">
+                                    (~{(unitPrice * effectiveExchangeRate).toFixed(2)} Bs)
                                   </span>
                                   <button
                                     type="button"
                                     onClick={() => setEditingPricingId(isEditing ? null : item.product.id)}
-                                    className="text-[11px] text-indigo-600 hover:text-indigo-800 font-semibold underline flex items-center gap-0.5 cursor-pointer ml-1"
+                                    className="text-xs font-bold text-indigo-600 hover:text-indigo-800 underline flex items-center gap-1 cursor-pointer ml-1"
                                   >
-                                    <Edit3 className="w-3 h-3" />
+                                    <Edit3 className="w-3.5 h-3.5" />
                                     <span>{isEditing ? 'Cerrar' : 'Ajustar precio/costo'}</span>
                                   </button>
                                 </div>
@@ -930,43 +982,44 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
                             {/* Quantity Controls & Line Total */}
                             <div className="flex flex-col sm:flex-row items-end sm:items-center gap-3 shrink-0">
                               {/* Quantity Stepper */}
-                              <div className="flex items-center gap-1 bg-slate-50 px-2 py-1 rounded-xl border border-slate-200 shadow-2xs">
+                              <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-2xl border border-slate-200 shadow-2xs">
                                 <button
                                   type="button"
                                   onClick={() => handleUpdateQuantity(item.product.id, -1)}
-                                  className="w-7 h-7 flex items-center justify-center text-slate-600 hover:text-slate-900 hover:bg-slate-200 rounded-lg cursor-pointer transition"
+                                  className="w-9 h-9 sm:w-10 sm:h-10 flex items-center justify-center bg-white hover:bg-slate-200 text-slate-800 rounded-xl shadow-2xs cursor-pointer transition font-bold"
                                   title="Disminuir"
                                 >
-                                  <Minus className="w-3.5 h-3.5" />
+                                  <Minus className="w-4 h-4" />
                                 </button>
-                                <span className="font-mono text-sm font-bold text-slate-900 w-7 text-center">
+                                <span className="font-mono text-base sm:text-lg font-black text-slate-900 w-8 text-center">
                                   {item.quantity}
                                 </span>
                                 <button
                                   type="button"
                                   onClick={() => handleUpdateQuantity(item.product.id, 1)}
                                   disabled={item.quantity >= item.product.stock}
-                                  className="w-7 h-7 flex items-center justify-center text-slate-600 hover:text-slate-900 hover:bg-slate-200 rounded-lg disabled:opacity-30 cursor-pointer transition"
+                                  className="w-9 h-9 sm:w-10 sm:h-10 flex items-center justify-center bg-white hover:bg-slate-200 text-slate-800 rounded-xl shadow-2xs disabled:opacity-30 cursor-pointer transition font-bold"
                                   title="Aumentar"
                                 >
-                                  <Plus className="w-3.5 h-3.5" />
+                                  <Plus className="w-4 h-4" />
                                 </button>
                               </div>
 
                               {/* Line Total */}
-                              <div className="text-right min-w-[70px]">
-                                <div className="text-sm sm:text-base font-black text-slate-900 font-mono">
+                              <div className="text-right min-w-[85px]">
+                                <div className="text-lg sm:text-2xl font-black text-indigo-700 font-mono tracking-tight">
                                   ${(unitPrice * item.quantity).toFixed(2)}
                                 </div>
-                                <div className="text-[10px] text-slate-400 font-mono">
-                                  {((unitPrice * item.quantity) * exchangeRate).toFixed(2)} Bs
+                                <div className="text-xs sm:text-sm font-bold text-slate-600 font-mono">
+                                  {((unitPrice * item.quantity) * effectiveExchangeRate).toFixed(2)} Bs
                                 </div>
                                 <button
                                   type="button"
                                   onClick={() => handleRemoveFromCart(item.product.id)}
-                                  className="text-[10px] text-slate-400 hover:text-rose-600 cursor-pointer mt-0.5 transition block text-right w-full"
+                                  className="mt-1 px-2 py-0.5 rounded-md bg-rose-50 hover:bg-rose-100 text-rose-600 font-bold text-xs cursor-pointer transition inline-flex items-center gap-1 ml-auto"
                                 >
-                                  Quitar
+                                  <Trash2 className="w-3 h-3" />
+                                  <span>Quitar</span>
                                 </button>
                               </div>
                             </div>
@@ -1070,9 +1123,9 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
                   </div>
 
                   {/* Discounts & IVA Box */}
-                  <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-3">
-                    <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-                      <span className="text-slate-700 font-bold flex items-center gap-1.5">
+                  <div className="p-4 sm:p-5 bg-slate-50 rounded-2xl border border-slate-200 space-y-3.5 shadow-2xs">
+                    <div className="flex flex-wrap items-center justify-between gap-2.5 text-xs sm:text-sm">
+                      <span className="text-slate-800 font-black flex items-center gap-1.5 uppercase tracking-wide">
                         <Percent className="w-4 h-4 text-indigo-600" /> Descuento Comercial:
                       </span>
                       <div className="flex items-center gap-1.5">
@@ -1094,7 +1147,7 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
                                 setDiscountValue(d.val);
                               }
                             }}
-                            className={`px-2.5 py-1 rounded-lg text-xs font-bold cursor-pointer transition ${
+                            className={`px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-xl text-xs sm:text-sm font-black cursor-pointer transition ${
                               (d.val === 0 && discountType === 'none') || (discountType === 'percent' && discountValue === d.val)
                                 ? 'bg-indigo-600 text-white shadow-2xs'
                                 : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
@@ -1107,18 +1160,18 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
                     </div>
 
                     {/* IVA (16% SENIAT) Switch */}
-                    <div className="flex items-center justify-between pt-2 border-t border-slate-200 text-xs">
+                    <div className="flex items-center justify-between pt-2.5 border-t border-slate-200 text-xs sm:text-sm">
                       <div>
-                        <span className="text-slate-700 font-bold block">IVA (16% SENIAT):</span>
-                        <span className="text-[10px] text-slate-400">Impuesto según normativa fiscal</span>
+                        <span className="text-slate-800 font-black block">IVA (16% SENIAT):</span>
+                        <span className="text-xs text-slate-500">Impuesto según normativa fiscal</span>
                       </div>
                       <button
                         type="button"
                         onClick={() => setApplyIva(!applyIva)}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-bold cursor-pointer transition ${
+                        className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-black cursor-pointer transition ${
                           applyIva
                             ? 'bg-indigo-600 text-white shadow-2xs'
-                            : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
+                            : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
                         }`}
                       >
                         {applyIva ? 'IVA Aplicado (+16%)' : 'Exento de IVA'}
@@ -1129,37 +1182,37 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
                 </div>
 
                 {/* Right Section: Customer Info (Razón Social en una sola línea), Payment & Big Totals */}
-                <div className={`${billingViewMode === 'split' ? 'space-y-4 pt-4 border-t border-slate-200' : 'xl:col-span-5 space-y-4 bg-slate-50/70 p-4 sm:p-5 rounded-2xl border border-slate-200'}`}>
+                <div className={`${billingViewMode === 'split' ? 'space-y-5 pt-4 border-t border-slate-200' : 'xl:col-span-5 space-y-5 bg-slate-50/70 p-4 sm:p-6 rounded-3xl border border-slate-200'}`}>
                   
                   {/* Customer Information (Razón Social en una sola línea) */}
-                  <div className="space-y-3">
-                    <div className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5 pb-1 border-b border-slate-200">
+                  <div className="space-y-3.5">
+                    <div className="text-xs sm:text-sm font-black uppercase tracking-wider text-slate-800 flex items-center gap-2 pb-1.5 border-b border-slate-200">
                       <User className="w-4 h-4 text-indigo-600" />
                       <span>Datos del Comprador / Facturación</span>
                     </div>
 
                     {/* Razón Social / Nombre en UNA SOLA LÍNEA COMPLETA */}
                     <div className="w-full">
-                      <label className="text-[11px] font-bold text-slate-700 block mb-1">
+                      <label className="text-xs sm:text-sm font-black text-slate-800 uppercase tracking-wide block mb-1.5">
                         Razón Social / Nombre del Cliente
                       </label>
                       <div className="relative">
-                        <User className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                        <User className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
                         <input
                           type="text"
                           id="pos-customer-razon-social"
                           value={customerName}
                           onChange={(e) => setCustomerName(e.target.value)}
                           placeholder="Razón Social o Nombre Completo (ej. Inversiones Calzados C.A.)"
-                          className="w-full pl-9 pr-3 py-2 bg-white border border-slate-300 rounded-lg text-xs font-semibold text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+                          className="w-full pl-10 pr-3.5 py-2.5 sm:py-3 bg-white border border-slate-300 rounded-xl text-sm sm:text-base font-bold text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-600 focus:ring-2 focus:ring-indigo-500/20 shadow-2xs"
                         />
                       </div>
                     </div>
 
                     {/* Cédula/RIF y WhatsApp/Teléfono en 2 columnas */}
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                       <div>
-                        <label className="text-[10px] font-bold text-slate-600 block mb-1">
+                        <label className="text-xs font-black text-slate-700 uppercase tracking-wide block mb-1">
                           Cédula / RIF
                         </label>
                         <input
@@ -1168,11 +1221,11 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
                           value={customerRif}
                           onChange={(e) => setCustomerRif(e.target.value)}
                           placeholder="J-12345678-9 / V-23..."
-                          className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-500 font-mono"
+                          className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded-xl text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-600 focus:ring-2 focus:ring-indigo-500/20 font-mono font-bold shadow-2xs"
                         />
                       </div>
                       <div>
-                        <label className="text-[10px] font-bold text-slate-600 block mb-1">
+                        <label className="text-xs font-black text-slate-700 uppercase tracking-wide block mb-1">
                           WhatsApp / Teléfono
                         </label>
                         <input
@@ -1181,23 +1234,23 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
                           value={customerPhone}
                           onChange={(e) => setCustomerPhone(e.target.value)}
                           placeholder="0414-1234567"
-                          className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-500 font-mono"
+                          className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded-xl text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-600 focus:ring-2 focus:ring-indigo-500/20 font-mono font-bold shadow-2xs"
                         />
                       </div>
                     </div>
 
                     {/* Fecha de Emisión Factura */}
-                    <div className="pt-2 border-t border-slate-200">
-                      <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-slate-600 mb-1">
-                        <span className="flex items-center gap-1">
-                          <Calendar className="w-3.5 h-3.5 text-indigo-600" /> Fecha de Emisión Factura
+                    <div className="pt-2.5 border-t border-slate-200">
+                      <div className="flex items-center justify-between text-xs font-black uppercase tracking-wider text-slate-700 mb-1.5">
+                        <span className="flex items-center gap-1.5">
+                          <Calendar className="w-4 h-4 text-indigo-600" /> Fecha de Emisión Factura
                         </span>
                         {invoiceDate !== new Date().toISOString().split('T')[0] ? (
-                          <span className="text-amber-800 bg-amber-50 border border-amber-200 font-bold px-1.5 py-0.5 rounded text-[9px] flex items-center gap-1">
+                          <span className="text-amber-800 bg-amber-50 border border-amber-200 font-black px-2 py-0.5 rounded-md text-[10px] flex items-center gap-1">
                             ⚠️ Fecha anterior
                           </span>
                         ) : (
-                          <span className="text-emerald-700 bg-emerald-50 font-bold px-1.5 py-0.5 rounded text-[9px]">
+                          <span className="text-emerald-700 bg-emerald-50 font-black px-2 py-0.5 rounded-md text-[10px]">
                             Hoy
                           </span>
                         )}
@@ -1215,7 +1268,7 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
                               setCustomSaleRate(getExchangeRateForDate(newDate).toString());
                             }
                           }}
-                          className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs text-slate-900 focus:outline-none focus:border-indigo-500 font-mono cursor-pointer"
+                          className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded-xl text-sm text-slate-900 focus:outline-none focus:border-indigo-600 focus:ring-2 focus:ring-indigo-500/20 font-mono font-bold cursor-pointer shadow-2xs"
                         />
                         {invoiceDate !== new Date().toISOString().split('T')[0] && (
                           <button
@@ -1227,7 +1280,7 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
                                 setCustomSaleRate(getExchangeRateForDate(today).toString());
                               }
                             }}
-                            className="text-[10px] text-indigo-600 hover:text-indigo-800 font-semibold whitespace-nowrap underline cursor-pointer"
+                            className="text-xs text-indigo-600 hover:text-indigo-800 font-bold whitespace-nowrap underline cursor-pointer"
                           >
                             Hoy
                           </button>
@@ -1235,14 +1288,14 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
                       </div>
 
                       {/* Tasa aplicada a esta venta */}
-                      <div className="mt-2 p-2 bg-indigo-50/70 rounded-lg border border-indigo-100 flex items-center justify-between gap-2">
-                        <div className="text-[11px] text-slate-700 min-w-0">
-                          <span className="font-semibold block truncate">
+                      <div className="mt-2.5 p-3 bg-indigo-50/80 rounded-xl border border-indigo-100 flex items-center justify-between gap-2.5">
+                        <div className="text-xs sm:text-sm text-slate-800 min-w-0">
+                          <span className="font-black block truncate">
                             Tasa de la Venta ({invoiceDate !== todayIso ? `Día ${invoiceDate}` : 'Hoy'}):
                           </span>
-                          <span className="text-[10px] text-slate-500">
+                          <span className="text-xs text-slate-500">
                             {invoiceDate !== todayIso
-                              ? 'Fecha anterior: Bs calculados con la tasa de esa fecha'
+                              ? 'Bs calculados con la tasa de esa fecha'
                               : 'Tasa oficial del día'}
                           </span>
                         </div>
@@ -1255,9 +1308,9 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
                               setCustomSaleRate(e.target.value);
                               setIsCustomSaleRate(true);
                             }}
-                            className="w-20 px-1.5 py-1 text-xs font-mono font-bold bg-white border border-slate-300 rounded text-right focus:border-indigo-500"
+                            className="w-24 px-2 py-1.5 text-sm font-mono font-black bg-white border border-slate-300 rounded-lg text-right focus:border-indigo-600 shadow-2xs"
                           />
-                          <span className="text-[10px] font-mono text-slate-500 font-bold">Bs/$</span>
+                          <span className="text-xs font-mono text-slate-600 font-bold">Bs/$</span>
                           {isCustomSaleRate && (
                             <button
                               type="button"
@@ -1265,7 +1318,7 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
                                 setIsCustomSaleRate(false);
                                 setCustomSaleRate('');
                               }}
-                              className="text-[10px] text-indigo-600 hover:text-indigo-800 underline cursor-pointer"
+                              className="text-xs text-indigo-600 hover:text-indigo-800 underline font-bold cursor-pointer"
                             >
                               Reset
                             </button>
@@ -1276,39 +1329,39 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
                   </div>
 
                   {/* Payment Method Selector */}
-                  <div className="pt-2 border-t border-slate-200 space-y-2">
+                  <div className="pt-3 border-t border-slate-200 space-y-2.5">
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-slate-800">Método de Pago</span>
+                      <span className="text-xs sm:text-sm font-black text-slate-800 uppercase tracking-wide">Método de Pago</span>
                       <button
                         type="button"
                         onClick={() => setIsMixedPaymentOpen(!isMixedPaymentOpen)}
-                        className="text-xs text-indigo-600 hover:text-indigo-700 font-semibold underline cursor-pointer"
+                        className="text-xs sm:text-sm text-indigo-600 hover:text-indigo-700 font-bold underline cursor-pointer"
                       >
                         {isMixedPaymentOpen ? 'Volver a Pago Único' : 'Dividir Pago Mixto'}
                       </button>
                     </div>
 
                     {!isMixedPaymentOpen ? (
-                      <div className="grid grid-cols-2 gap-1.5">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                         {accounts.map((acc, idx) => (
                           <button
                             key={acc.id ? `acc-${acc.id}-${idx}` : `acc-${acc.nombre}-${idx}`}
                             type="button"
                             onClick={() => setSinglePaymentAccount(acc.nombre)}
-                            className={`p-2 rounded-lg text-left border transition text-xs flex items-center justify-between cursor-pointer ${
+                            className={`p-3 rounded-xl text-left border transition text-xs sm:text-sm flex items-center justify-between cursor-pointer ${
                               singlePaymentAccount === acc.nombre
-                                ? 'bg-indigo-50 border-indigo-500 text-indigo-700 font-bold ring-1 ring-indigo-500/20'
-                                : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                                ? 'bg-indigo-50 border-indigo-600 text-indigo-900 font-black ring-2 ring-indigo-500/20 shadow-2xs'
+                                : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50 font-bold'
                             }`}
                           >
                             <span className="truncate">{acc.nombre}</span>
-                            <span className="text-[10px] text-slate-400 font-mono shrink-0 ml-1">({acc.moneda})</span>
+                            <span className="text-xs text-slate-400 font-mono shrink-0 ml-1.5 font-bold">({acc.moneda})</span>
                           </button>
                         ))}
                       </div>
                     ) : (
-                      <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-2 text-xs">
-                        <div className="text-[11px] text-slate-700 font-bold">
+                      <div className="bg-white p-3.5 rounded-2xl border border-slate-200 space-y-2.5 text-xs sm:text-sm">
+                        <div className="text-xs sm:text-sm text-slate-800 font-black">
                           Cobro Multimoneda Combinado:
                         </div>
 
@@ -1316,21 +1369,21 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
                         {mixedPayments.map((pay, idx) => (
                           <div
                             key={pay.id ? `mixed-pay-${pay.id}-${idx}` : `mixed-pay-${idx}`}
-                            className="flex items-center justify-between p-2 bg-slate-50 rounded-lg border border-slate-200 text-xs"
+                            className="flex items-center justify-between p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-xs sm:text-sm"
                           >
                             <div>
-                              <span className="font-semibold text-slate-900">{pay.cuenta}:</span>{' '}
-                              <span className="font-mono text-indigo-600 font-bold">
+                              <span className="font-bold text-slate-900">{pay.cuenta}:</span>{' '}
+                              <span className="font-mono text-indigo-700 font-black">
                                 {pay.moneda === 'Bs' ? `${pay.monto.toFixed(2)} Bs` : `$${pay.monto.toFixed(2)}`}
                               </span>
-                              <span className="text-[10px] text-slate-400 ml-1">
+                              <span className="text-xs text-slate-500 ml-1.5">
                                 (~${pay.monto_equivalente_usd.toFixed(2)})
                               </span>
                             </div>
                             <button
                               type="button"
                               onClick={() => handleRemoveMixedPayment(pay.id)}
-                              className="text-rose-600 hover:text-rose-700 text-xs font-bold cursor-pointer"
+                              className="text-rose-600 hover:text-rose-700 text-xs font-black cursor-pointer px-2 py-0.5"
                             >
                               Quitar
                             </button>
@@ -1338,10 +1391,10 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
                         ))}
 
                         {/* Add payment line */}
-                        <div className="grid grid-cols-3 gap-1.5 pt-1">
+                        <div className="grid grid-cols-3 gap-2 pt-1">
                           <select
                             id="mixed-pay-account"
-                            className="col-span-1 px-2 py-1 bg-white border border-slate-200 rounded text-xs text-slate-800"
+                            className="col-span-1 px-2.5 py-2 bg-white border border-slate-200 rounded-xl text-xs sm:text-sm text-slate-800 font-semibold"
                           >
                             {accounts.map((a, idx) => (
                               <option key={a.id ? `opt-acc-${a.id}-${idx}` : `opt-acc-${a.nombre}-${idx}`} value={a.nombre}>
@@ -1354,7 +1407,7 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
                             type="number"
                             step="0.01"
                             placeholder="Monto"
-                            className="col-span-1 px-2 py-1 bg-white border border-slate-200 rounded text-xs text-slate-900 font-mono"
+                            className="col-span-1 px-2.5 py-2 bg-white border border-slate-200 rounded-xl text-xs sm:text-sm text-slate-900 font-mono font-bold"
                           />
                           <button
                             type="button"
@@ -1366,15 +1419,15 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
                                 (document.getElementById('mixed-pay-amount') as HTMLInputElement).value = '';
                               }
                             }}
-                            className="col-span-1 px-2 py-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded text-xs cursor-pointer shadow-xs"
+                            className="col-span-1 px-2.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-black rounded-xl text-xs sm:text-sm cursor-pointer shadow-xs"
                           >
                             + Cobrar
                           </button>
                         </div>
 
-                        <div className="pt-2 flex justify-between text-[11px] font-mono border-t border-slate-200">
-                          <span className="text-slate-500">Cubierto: ${totalPaidUsd.toFixed(2)}</span>
-                          <span className={remainingToPayUsd > 0.05 ? 'text-amber-600 font-bold' : 'text-emerald-600 font-bold'}>
+                        <div className="pt-2 flex justify-between text-xs sm:text-sm font-mono border-t border-slate-200">
+                          <span className="text-slate-600 font-bold">Cubierto: ${totalPaidUsd.toFixed(2)}</span>
+                          <span className={remainingToPayUsd > 0.05 ? 'text-amber-600 font-black' : 'text-emerald-600 font-black'}>
                             Restante: ${remainingToPayUsd.toFixed(2)}
                           </span>
                         </div>
@@ -1383,46 +1436,46 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
 
                     {/* Single Payment Cashea Warning */}
                     {!isMixedPaymentOpen && singlePaymentAccount === 'Cashea' && (
-                      <div className="p-3 bg-amber-50 border border-amber-300 rounded-xl space-y-1.5 text-xs text-amber-900">
-                        <div className="flex items-center gap-1.5 font-bold">
+                      <div className="p-3.5 bg-amber-50 border border-amber-300 rounded-2xl space-y-1.5 text-xs text-amber-900">
+                        <div className="flex items-center gap-2 font-black text-sm">
                           <Clock className="w-4 h-4 text-amber-600" />
                           <span>Venta 100% Financiada con Cashea</span>
                         </div>
-                        <p className="text-[11px] text-amber-800 leading-relaxed">
+                        <p className="text-xs text-amber-800 leading-relaxed">
                           El monto de <strong>${totalUsd.toFixed(2)} USD</strong> ({totalBs.toLocaleString('es-VE', { minimumFractionDigits: 2 })} Bs) no sumará en positivo a tu caja hoy; quedará como <strong>pendiente por conciliar en banco</strong> hasta que Cashea liquide los fondos.
                         </p>
                       </div>
                     )}
 
                     {/* Asistente Plan Cashea: Inicial (Punto/Pago Móvil) + Saldo Cashea */}
-                    <div className="bg-amber-50/70 border border-amber-200 p-3 rounded-xl space-y-2">
+                    <div className="bg-amber-50/70 border border-amber-200 p-3.5 rounded-2xl space-y-2">
                       <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-1.5">
-                          <span className="px-1.5 py-0.5 rounded bg-amber-500 text-white font-black text-[10px] uppercase">
+                        <div className="flex items-center gap-2">
+                          <span className="px-2 py-0.5 rounded-md bg-amber-500 text-white font-black text-xs uppercase">
                             Cashea
                           </span>
-                          <span className="text-xs font-bold text-slate-800">
+                          <span className="text-xs sm:text-sm font-black text-slate-800">
                             ¿Cobro con Inicial + Cuotas?
                           </span>
                         </div>
                         <button
                           type="button"
                           onClick={() => setIsCasheaSplitOpen(!isCasheaSplitOpen)}
-                          className="text-xs text-amber-800 hover:text-amber-950 font-bold underline cursor-pointer"
+                          className="text-xs sm:text-sm text-amber-800 hover:text-amber-950 font-black underline cursor-pointer"
                         >
                           {isCasheaSplitOpen ? 'Cerrar' : 'Configurar Inicial'}
                         </button>
                       </div>
 
                       {isCasheaSplitOpen && (
-                        <div className="pt-2 border-t border-amber-200/80 space-y-2.5">
-                          <p className="text-[11px] text-slate-600">
+                        <div className="pt-2.5 border-t border-amber-200/80 space-y-2.5">
+                          <p className="text-xs text-slate-600">
                             Divide automáticamente la venta para que la <strong>Inicial entre en positivo a tu caja hoy</strong> y el saldo quede para conciliar en banco.
                           </p>
 
                           {/* Selector Porcentaje Inicial */}
                           <div>
-                            <label className="text-[10px] font-bold text-slate-700 block mb-1">
+                            <label className="text-xs font-black text-slate-700 block mb-1">
                               Porcentaje de Inicial a cobrar hoy:
                             </label>
                             <div className="grid grid-cols-4 gap-1.5">
@@ -1431,7 +1484,7 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
                                   key={pct}
                                   type="button"
                                   onClick={() => setCasheaDownPercent(pct)}
-                                  className={`py-1.5 rounded-lg text-xs font-bold border transition cursor-pointer ${
+                                  className={`py-2 rounded-xl text-xs sm:text-sm font-black border transition cursor-pointer ${
                                     casheaDownPercent === pct
                                       ? 'bg-amber-500 text-white border-amber-600 shadow-2xs'
                                       : 'bg-white text-slate-700 border-slate-200 hover:bg-amber-100/50'
@@ -1447,7 +1500,7 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
                                   max="99"
                                   value={casheaDownPercent}
                                   onChange={(e) => setCasheaDownPercent(Math.min(99, Math.max(1, Number(e.target.value) || 0)))}
-                                  className="w-full py-1.5 px-2 bg-white border border-slate-300 rounded-lg text-xs font-bold text-center text-slate-800"
+                                  className="w-full py-2 px-2 bg-white border border-slate-300 rounded-xl text-xs sm:text-sm font-black text-center text-slate-800"
                                   placeholder="%"
                                 />
                               </div>
@@ -1456,13 +1509,13 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
 
                           {/* Cuenta para recibir la inicial */}
                           <div>
-                            <label className="text-[10px] font-bold text-slate-700 block mb-1">
+                            <label className="text-xs font-black text-slate-700 block mb-1">
                               Método para cobrar la inicial (entra en POSITIVO hoy):
                             </label>
                             <select
                               value={casheaDownAccount}
                               onChange={(e) => setCasheaDownAccount(e.target.value)}
-                              className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-semibold text-slate-800"
+                              className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs sm:text-sm font-bold text-slate-800"
                             >
                               {accounts
                                 .filter((a) => !a.nombre.toLowerCase().includes('cashea'))
@@ -1475,17 +1528,17 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
                           </div>
 
                           {/* Previsualización en vivo de la división */}
-                          <div className="p-2.5 bg-white rounded-lg border border-amber-200 text-xs space-y-1 font-mono">
-                            <div className="flex justify-between text-emerald-700 font-bold">
+                          <div className="p-3 bg-white rounded-xl border border-amber-200 text-xs sm:text-sm space-y-1.5 font-mono">
+                            <div className="flex justify-between text-emerald-700 font-black">
                               <span>🟢 Inicial hoy ({casheaDownPercent}%):</span>
                               <span>
                                 ${((totalUsd * casheaDownPercent) / 100).toFixed(2)} USD
-                                <span className="text-[10px] text-slate-500 ml-1">
-                                  (~{(((totalUsd * casheaDownPercent) / 100) * exchangeRate).toFixed(2)} Bs)
+                                <span className="text-xs text-slate-500 ml-1.5">
+                                  (~{(((totalUsd * casheaDownPercent) / 100) * effectiveExchangeRate).toFixed(2)} Bs)
                                 </span>
                               </span>
                             </div>
-                            <div className="flex justify-between text-amber-700 font-bold">
+                            <div className="flex justify-between text-amber-700 font-black">
                               <span>⏳ Saldo Cashea ({100 - casheaDownPercent}%):</span>
                               <span>
                                 ${(totalUsd - (totalUsd * casheaDownPercent) / 100).toFixed(2)} USD (Por conciliar)
@@ -1496,9 +1549,9 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
                           <button
                             type="button"
                             onClick={handleApplyCasheaPlan}
-                            className="w-full py-2 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-lg text-xs shadow-2xs transition cursor-pointer flex items-center justify-center gap-1.5"
+                            className="w-full py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-black rounded-xl text-xs sm:text-sm shadow-2xs transition cursor-pointer flex items-center justify-center gap-1.5"
                           >
-                            <Check className="w-3.5 h-3.5" />
+                            <Check className="w-4 h-4" />
                             <span>Aplicar División Cashea al Cobro</span>
                           </button>
                         </div>
@@ -1507,25 +1560,25 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
 
                     {/* BDV Pago Móvil Live Verification Callout */}
                     {((singlePaymentAccount || '').includes('Pago Móvil') || isMixedPaymentOpen) && (
-                      <div className="p-3 bg-red-50/70 border border-red-200 rounded-xl space-y-2">
+                      <div className="p-3.5 bg-red-50/70 border border-red-200 rounded-2xl space-y-2.5">
                         <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-1.5 text-red-700 font-bold text-xs">
-                            <Landmark className="w-3.5 h-3.5" />
+                          <div className="flex items-center gap-2 text-red-700 font-black text-xs sm:text-sm">
+                            <Landmark className="w-4 h-4" />
                             <span>Conciliación BDV en Línea</span>
                           </div>
-                          <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-white text-red-600 border border-red-200">
+                          <span className="text-xs font-mono font-black px-2 py-0.5 rounded bg-white text-red-600 border border-red-200">
                             API 0102
                           </span>
                         </div>
 
                         {bdvVerifiedData ? (
-                          <div className="bg-white p-2.5 rounded-lg border border-emerald-300 text-emerald-900 text-xs space-y-1.5">
+                          <div className="bg-white p-3 rounded-xl border border-emerald-300 text-emerald-900 text-xs sm:text-sm space-y-2">
                             <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-2">
-                                <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                              <div className="flex items-center gap-2.5">
+                                <ShieldCheck className="w-5 h-5 text-emerald-600" />
                                 <div>
-                                  <span className="font-bold block text-[11px]">Pago BDV Verificado</span>
-                                  <span className="text-[10px] text-slate-500 font-mono">
+                                  <span className="font-black block text-sm">Pago BDV Verificado</span>
+                                  <span className="text-xs text-slate-500 font-mono">
                                     Ref: {bdvVerifiedData.referencia} • {bdvVerifiedData.codigo_aprobacion}
                                   </span>
                                 </div>
@@ -1533,39 +1586,39 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
                               <button
                                 type="button"
                                 onClick={() => setShowBdvModal(true)}
-                                className="text-[11px] text-indigo-600 font-bold hover:underline cursor-pointer"
+                                className="text-xs text-indigo-600 font-black hover:underline cursor-pointer"
                               >
                                 Re-verificar
                               </button>
                             </div>
 
-                            <div className="pt-1 border-t border-emerald-100 flex items-center justify-between text-[11px] font-mono">
-                              <span className="text-slate-600">Monto Comprobado:</span>
-                              <span className="font-bold text-emerald-700">
+                            <div className="pt-2 border-t border-emerald-100 flex items-center justify-between text-xs sm:text-sm font-mono">
+                              <span className="text-slate-600 font-bold">Monto Comprobado:</span>
+                              <span className="font-black text-emerald-700 text-sm sm:text-base">
                                 {bdvVerifiedData.monto_bs.toLocaleString('es-VE', { minimumFractionDigits: 2 })} Bs
-                                <span className="text-slate-400 font-normal ml-1">
-                                  (~${(bdvVerifiedData.monto_bs / exchangeRate).toFixed(2)} USD)
+                                <span className="text-slate-500 font-bold ml-1.5">
+                                  (~${(bdvVerifiedData.monto_bs / effectiveExchangeRate).toFixed(2)} USD)
                                 </span>
                               </span>
                             </div>
                           </div>
                         ) : (
-                          <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center justify-between gap-3">
                             <div>
-                              <p className="text-[11px] text-slate-600 font-medium">
+                              <p className="text-xs sm:text-sm text-slate-700 font-bold">
                                 Comprueba en segundos que los Bolívares ingresaron a la cuenta BDV.
                               </p>
-                              <p className="text-[10px] text-slate-400">
-                                Sugerencia: {((isMixedPaymentOpen && remainingToPayUsd > 0.01 ? remainingToPayUsd : totalUsd) * exchangeRate).toFixed(2)} Bs
+                              <p className="text-xs text-slate-500 font-mono font-bold mt-0.5">
+                                Monto Sugerido: {((isMixedPaymentOpen && remainingToPayUsd > 0.01 ? remainingToPayUsd : totalUsd) * effectiveExchangeRate).toFixed(2)} Bs
                               </p>
                             </div>
                             <button
                               type="button"
                               id="open-bdv-verify-btn"
                               onClick={() => setShowBdvModal(true)}
-                              className="px-2.5 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs font-bold flex items-center gap-1.5 shrink-0 shadow-2xs cursor-pointer transition"
+                              className="px-3.5 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs sm:text-sm font-black flex items-center gap-1.5 shrink-0 shadow-2xs cursor-pointer transition"
                             >
-                              <ShieldCheck className="w-3.5 h-3.5" />
+                              <ShieldCheck className="w-4 h-4" />
                               <span>Comprobar</span>
                             </button>
                           </div>
@@ -1574,47 +1627,54 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
                     )}
                   </div>
 
-                  {/* TOTAL A FACTURAR (MUCHO MÁS GRANDE Y VISIBLE) */}
-                  <div className="bg-white p-4 sm:p-5 rounded-2xl border-2 border-indigo-500/30 shadow-xs space-y-2">
-                    <div className="flex justify-between text-xs text-slate-600">
+                  {/* TOTAL A FACTURAR (MUCHO MÁS GRANDE Y VISIBLE - NÚMEROS Y LETRAS GIGANTES) */}
+                  <div className="bg-gradient-to-br from-white via-indigo-50/30 to-indigo-100/40 p-5 sm:p-6 rounded-3xl border-2 border-indigo-600/40 shadow-sm space-y-3.5">
+                    <div className="flex justify-between items-center text-sm sm:text-base text-slate-700 font-bold">
                       <span>Subtotal Calzados:</span>
-                      <span className="font-mono font-bold text-slate-900">${subtotalUsd.toFixed(2)}</span>
+                      <span className="font-mono font-black text-slate-900 text-base sm:text-xl">${subtotalUsd.toFixed(2)}</span>
                     </div>
                     {discountUsd > 0 && (
-                      <div className="flex justify-between text-xs text-emerald-600 font-semibold">
+                      <div className="flex justify-between items-center text-sm sm:text-base text-emerald-700 font-bold">
                         <span>Descuento aplicado:</span>
-                        <span className="font-mono">-${discountUsd.toFixed(2)}</span>
+                        <span className="font-mono font-black text-base sm:text-xl">-${discountUsd.toFixed(2)}</span>
                       </div>
                     )}
                     {applyIva && (
-                      <div className="flex justify-between text-xs text-slate-600">
+                      <div className="flex justify-between items-center text-sm sm:text-base text-slate-700 font-bold">
                         <span>IVA (16% SENIAT):</span>
-                        <span className="font-mono font-bold text-slate-900">+${ivaUsd.toFixed(2)}</span>
+                        <span className="font-mono font-black text-slate-900 text-base sm:text-xl">+${ivaUsd.toFixed(2)}</span>
                       </div>
                     )}
                     
-                    <div className="pt-2.5 border-t border-slate-200 flex justify-between items-baseline">
-                      <span className="text-sm font-black text-slate-900 tracking-tight">TOTAL A FACTURAR:</span>
-                      <div className="text-right">
-                        <div className="text-3xl sm:text-4xl font-black text-indigo-600 font-mono tracking-tight">
+                    <div className="pt-3.5 border-t-2 border-slate-300/80 flex flex-col sm:flex-row sm:items-baseline sm:justify-between gap-1">
+                      <div>
+                        <span className="text-base sm:text-xl font-black text-slate-900 uppercase tracking-tight block">
+                          TOTAL A FACTURAR:
+                        </span>
+                        <span className="text-xs font-mono font-bold text-slate-500">
+                          Tasa Oficial: {effectiveExchangeRate.toFixed(2)} Bs/$
+                        </span>
+                      </div>
+                      <div className="text-left sm:text-right mt-1 sm:mt-0">
+                        <div className="text-4xl sm:text-5xl lg:text-6xl font-black text-indigo-700 font-mono tracking-tight">
                           ${totalUsd.toFixed(2)}
                         </div>
-                        <div className="text-sm sm:text-base text-slate-700 font-mono font-bold mt-0.5">
+                        <div className="text-2xl sm:text-3xl font-black text-slate-900 font-mono mt-1">
                           {totalBs.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Bs
                         </div>
                       </div>
                     </div>
                   </div>
 
-                  {/* Botón Principal de Facturación */}
+                  {/* Botón Principal de Facturación (Letras y botón más grandes y accesibles) */}
                   <button
                     id="complete-sale-btn"
                     onClick={handleFinalizeSale}
                     disabled={cart.length === 0}
-                    className="w-full py-3.5 sm:py-4 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-200 disabled:text-slate-400 text-white font-black text-sm uppercase tracking-wider rounded-xl shadow-md shadow-indigo-600/20 flex items-center justify-center gap-2 transition-all cursor-pointer disabled:cursor-not-allowed"
+                    className="w-full py-4 sm:py-5 bg-indigo-600 hover:bg-indigo-700 active:scale-[0.99] disabled:bg-slate-200 disabled:text-slate-400 text-white font-black text-base sm:text-lg uppercase tracking-wider rounded-2xl shadow-xl shadow-indigo-600/30 flex items-center justify-center gap-2.5 transition-all cursor-pointer disabled:cursor-not-allowed"
                   >
-                    <Check className="w-5 h-5" />
-                    <span>Confirmar y Facturar Venta</span>
+                    <Check className="w-6 h-6 stroke-[3]" />
+                    <span>Confirmar y Facturar Venta (${totalUsd.toFixed(2)})</span>
                   </button>
 
                 </div>
@@ -1626,6 +1686,27 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
         </div>
 
       </div>
+
+      {/* Sticky Mobile Checkout Bar when in Catalog view on phone with items in cart */}
+      {cart.length > 0 && mobileActiveView === 'catalog' && (
+        <aside aria-label="Resumen de Facturación Móvil" className="lg:hidden fixed bottom-14 inset-x-0 p-3.5 bg-white/95 backdrop-blur-md border-t border-slate-200 shadow-2xl z-30 flex items-center justify-between gap-3 animate-in slide-in-from-bottom-2">
+          <div className="min-w-0">
+            <span className="text-[11px] font-black text-slate-500 uppercase tracking-wider block">Total Factura:</span>
+            <div className="flex items-baseline gap-1.5">
+              <span className="text-2xl font-black text-indigo-700 font-mono tracking-tight">${totalUsd.toFixed(2)}</span>
+              <span className="text-xs font-bold text-slate-600 font-mono">({totalBs.toFixed(0)} Bs)</span>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setMobileActiveView('billing')}
+            className="px-5 py-3 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white font-black text-sm rounded-xl shadow-lg shadow-indigo-600/30 flex items-center gap-2 cursor-pointer shrink-0 transition"
+          >
+            <span>Ver Factura ({totalCartQuantity} pares)</span>
+            <ArrowRight className="w-4 h-4" />
+          </button>
+        </aside>
+      )}
 
       {/* Post-Sale Receipt Modal */}
       <ReceiptModal sale={lastSale} onClose={() => setLastSale(null)} />

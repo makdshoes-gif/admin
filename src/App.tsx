@@ -58,7 +58,7 @@ function AppContent() {
         />
 
         {/* Dynamic Page Views with Suspense */}
-        <main className="flex-1 p-4 sm:p-6 overflow-y-auto">
+        <main className="flex-1 p-3 sm:p-6 overflow-y-auto pb-24 lg:pb-6">
           <Suspense fallback={<ViewFallback />}>
             {activeTab === 'pos' && <PointOfSale onNavigateToLayaways={() => setActiveTab('layaways')} />}
             {activeTab === 'inventory' && <InventoryManager />}
@@ -71,8 +71,72 @@ function AppContent() {
           </Suspense>
         </main>
 
+        {/* Mobile Bottom Navigation Bar (Phone Adaptability) */}
+        <nav aria-label="Navegación Móvil" className="lg:hidden fixed bottom-0 inset-x-0 bg-white/95 backdrop-blur-md border-t border-slate-200 z-40 flex items-center justify-around px-2 py-1.5 shadow-lg shadow-slate-900/10">
+          <button
+            onClick={() => setActiveTab('pos')}
+            className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-xl transition cursor-pointer min-w-[56px] ${
+              activeTab === 'pos' ? 'text-indigo-600 font-bold' : 'text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <div className={`p-1 rounded-lg ${activeTab === 'pos' ? 'bg-indigo-50' : ''}`}>
+              <span className="text-lg">🛒</span>
+            </div>
+            <span className="text-[10px] tracking-tight mt-0.5 font-bold">Ventas</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('inventory')}
+            className={`relative flex flex-col items-center justify-center py-1 px-2.5 rounded-xl transition cursor-pointer min-w-[56px] ${
+              activeTab === 'inventory' ? 'text-indigo-600 font-bold' : 'text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <div className={`p-1 rounded-lg ${activeTab === 'inventory' ? 'bg-indigo-50' : ''}`}>
+              <span className="text-lg">📦</span>
+            </div>
+            <span className="text-[10px] tracking-tight mt-0.5 font-bold">Inventario</span>
+            {criticalStockProducts.length > 0 && (
+              <span className="absolute top-1 right-2 w-2 h-2 rounded-full bg-rose-500 ring-2 ring-white"></span>
+            )}
+          </button>
+
+          <button
+            onClick={() => setActiveTab('layaways')}
+            className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-xl transition cursor-pointer min-w-[56px] ${
+              activeTab === 'layaways' ? 'text-indigo-600 font-bold' : 'text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <div className={`p-1 rounded-lg ${activeTab === 'layaways' ? 'bg-indigo-50' : ''}`}>
+              <span className="text-lg">🔖</span>
+            </div>
+            <span className="text-[10px] tracking-tight mt-0.5 font-bold">Apartados</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('reports')}
+            className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-xl transition cursor-pointer min-w-[56px] ${
+              activeTab === 'reports' ? 'text-indigo-600 font-bold' : 'text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <div className={`p-1 rounded-lg ${activeTab === 'reports' ? 'bg-indigo-50' : ''}`}>
+              <span className="text-lg">📊</span>
+            </div>
+            <span className="text-[10px] tracking-tight mt-0.5 font-bold">Reportes</span>
+          </button>
+
+          <button
+            onClick={() => setMobileOpen(true)}
+            className="flex flex-col items-center justify-center py-1 px-2.5 rounded-xl text-slate-500 hover:text-slate-800 transition cursor-pointer min-w-[56px]"
+          >
+            <div className="p-1 rounded-lg">
+              <span className="text-lg">☰</span>
+            </div>
+            <span className="text-[10px] tracking-tight mt-0.5 font-bold">Menú</span>
+          </button>
+        </nav>
+
         {/* High Density Sub-Footer (matching Design HTML) */}
-        <footer className="h-10 bg-slate-50 border-t border-slate-200 flex items-center justify-between px-4 sm:px-6 text-[10px] text-slate-400 shrink-0">
+        <footer className="hidden lg:flex h-10 bg-slate-50 border-t border-slate-200 items-center justify-between px-4 sm:px-6 text-[10px] text-slate-400 shrink-0">
           <div className="flex items-center space-x-3 sm:space-x-4">
             <span className="font-semibold text-slate-600">MAKD SHOP POS</span>
             <span className="hidden sm:inline">•</span>

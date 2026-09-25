@@ -144,20 +144,20 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ sale, onClose }) => 
           </div>
 
           {/* Items Purchased */}
-          <div className="border-b border-dashed border-slate-300 pb-2.5 mb-2.5">
-            <div className="text-[10px] font-bold text-slate-400 uppercase mb-1.5">Detalle de Calzado</div>
-            <div className="space-y-1.5">
+          <div className="border-b border-dashed border-slate-300 pb-3 mb-3">
+            <div className="text-xs font-black text-slate-500 uppercase tracking-wider mb-2">Detalle de Calzado</div>
+            <div className="space-y-2">
               {sale.items.map((item, idx) => (
                 <div key={idx} className="flex justify-between items-start">
                   <div>
-                    <div className="font-semibold text-slate-900">
+                    <div className="font-black text-sm text-slate-900">
                       {item.nombre_producto}
                     </div>
-                    <div className="text-[10px] text-slate-500">
-                      Talla: {item.talla} | {item.cantidad} x ${item.precio_unitario.toFixed(2)}
+                    <div className="text-xs text-slate-600 font-semibold mt-0.5">
+                      Talla: <strong className="text-slate-900">{item.talla}</strong> | {item.cantidad} x ${item.precio_unitario.toFixed(2)}
                     </div>
                   </div>
-                  <div className="font-bold text-right text-slate-900">
+                  <div className="font-black text-sm sm:text-base text-right text-slate-900 font-mono">
                     ${item.subtotal.toFixed(2)}
                   </div>
                 </div>
@@ -166,46 +166,46 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ sale, onClose }) => 
           </div>
 
           {/* Totals & Tax Calculation */}
-          <div className="border-b border-dashed border-slate-300 pb-2.5 mb-2.5 space-y-1 text-right">
-            <div className="flex justify-between text-slate-500">
+          <div className="border-b border-dashed border-slate-300 pb-3 mb-3 space-y-1.5 text-right text-xs sm:text-sm">
+            <div className="flex justify-between text-slate-600 font-semibold">
               <span>Subtotal:</span>
-              <span>${sale.subtotal_usd.toFixed(2)}</span>
+              <span className="font-mono font-bold text-slate-900">${sale.subtotal_usd.toFixed(2)}</span>
             </div>
             {sale.descuento_usd > 0 && (
-              <div className="flex justify-between text-emerald-600 font-semibold">
+              <div className="flex justify-between text-emerald-700 font-bold">
                 <span>Descuento aplicado:</span>
-                <span>-${sale.descuento_usd.toFixed(2)}</span>
+                <span className="font-mono font-black">-${sale.descuento_usd.toFixed(2)}</span>
               </div>
             )}
             {sale.aplica_iva && (
-              <div className="flex justify-between text-slate-500">
+              <div className="flex justify-between text-slate-600 font-semibold">
                 <span>IVA (16%):</span>
-                <span>+${sale.iva_monto_usd.toFixed(2)}</span>
+                <span className="font-mono font-bold text-slate-900">+${sale.iva_monto_usd.toFixed(2)}</span>
               </div>
             )}
-            <div className="flex justify-between text-xs font-bold text-slate-900 pt-1 border-t border-slate-200">
-              <span>TOTAL USD:</span>
-              <span className="text-indigo-600 font-bold">${sale.total_usd.toFixed(2)}</span>
+            <div className="flex justify-between items-baseline pt-2 border-t-2 border-slate-300">
+              <span className="text-sm sm:text-base font-black text-slate-900 tracking-tight">TOTAL USD:</span>
+              <span className="text-2xl sm:text-3xl font-black text-indigo-700 font-mono tracking-tight">${sale.total_usd.toFixed(2)}</span>
             </div>
-            <div className="flex justify-between text-[11px] text-slate-500">
+            <div className="flex justify-between items-baseline text-xs sm:text-sm text-slate-700 font-bold">
               <span>TOTAL BS (Tasa {sale.tasa_cambio.toFixed(2)}):</span>
-              <span>{sale.total_bs.toFixed(0)} Bs</span>
+              <span className="text-base sm:text-lg font-black text-slate-900 font-mono">{sale.total_bs.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Bs</span>
             </div>
           </div>
 
           {/* Payments Breakdown */}
-          <div className="border-b border-dashed border-slate-300 pb-2.5 mb-2.5 space-y-1">
-            <div className="text-[10px] font-bold text-slate-400 uppercase mb-1">Formas de Pago & Liquidación</div>
+          <div className="border-b border-dashed border-slate-300 pb-3 mb-3 space-y-1.5">
+            <div className="text-xs font-black text-slate-500 uppercase tracking-wider mb-1.5">Formas de Pago & Liquidación</div>
             {sale.pagos.map((p, idx) => {
               const isCashea = p.cuenta.toLowerCase().includes('cashea');
               return (
-                <div key={idx} className="flex justify-between text-[11px] items-center">
+                <div key={idx} className="flex justify-between text-xs sm:text-sm items-center">
                   <div className="flex items-center gap-1.5">
-                    <span className="text-slate-700 font-medium">
+                    <span className="text-slate-800 font-bold">
                       {p.cuenta} {p.referencia ? `(Ref: ${p.referencia})` : ''}:
                     </span>
                     {isCashea && (
-                      <span className={`px-1.5 py-0.2 rounded text-[9px] font-bold ${
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-black ${
                         p.estado_liquidacion === 'conciliado_en_banco'
                           ? 'bg-emerald-100 text-emerald-800'
                           : 'bg-amber-100 text-amber-800'
@@ -214,7 +214,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ sale, onClose }) => 
                       </span>
                     )}
                   </div>
-                  <span className="font-semibold text-slate-900 font-mono">
+                  <span className="font-black text-slate-900 font-mono">
                     {p.moneda === 'Bs' ? `${p.monto.toFixed(2)} Bs` : `$${p.monto.toFixed(2)}`}
                   </span>
                 </div>
@@ -223,46 +223,46 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ sale, onClose }) => 
 
             {/* Breakdown for Cashea vs Positive Immediate Income */}
             {(sale.total_cashea_pendiente_usd !== undefined && sale.total_cashea_pendiente_usd > 0) && (
-              <div className="mt-2 pt-1.5 border-t border-slate-200 text-[10px] space-y-0.5">
+              <div className="mt-2.5 pt-2 border-t border-slate-200 text-xs space-y-1">
                 <div className="flex justify-between text-emerald-700 font-bold">
                   <span>Ingreso en Positivo (Caja/Banco):</span>
-                  <span>${(sale.total_positivo_inmediato_usd || 0).toFixed(2)}</span>
+                  <span className="font-mono font-bold">${(sale.total_positivo_inmediato_usd || 0).toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between text-amber-700 font-bold">
                   <span>Cashea por Conciliar en Banco:</span>
-                  <span>${sale.total_cashea_pendiente_usd.toFixed(2)}</span>
+                  <span className="font-mono font-bold">${sale.total_cashea_pendiente_usd.toFixed(2)}</span>
                 </div>
               </div>
             )}
           </div>
 
           {/* Footer Note */}
-          <div className="text-center text-[10px] text-slate-400 pt-1 space-y-0.5">
-            <p className="font-semibold text-slate-600">¡Gracias por preferir MAKD SHOP!</p>
-            <p>Cambios por talla dentro de los primeros 7 días con este comprobante.</p>
-            <p>Atención al cliente: @makdshop</p>
+          <div className="text-center text-xs text-slate-500 pt-1 space-y-1">
+            <p className="font-bold text-slate-700">¡Gracias por preferir MAKD SHOP!</p>
+            <p className="text-[11px]">Cambios por talla dentro de los primeros 7 días con este comprobante.</p>
+            <p className="text-[11px] font-semibold text-indigo-600">Atención al cliente: @makdshop</p>
           </div>
         </div>
 
         {/* Action Buttons - Not printed */}
-        <div className="p-3.5 bg-slate-50 border-t border-slate-200 flex flex-wrap gap-2 print:hidden">
+        <div className="p-4 bg-slate-50 border-t border-slate-200 flex flex-wrap gap-2.5 print:hidden">
           <button
             onClick={handlePrint}
-            className="flex-1 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 rounded-lg font-medium text-xs flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
+            className="flex-1 py-3 px-4 bg-slate-100 hover:bg-slate-200 border border-slate-300 text-slate-800 rounded-xl font-bold text-xs sm:text-sm flex items-center justify-center gap-2 cursor-pointer transition-colors shadow-2xs"
           >
-            <Printer className="w-3.5 h-3.5" />
+            <Printer className="w-4 h-4" />
             Imprimir
           </button>
           <button
             onClick={handleShareWhatsApp}
-            className="flex-1 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-medium text-xs flex items-center justify-center gap-1.5 cursor-pointer transition-colors shadow-xs"
+            className="flex-1 py-3 px-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs sm:text-sm flex items-center justify-center gap-2 cursor-pointer transition-colors shadow-md shadow-emerald-600/20"
           >
-            <Share2 className="w-3.5 h-3.5" />
+            <Share2 className="w-4 h-4" />
             WhatsApp
           </button>
           <button
             onClick={onClose}
-            className="w-full px-3 py-1.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-600 rounded-lg font-medium text-xs cursor-pointer transition-colors"
+            className="w-full py-2.5 px-4 bg-white border border-slate-200 hover:bg-slate-50 text-slate-600 rounded-xl font-bold text-xs sm:text-sm cursor-pointer transition-colors"
           >
             Cerrar
           </button>
