@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { useStore } from '../../context/StoreContext';
 import { DailyCashClosure, AccountBalance } from '../../types';
+import { getTodayVenezuela, getSaleDateKey } from '../../utils/dateUtils';
 
 export const CashClosure: React.FC = () => {
   const {
@@ -34,31 +35,11 @@ export const CashClosure: React.FC = () => {
   const [selectedClosureForPrint, setSelectedClosureForPrint] = useState<DailyCashClosure | null>(null);
 
   // Selected Date Calculation (default today in local Venezuela time YYYY-MM-DD)
-  const [selectedDate, setSelectedDate] = useState<string>(() => {
-    const d = new Date();
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    return `${y}-${m}-${day}`;
-  });
-
-  const isMatchingDate = (saleFecha: string, targetDate: string) => {
-    if (!saleFecha) return false;
-    if (saleFecha.startsWith(targetDate)) return true;
-    try {
-      const d = new Date(saleFecha);
-      const y = d.getFullYear();
-      const m = String(d.getMonth() + 1).padStart(2, '0');
-      const day = String(d.getDate()).padStart(2, '0');
-      return `${y}-${m}-${day}` === targetDate;
-    } catch {
-      return false;
-    }
-  };
+  const [selectedDate, setSelectedDate] = useState<string>(() => getTodayVenezuela());
 
   // Sales Calculation for Selected Date (excluding annulled sales!)
   const todaySales = useMemo(() => {
-    return sales.filter((s) => s.estado !== 'anulada' && isMatchingDate(s.fecha, selectedDate));
+    return sales.filter((s) => s.estado !== 'anulada' && getSaleDateKey(s.fecha) === selectedDate);
   }, [sales, selectedDate]);
 
   const existingClosureForDate = useMemo(() => {
@@ -108,7 +89,7 @@ export const CashClosure: React.FC = () => {
       }
     }
 
-    const closure = recordCashClosure(notes);
+    const closure = recordCashClosure(notes, selectedDate);
     setNotes('');
     setSelectedClosureForPrint(closure);
   };

@@ -261,6 +261,27 @@ async function startServer() {
   });
 
   // 4. Global Store Synchronization API (Master State across all devices)
+  app.get('/api/store/version', (req, res) => {
+    const store = readServerStore();
+    const prodHash = `${store.products?.length || 0}-${store.products?.reduce((acc: number, p: any) => acc + (Number(p.stock) || 0), 0)}-${store.updatedAt}`;
+    const salesHash = `${store.sales?.length || 0}-${store.sales?.[0]?.id || ''}-${store.sales?.[0]?.fecha || ''}`;
+    const expHash = `${store.expenses?.length || 0}-${store.expenses?.[0]?.id || ''}`;
+    const closuresHash = `${store.cashClosures?.length || 0}-${store.cashClosures?.[0]?.id || ''}`;
+    const bankHash = `${store.bankMovements?.length || 0}`;
+
+    res.json({
+      success: true,
+      version: {
+        products: prodHash,
+        sales: salesHash,
+        expenses: expHash,
+        bankReconciliations: bankHash,
+        closures: closuresHash,
+        updatedAt: store.updatedAt,
+      },
+    });
+  });
+
   app.get('/api/store/state', async (req, res) => {
     const sql = getNeonSql();
     if (sql) {
@@ -525,22 +546,60 @@ async function startServer() {
   });
 
   app.post('/api/sales', async (req, res) => {
-    const s = req.body;
+    const body = req.body;
+    const s = body?.sale || body;
     if (!s || !s.id) {
       return res.status(400).json({ saved: false, error: 'Datos de venta inválidos' });
     }
 
     const store = readServerStore();
-    store.sales.unshift(s);
+    
+    // Si la venta no existía aún en el store, la agregamos al inicio
+    const existingSaleIdx = store.sales.findIndex((item: any) => item.id === s.id);
+    if (existingSaleIdx >= 0) {
+      store.sales[existingSaleIdx] = { ...store.sales[existingSaleIdx], ...s };
+    } else {
+      store.sales.unshift(s);
+    }
 
-    // Also deduct product stock in server store
-    if (Array.isArray(s.items)) {
+    // Si el cliente envía la lista completa de productos actualizados post-venta
+    if (Array.isArray(body?.updatedProducts) && body.updatedProducts.length > 0) {
+      const updatedMap = new Map(body.updatedProducts.map((p: any) => [p.id, p]));
+      // Mezclar para no perder productos que ya estaban en el servidor
+      store.products = store.products.map((p: any) => {
+        if (updatedMap.has(p.id)) {
+          const fresh = updatedMap.get(p.id) as Record<string, any>;
+          updatedMap.delete(p.id);
+          return Object.assign({}, p, fresh);
+        }
+        return p;
+      });
+      // Agregar los que falten
+      for (const fresh of updatedMap.values()) {
+        store.products.push(fresh);
+      }
+    } else if (Array.isArray(s.items)) {
+      // Descontar inventario producto por producto
       s.items.forEach((item: any) => {
         const prodIndex = store.products.findIndex((p: any) => p.id === item.producto_id);
         if (prodIndex >= 0) {
           const prev = Number(store.products[prodIndex].stock || 0);
           const next = Math.max(0, prev - Number(item.cantidad || 0));
           store.products[prodIndex].stock = next;
+        } else {
+          // Si el producto no estaba en el store_state del servidor, lo insertamos
+          store.products.push({
+            id: item.producto_id,
+            nombre: item.nombre_producto || 'Calzado',
+            sku: item.sku || `SKU-${item.producto_id}`,
+            talla: String(item.talla || '38'),
+            marca: item.marca || 'Genérica',
+            precio: Number(item.precio_unitario || 0),
+            costo: Number(item.costo_unitario || 0),
+            stock: 0,
+            stock_minimo: 2,
+            activo: true,
+          });
         }
       });
     }

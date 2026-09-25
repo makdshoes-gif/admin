@@ -23,6 +23,12 @@ import {
   INITIAL_CURRENCY_PURCHASES,
 } from '../data/initialData';
 import { fetchLiveBcvRate, BcvRateInfo } from '../services/bcvService';
+import {
+  getTodayVenezuela,
+  getYesterdayVenezuela,
+  getSaleDateKey,
+  createSaleTimestamp,
+} from '../utils/dateUtils';
 import { 
   fetchExpensesApi, 
   saveExpenseApi, 
@@ -110,7 +116,8 @@ interface StoreContextType {
   deliverLayaway: (layawayId: string) => boolean;
   updateLayaway: (layawayId: string, updates: Partial<Layaway>) => boolean;
   recordCashClosure: (
-    notas?: string
+    notas?: string,
+    customDate?: string
   ) => DailyCashClosure;
   expenses: Expense[];
   bankMovements: BankMovement[];
@@ -516,8 +523,27 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             es_original: p.es_original !== false,
             created_at: p.created_at || new Date().toISOString(),
           }));
-          setProducts(mappedProducts);
-          try { localStorage.setItem(`${STORAGE_KEY}_products`, JSON.stringify(mappedProducts)); } catch {}
+          setProducts((prev) => {
+            if (mappedProducts.length === 0) return prev;
+            if (mappedProducts.length >= prev.length) {
+              try { localStorage.setItem(`${STORAGE_KEY}_products`, JSON.stringify(mappedProducts)); } catch {}
+              return mappedProducts;
+            }
+            const serverMap = new Map(mappedProducts.map((p) => [p.id, p]));
+            const merged = prev.map((localP) => {
+              if (serverMap.has(localP.id)) {
+                const sp = serverMap.get(localP.id)!;
+                serverMap.delete(localP.id);
+                return { ...localP, ...sp };
+              }
+              return localP;
+            });
+            for (const sp of serverMap.values()) {
+              merged.push(sp);
+            }
+            try { localStorage.setItem(`${STORAGE_KEY}_products`, JSON.stringify(merged)); } catch {}
+            return merged;
+          });
         }
         if (Array.isArray(d.sales)) {
           applySalesData(d.sales);
@@ -888,6 +914,19 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         return newRate;
       });
 
+      const todayKey = getTodayVenezuela();
+      safeLocalStorageSet(`${STORAGE_KEY}_exchange_rate`, String(newRate));
+      setHistoricalRates((prev) => {
+        const updated = { ...prev, [todayKey]: newRate };
+        safeLocalStorageSet(`${STORAGE_KEY}_historical_rates`, JSON.stringify(updated));
+        return updated;
+      });
+      fetch('/api/store/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ exchangeRate: newRate, historicalRates: { [todayKey]: newRate } }),
+      }).catch(() => {});
+
       setBcvInfo({
         rate: newRate,
         officialDate: liveData.officialDate,
@@ -942,7 +981,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const setExchangeRate = (rate: number, isManual = true) => {
     setExchangeRateState(rate);
-    const todayKey = new Date().toISOString().split('T')[0];
+    const todayKey = getTodayVenezuela();
+    safeLocalStorageSet(`${STORAGE_KEY}_exchange_rate`, String(rate));
     setHistoricalRates((prev) => {
       const updated = { ...prev, [todayKey]: rate };
       safeLocalStorageSet(`${STORAGE_KEY}_historical_rates`, JSON.stringify(updated));
@@ -985,7 +1025,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const next = { ...prev };
       sales.forEach((s) => {
         if (s.fecha && s.tasa_cambio > 0) {
-          const key = s.fecha.includes('T') ? s.fecha.split('T')[0] : s.fecha.trim();
+          const key = getSaleDateKey(s.fecha);
           if (!next[key]) {
             next[key] = s.tasa_cambio;
             changed = true;
@@ -994,7 +1034,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       });
       expenses.forEach((e) => {
         if (e.fecha && e.tasa_cambio > 0) {
-          const key = e.fecha.includes('T') ? e.fecha.split('T')[0] : e.fecha.trim();
+          const key = getSaleDateKey(e.fecha);
           if (!next[key]) {
             next[key] = e.tasa_cambio;
             changed = true;
@@ -1008,7 +1048,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const getExchangeRateForDate = useCallback(
     (dateStr: string): number => {
       if (!dateStr) return exchangeRate;
-      const key = dateStr.includes('T') ? dateStr.split('T')[0] : dateStr.trim();
+      const todayKey = getTodayVenezuela();
+      const key = getSaleDateKey(dateStr);
+
+      // Si es la fecha de hoy, priorizar la tasa oficial activa (en vivo o manual)
+      if (key === todayKey && exchangeRate > 0) {
+        return exchangeRate;
+      }
 
       // 1. Tasa en histórico registrado
       if (historicalRates[key] && historicalRates[key] > 0) {
@@ -1017,13 +1063,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
       // 2. Tasa registrada en ventas de ese día
       const saleOnDate = sales.find(
-        (s) => s.fecha && (s.fecha === key || s.fecha.startsWith(key)) && s.tasa_cambio > 0
+        (s) => s.fecha && getSaleDateKey(s.fecha) === key && s.tasa_cambio > 0
       );
       if (saleOnDate) return saleOnDate.tasa_cambio;
 
       // 3. Tasa registrada en gastos de ese día
       const expOnDate = expenses.find(
-        (e) => e.fecha && (e.fecha === key || e.fecha.startsWith(key)) && e.tasa_cambio > 0
+        (e) => e.fecha && getSaleDateKey(e.fecha) === key && e.tasa_cambio > 0
       );
       if (expOnDate) return expOnDate.tasa_cambio;
 
@@ -1418,75 +1464,75 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     saleData: Omit<Sale, 'id' | 'created_at' | 'costo_total_usd' | 'ganancia_neta_usd'>
   ): Sale => {
     const saleId = `sale-${Date.now()}`;
-    const timestamp = new Date().toISOString();
+    const timestamp = saleData.fecha || createSaleTimestamp();
 
-    // 1. Calculate total cost and net profit
+    // 1. Calculate total cost, movements, and updated products atomically
     let totalCosto = 0;
     const saleMovements: StockMovement[] = [];
 
-    // 2. Real-time stock deductions
-    setProducts((prevProducts) => {
-      const updated = [...prevProducts];
+    const updatedProducts = products.map((prod) => {
+      const item = saleData.items.find((i) => i.producto_id === prod.id);
+      if (!item) return prod;
 
-      saleData.items.forEach((item) => {
-        const prodIndex = updated.findIndex((p) => p.id === item.producto_id);
-        if (prodIndex !== -1) {
-          const prod = updated[prodIndex];
-          const stockAnterior = prod.stock;
-          const stockNuevo = Math.max(0, stockAnterior - item.cantidad);
-          const itemCosto = typeof item.costo_unitario === 'number' ? item.costo_unitario : prod.costo;
-          totalCosto += itemCosto * item.cantidad;
+      const stockAnterior = prod.stock;
+      const stockNuevo = Math.max(0, stockAnterior - item.cantidad);
+      const itemCosto = typeof item.costo_unitario === 'number' ? item.costo_unitario : prod.costo;
+      totalCosto += itemCosto * item.cantidad;
 
-          updated[prodIndex] = {
-            ...prod,
-            stock: stockNuevo,
-          };
-
-          // Prepare stock movement
-          saleMovements.push({
-            id: `mov-${Date.now()}-${item.producto_id}`,
-            producto_id: prod.id,
-            producto_nombre: prod.nombre,
-            sku: prod.sku,
-            talla: prod.talla,
-            marca: prod.marca,
-            tipo: 'venta',
-            cantidad: -item.cantidad,
-            stock_anterior: stockAnterior,
-            stock_nuevo: stockNuevo,
-            motivo: `Venta Factura #${saleData.numero_factura}`,
-            fecha: timestamp,
-            usuario: userRole === 'admin' ? 'Administrador' : 'Cajera',
-          });
-
-          // Check if newly depleted
-          if (stockNuevo === 0) {
-            addNotification(
-              '¡Producto Agotado en Venta!',
-              `${prod.nombre} (Talla ${prod.talla}) quedó sin existencias.`,
-              'critical'
-            );
-          } else if (stockNuevo <= prod.stock_minimo) {
-            addNotification(
-              'Alerta de Reposición Post-Venta',
-              `${prod.nombre} (Talla ${prod.talla}) bajo umbral mínimo (${stockNuevo} pares restantes).`,
-              'warning'
-            );
-          }
-        } else {
-          totalCosto += item.costo_unitario * item.cantidad;
-        }
+      saleMovements.push({
+        id: `mov-${Date.now()}-${item.producto_id}`,
+        producto_id: prod.id,
+        producto_nombre: prod.nombre,
+        sku: prod.sku,
+        talla: prod.talla,
+        marca: prod.marca,
+        tipo: 'venta',
+        cantidad: -item.cantidad,
+        stock_anterior: stockAnterior,
+        stock_nuevo: stockNuevo,
+        motivo: `Venta Factura #${saleData.numero_factura}`,
+        fecha: timestamp,
+        usuario: userRole === 'admin' ? 'Administrador' : 'Cajera',
       });
 
-      return updated;
+      if (stockNuevo === 0) {
+        addNotification(
+          '¡Producto Agotado en Venta!',
+          `${prod.nombre} (Talla ${prod.talla}) quedó sin existencias.`,
+          'critical'
+        );
+      } else if (stockNuevo <= prod.stock_minimo) {
+        addNotification(
+          'Alerta de Reposición Post-Venta',
+          `${prod.nombre} (Talla ${prod.talla}) bajo umbral mínimo (${stockNuevo} pares restantes).`,
+          'warning'
+        );
+      }
+
+      return {
+        ...prod,
+        stock: stockNuevo,
+      };
     });
+
+    // Also account for any items whose product wasn't found in current memory list
+    saleData.items.forEach((item) => {
+      const exists = updatedProducts.some((p) => p.id === item.producto_id);
+      if (!exists) {
+        totalCosto += (item.costo_unitario || 0) * item.cantidad;
+      }
+    });
+
+    // 2. Commit stock deduction immediately to state & localStorage
+    setProducts(updatedProducts);
+    safeLocalStorageSet(`${STORAGE_KEY}_products`, JSON.stringify(updatedProducts));
 
     // 3. Append all sale movements
     if (saleMovements.length > 0) {
       setMovements((prev) => [...saleMovements, ...prev]);
     }
 
-    // 4. Classify payments: Cashea stays pending reconciliation, while positive liquid payments (Pago Móvil, Punto de Venta, Efectivo, etc.) enter into balances immediately
+    // 4. Classify payments: Cashea stays pending reconciliation, while positive liquid payments enter balances immediately
     let totalPositivoInmediatoUsd = 0;
     let totalCasheaPendienteUsd = 0;
 
@@ -1507,22 +1553,21 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       }
     });
 
-    // Update accounts balances ONLY for positive liquid payments (exclude Cashea pending bank deposits)
+    // Update accounts balances ONLY for positive liquid payments
     setAccounts((prevAccounts) => {
-      const updatedAccounts = [...prevAccounts];
+      const nextAccounts = [...prevAccounts];
       enrichedPagos.forEach((pago) => {
-        // Cashea does not enter into positive bank balance right now; it waits for bank liquidation
         if (pago.estado_liquidacion === 'pendiente_banco') return;
 
-        const accIndex = updatedAccounts.findIndex((acc) => acc.nombre === pago.cuenta);
+        const accIndex = nextAccounts.findIndex((acc) => acc.nombre === pago.cuenta);
         if (accIndex !== -1) {
-          updatedAccounts[accIndex] = {
-            ...updatedAccounts[accIndex],
-            saldo: updatedAccounts[accIndex].saldo + pago.monto,
+          nextAccounts[accIndex] = {
+            ...nextAccounts[accIndex],
+            saldo: nextAccounts[accIndex].saldo + pago.monto,
           };
         }
       });
-      return updatedAccounts;
+      return nextAccounts;
     });
 
     // 5. Finalize Sale Record
@@ -1532,6 +1577,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const completedSale: Sale = {
       ...saleData,
       id: saleId,
+      fecha: timestamp,
       pagos: enrichedPagos,
       costo_total_usd: totalCosto,
       ganancia_neta_usd: gananciaNeta,
@@ -1541,20 +1587,30 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       created_at: timestamp,
     };
 
-    setSales((prev) => [completedSale, ...prev]);
+    setSales((prev) => {
+      const updated = [completedSale, ...prev];
+      safeLocalStorageSet(`${STORAGE_KEY}_sales`, JSON.stringify(updated));
+      return updated;
+    });
 
     // Track historical rate for this date
     if (completedSale.tasa_cambio > 0) {
-      const saleDateKey = (saleData.fecha || timestamp).split('T')[0];
+      const saleDateKey = getSaleDateKey(completedSale.fecha);
       setExchangeRateForDate(saleDateKey, completedSale.tasa_cambio);
     }
 
-    // Persist sale to server
+    // Persist sale AND updated inventory atomically to server
     fetch('/api/sales', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(completedSale),
+      body: JSON.stringify({ sale: completedSale, updatedProducts }),
     }).catch((e) => console.log('Backend sale sync info:', e));
+
+    fetch('/api/store/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ products: updatedProducts, sales: [completedSale] }),
+    }).catch(() => {});
 
     if (currentUser) {
       try {
@@ -1564,10 +1620,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           batch.set(doc(db, 'movements', m.id), m);
         });
         saleData.items.forEach((item) => {
-          const prod = products.find((p) => p.id === item.producto_id);
+          const prod = updatedProducts.find((p) => p.id === item.producto_id);
           if (prod) {
-            const newStock = Math.max(0, prod.stock - item.cantidad);
-            batch.update(doc(db, 'products', prod.id), { stock: newStock });
+            batch.set(doc(db, 'products', prod.id), prod, { merge: true });
           }
         });
         batch.commit().catch((err) =>
@@ -1584,14 +1639,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       'success'
     );
 
-    const updatedProductsForWebhook = products.map((prod) => {
-      const soldItem = saleData.items.find((i) => i.producto_id === prod.id);
-      if (soldItem) {
-        return { ...prod, stock: Math.max(0, prod.stock - soldItem.cantidad) };
-      }
-      return prod;
-    });
-    dispatchAutoWebhook(updatedProductsForWebhook, 600);
+    dispatchAutoWebhook(updatedProducts, 600);
 
     return completedSale;
   };
@@ -2033,9 +2081,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   // Record Cash Register Closure (Arqueo de caja diario)
-  const recordCashClosure = (notas?: string): DailyCashClosure => {
-    const todayStr = new Date().toISOString().split('T')[0];
-    const todaySales = sales.filter((s) => s.fecha.startsWith(todayStr));
+  const recordCashClosure = (notas?: string, customDate?: string): DailyCashClosure => {
+    const targetDate = customDate || getTodayVenezuela();
+    const todaySales = sales.filter((s) => s.estado !== 'anulada' && getSaleDateKey(s.fecha) === targetDate);
 
     const totalUsd = todaySales.reduce((sum, s) => sum + s.total_usd, 0);
     const totalBs = todaySales.reduce((sum, s) => sum + s.total_bs, 0);
@@ -2070,7 +2118,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     const closure: DailyCashClosure = {
       id: `close-${Date.now()}`,
-      fecha: todayStr,
+      fecha: targetDate,
       usuario: userRole === 'admin' ? 'Administrador' : 'Cajera',
       total_ventas_usd: totalUsd,
       total_ventas_bs: totalBs,
@@ -2097,7 +2145,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     addNotification(
       'Cierre de Caja Guardado',
-      `Arqueo de ${todayStr} registrado con $${totalUsd.toFixed(2)} en ${todaySales.length} ventas.`,
+      `Arqueo de ${targetDate} registrado con $${totalUsd.toFixed(2)} en ${todaySales.length} ventas.`,
       'success'
     );
 

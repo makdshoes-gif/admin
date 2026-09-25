@@ -38,6 +38,7 @@ import { useStore } from '../../context/StoreContext';
 import { ShoeProduct, SaleItem, SalePayment, Sale, ProductCategory } from '../../types';
 import { ReceiptModal } from '../common/ReceiptModal';
 import { BdvVerificationModal } from '../common/BdvVerificationModal';
+import { getTodayVenezuela, createSaleTimestamp } from '../../utils/dateUtils';
 
 export interface CartItem {
   product: ShoeProduct;
@@ -73,8 +74,8 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
   const ivaPercent = 16;
 
   // Invoice & Customer Data
-  const todayIso = new Date().toISOString().split('T')[0];
-  const [invoiceDate, setInvoiceDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
+  const todayIso = getTodayVenezuela();
+  const [invoiceDate, setInvoiceDate] = useState<string>(() => getTodayVenezuela());
   const [customSaleRate, setCustomSaleRate] = useState<string>('');
   const [isCustomSaleRate, setIsCustomSaleRate] = useState(false);
   const [customerName, setCustomerName] = useState('');
@@ -87,8 +88,12 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
     if (isCustomSaleRate && parseFloat(customSaleRate) > 0) {
       return parseFloat(customSaleRate);
     }
+    // Si la fecha de la factura es hoy, usar directamente la tasa oficial BCV activa
+    if (invoiceDate === todayIso && exchangeRate > 0) {
+      return exchangeRate;
+    }
     return getExchangeRateForDate(invoiceDate);
-  }, [invoiceDate, isCustomSaleRate, customSaleRate, getExchangeRateForDate]);
+  }, [invoiceDate, todayIso, exchangeRate, isCustomSaleRate, customSaleRate, getExchangeRateForDate]);
 
   // Payment State (Mixed payments)
   const [isMixedPaymentOpen, setIsMixedPaymentOpen] = useState(false);
@@ -391,11 +396,7 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
 
     const invoiceNumber = `MK-${Math.floor(1000 + Math.random() * 9000)}`;
 
-    const now = new Date();
-    const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
-    const finalSaleDate = invoiceDate
-      ? new Date(`${invoiceDate}T${timeStr}`).toISOString()
-      : now.toISOString();
+    const finalSaleDate = createSaleTimestamp(invoiceDate);
 
     const newSale = recordSale({
       numero_factura: invoiceNumber,
@@ -432,7 +433,7 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
 
     // Reset Form & open receipt
     handleClearCart();
-    setInvoiceDate(new Date().toISOString().split('T')[0]);
+    setInvoiceDate(getTodayVenezuela());
     setIsMixedPaymentOpen(false);
     setLastSale(newSale);
   };

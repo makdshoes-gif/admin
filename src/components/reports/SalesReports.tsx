@@ -48,6 +48,7 @@ import { Sale, ReportPeriod } from '../../types';
 import { ReceiptModal } from '../common/ReceiptModal';
 import { DailySalesChart } from './DailySalesChart';
 import { GoogleSheetsSyncModal } from '../common/GoogleSheetsSyncModal';
+import { getTodayVenezuela, getYesterdayVenezuela, getSaleDateKey } from '../../utils/dateUtils';
 
 export const SalesReports: React.FC = () => {
   const { sales, exchangeRate, products, bcvInfo, isBcvSyncing, syncBcvRate, updateSaleDate, voidSale } = useStore();
@@ -225,20 +226,18 @@ export const SalesReports: React.FC = () => {
   // Filter sales by selected period
   const filteredSales = useMemo(() => {
     const now = new Date();
-    const todayStr = now.toISOString().split('T')[0];
+    const todayStr = getTodayVenezuela();
+    const yestStr = getYesterdayVenezuela();
 
     return sales.filter((sale) => {
       const saleDate = new Date(sale.fecha);
-      const saleDateStr = sale.fecha.split('T')[0];
+      const saleDateStr = getSaleDateKey(sale.fecha);
 
       if (period === 'hoy') {
         return saleDateStr === todayStr;
       }
 
       if (period === 'ayer') {
-        const yesterday = new Date(now);
-        yesterday.setDate(now.getDate() - 1);
-        const yestStr = yesterday.toISOString().split('T')[0];
         return saleDateStr === yestStr;
       }
 

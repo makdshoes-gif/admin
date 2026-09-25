@@ -25,6 +25,7 @@ import {
   CalendarDays,
 } from 'lucide-react';
 import { Sale } from '../../types';
+import { getSaleDateKey } from '../../utils/dateUtils';
 
 interface DailySalesChartProps {
   sales: Sale[];
@@ -89,7 +90,7 @@ export const DailySalesChart: React.FC<DailySalesChartProps> = ({ sales, exchang
     sales.forEach((sale) => {
       const saleDate = new Date(sale.fecha);
       if (saleDate >= startDate && saleDate <= endDate) {
-        const key = sale.fecha.split('T')[0];
+        const key = getSaleDateKey(sale.fecha);
         if (!salesByDay[key]) {
           salesByDay[key] = { totalUsd: 0, totalBs: 0, pairs: 0, count: 0, profitUsd: 0 };
         }
