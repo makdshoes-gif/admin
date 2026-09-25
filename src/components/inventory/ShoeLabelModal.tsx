@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   X,
   Printer,
@@ -6,9 +6,9 @@ import {
   Sliders,
   Sparkles,
   Download,
-  Image as ImageIcon,
   CheckCircle2,
-  FileCheck
+  FileCheck,
+  Layers
 } from 'lucide-react';
 import { ShoeProduct } from '../../types';
 import { BarcodeSvg } from '../common/BarcodeSvg';
@@ -22,6 +22,7 @@ interface ShoeLabelModalProps {
   onClose: () => void;
   product: ShoeProduct | null;
   exchangeRate: number;
+  allProducts?: ShoeProduct[];
 }
 
 export const ShoeLabelModal: React.FC<ShoeLabelModalProps> = ({
@@ -29,16 +30,58 @@ export const ShoeLabelModal: React.FC<ShoeLabelModalProps> = ({
   onClose,
   product,
   exchangeRate,
+  allProducts = [],
 }) => {
   const [copies, setCopies] = useState<number>(1);
-  const [showCost, setShowCost] = useState<boolean>(true); // "imprimir el sku junto con la descripción y costo"
+  const [showCost, setShowCost] = useState<boolean>(true);
   const [showPrice, setShowPrice] = useState<boolean>(true);
   const [showBsPrice, setShowBsPrice] = useState<boolean>(true);
   const [showBarcode, setShowBarcode] = useState<boolean>(true);
   const [showStoreAddress, setShowStoreAddress] = useState<boolean>(true);
+  const [showAvailableSizes, setShowAvailableSizes] = useState<boolean>(true);
   const [labelFormat, setLabelFormat] = useState<LabelFormat>('thermal_40x25');
   const [downloadSuccess, setDownloadSuccess] = useState<string | null>(null);
   const [isDownloading, setIsDownloading] = useState<boolean>(false);
+
+  // Calculate available sizes for this shoe style in inventory
+  const availableSizes = useMemo(() => {
+    if (!product) return [];
+    const baseList = allProducts || [];
+    const currentName = (product.nombre || '').trim().toLowerCase();
+    const currentMarca = (product.marca || '').trim().toLowerCase();
+
+    // Match by same name or same brand and style model
+    const matching = baseList.filter((p) => {
+      if (!p.activo || p.stock <= 0) return false;
+      const pName = (p.nombre || '').trim().toLowerCase();
+      const pMarca = (p.marca || '').trim().toLowerCase();
+      if (pName === currentName) return true;
+      if (
+        currentMarca &&
+        pMarca === currentMarca &&
+        pName.split(' ')[0] === currentName.split(' ')[0]
+      ) {
+        return true;
+      }
+      return false;
+    });
+
+    const sizeSet = new Set<string>();
+    // Always include current shoe's size
+    if (product.talla && product.talla.trim()) {
+      sizeSet.add(product.talla.trim());
+    }
+    matching.forEach((p) => {
+      if (p.talla && p.talla.trim()) sizeSet.add(p.talla.trim());
+    });
+
+    return Array.from(sizeSet).sort((a, b) => {
+      const numA = parseFloat(a);
+      const numB = parseFloat(b);
+      if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
+      return a.localeCompare(b);
+    });
+  }, [product, allProducts]);
 
   if (!isOpen || !product) return null;
 
@@ -63,13 +106,20 @@ export const ShoeLabelModal: React.FC<ShoeLabelModalProps> = ({
         showBarcode,
         showStoreAddress,
         exchangeRate,
+        availableSizes,
+        showAvailableSizes,
       },
       format
     );
 
     setIsDownloading(false);
     if (success) {
-      const sizeLabel = labelFormat === 'thermal_40x25' ? '40×25mm' : labelFormat === 'thermal_50x30' ? '50×30mm' : 'etiqueta';
+      const sizeLabel =
+        labelFormat === 'thermal_40x25'
+          ? '40×25mm'
+          : labelFormat === 'thermal_50x30'
+          ? '50×30mm'
+          : 'etiqueta';
       setDownloadSuccess(`¡Imagen ${sizeLabel} (${format.toUpperCase()}) descargada con éxito!`);
       setTimeout(() => {
         setDownloadSuccess(null);
@@ -78,8 +128,8 @@ export const ShoeLabelModal: React.FC<ShoeLabelModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 bg-slate-950/70 flex items-center justify-center p-4 z-50 overflow-y-auto backdrop-blur-xs">
-      <div className="bg-white border border-slate-200 rounded-2xl max-w-2xl w-full shadow-2xl overflow-hidden my-6 space-y-0">
+    <div className="fixed inset-0 bg-slate-950/70 flex items-center justify-center p-3 sm:p-4 z-50 overflow-y-auto backdrop-blur-xs">
+      <div className="bg-white border border-slate-200 rounded-2xl max-w-2xl w-full shadow-2xl overflow-hidden my-4 sm:my-6 space-y-0">
         
         {/* Modal Header */}
         <div className="p-4 sm:p-5 bg-slate-900 text-white flex items-center justify-between">
@@ -90,14 +140,14 @@ export const ShoeLabelModal: React.FC<ShoeLabelModalProps> = ({
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="font-bold text-base text-white">
-                  Etiqueta para Zapato (40×25mm)
+                  Etiqueta para Calzado (Térmica 40×25mm)
                 </h3>
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                  40*25mm Descargable
+                  Sin Bordes Negros • Talla y Precio Predominantes
                 </span>
               </div>
               <p className="text-xs text-slate-400">
-                Imprime o descarga en imagen lista para impresoras térmicas y rotuladoras
+                Lista para imprimir o descargar en imagen (PNG / JPG) para impresoras térmicas
               </p>
             </div>
           </div>
@@ -110,7 +160,7 @@ export const ShoeLabelModal: React.FC<ShoeLabelModalProps> = ({
         </div>
 
         {/* Content Layout */}
-        <div className="p-5 sm:p-6 space-y-5 text-xs max-h-[80vh] overflow-y-auto">
+        <div className="p-4 sm:p-6 space-y-4 text-xs max-h-[82vh] overflow-y-auto">
           
           {/* Success Download Banner */}
           {downloadSuccess && (
@@ -141,62 +191,68 @@ export const ShoeLabelModal: React.FC<ShoeLabelModalProps> = ({
                     }`}
                   >
                     <span>Térmica 40×25mm</span>
-                    <span className={`text-[9px] ${labelFormat === 'thermal_40x25' ? 'text-indigo-200 font-semibold' : 'text-emerald-600 font-bold'}`}>
-                      ★ Solicitado (Estándar)
+                    <span
+                      className={`text-[9px] ${
+                        labelFormat === 'thermal_40x25'
+                          ? 'text-indigo-200 font-semibold'
+                          : 'text-emerald-600 font-bold'
+                      }`}
+                    >
+                      ★ Estándar Solicitado
                     </span>
                   </button>
 
                   <button
                     type="button"
                     onClick={() => setLabelFormat('thermal_50x30')}
-                    className={`py-2 px-2.5 rounded-lg font-semibold text-[11px] border transition cursor-pointer flex flex-col items-center justify-center text-center ${
+                    className={`py-2 px-2.5 rounded-lg font-bold text-[11px] border transition cursor-pointer flex flex-col items-center justify-center text-center ${
                       labelFormat === 'thermal_50x30'
                         ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
                         : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
                     }`}
                   >
                     <span>Térmica 50×30mm</span>
-                    <span className="text-[9px] text-slate-400">Mediana estándar</span>
+                    <span className="text-[9px] text-slate-400">Rollo mediano</span>
                   </button>
 
                   <button
                     type="button"
                     onClick={() => setLabelFormat('hangtag')}
-                    className={`py-2 px-2.5 rounded-lg font-semibold text-[11px] border transition cursor-pointer flex flex-col items-center justify-center text-center ${
+                    className={`py-2 px-2.5 rounded-lg font-bold text-[11px] border transition cursor-pointer flex flex-col items-center justify-center text-center ${
                       labelFormat === 'hangtag'
                         ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
                         : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
                     }`}
                   >
-                    <span>Colgante / Hang Tag</span>
-                    <span className="text-[9px] text-slate-400">Vertical calzado</span>
+                    <span>Colgante (HangTag)</span>
+                    <span className="text-[9px] text-slate-400">Con perforación</span>
                   </button>
 
                   <button
                     type="button"
                     onClick={() => setLabelFormat('box')}
-                    className={`py-2 px-2.5 rounded-lg font-semibold text-[11px] border transition cursor-pointer flex flex-col items-center justify-center text-center ${
+                    className={`py-2 px-2.5 rounded-lg font-bold text-[11px] border transition cursor-pointer flex flex-col items-center justify-center text-center ${
                       labelFormat === 'box'
                         ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
                         : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
                     }`}
                   >
-                    <span>Caja / Estante</span>
-                    <span className="text-[9px] text-slate-400">70×50mm Grande</span>
+                    <span>Caja Calzado</span>
+                    <span className="text-[9px] text-slate-400">70×50mm</span>
                   </button>
                 </div>
               </div>
 
-              {/* Number of copies for printing */}
+              {/* Number of Copies */}
               <div>
                 <label className="block text-slate-700 font-bold mb-1 flex items-center justify-between">
-                  <span>Copias Físicas (para Imprimir):</span>
+                  <span>Cantidad de Copias</span>
                   <button
                     type="button"
-                    onClick={() => setCopies(product.stock || 1)}
-                    className="text-[10px] text-indigo-600 hover:underline font-semibold cursor-pointer"
+                    onClick={() => setCopies(product.stock > 0 ? product.stock : 1)}
+                    className="text-[10px] text-indigo-600 hover:text-indigo-800 font-semibold cursor-pointer underline"
                   >
-                    Todo el stock ({product.stock} pares)
+                    Usar stock actual ({product.stock})
                   </button>
                 </label>
                 <div className="flex items-center gap-2">
@@ -222,6 +278,41 @@ export const ShoeLabelModal: React.FC<ShoeLabelModalProps> = ({
               </label>
               
               <div className="space-y-1.5 bg-white p-2.5 rounded-lg border border-slate-200">
+                {/* Available Sizes for this Shoe Style Toggle */}
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={showAvailableSizes}
+                    onChange={(e) => setShowAvailableSizes(e.target.checked)}
+                    className="w-3.5 h-3.5 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500"
+                  />
+                  <span className="font-semibold text-slate-800 flex items-center gap-1.5">
+                    <Layers className="w-3.5 h-3.5 text-indigo-600" />
+                    <span>Tallas Disponibles en este Estilo ({availableSizes.length})</span>
+                    <span className="text-[9px] bg-indigo-100 text-indigo-800 px-1.5 py-0.5 rounded font-bold">
+                      Solicitado
+                    </span>
+                  </span>
+                </label>
+
+                {showAvailableSizes && availableSizes.length > 0 && (
+                  <div className="pl-6 pt-0.5 pb-1 flex flex-wrap gap-1 items-center">
+                    <span className="text-[10px] text-slate-500 font-medium mr-1">En inventario:</span>
+                    {availableSizes.map((sz) => (
+                      <span
+                        key={sz}
+                        className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-bold ${
+                          sz.trim() === product.talla.trim()
+                            ? 'bg-slate-950 text-white'
+                            : 'bg-slate-100 text-slate-700 border border-slate-200'
+                        }`}
+                      >
+                        {sz}
+                      </span>
+                    ))}
+                  </div>
+                )}
+
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
                     type="checkbox"
@@ -231,7 +322,6 @@ export const ShoeLabelModal: React.FC<ShoeLabelModalProps> = ({
                   />
                   <span className="font-semibold text-slate-800 flex items-center gap-1">
                     <span>Costo de Compra (${product.costo.toFixed(2)})</span>
-                    <span className="text-[9px] bg-amber-100 text-amber-800 px-1.5 rounded font-bold">Solicitado</span>
                   </span>
                 </label>
 
@@ -242,8 +332,11 @@ export const ShoeLabelModal: React.FC<ShoeLabelModalProps> = ({
                     onChange={(e) => setShowPrice(e.target.checked)}
                     className="w-3.5 h-3.5 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500"
                   />
-                  <span className="text-slate-700">
-                    Precio Venta PVP (${product.precio.toFixed(2)})
+                  <span className="font-semibold text-slate-800 flex items-center gap-1">
+                    <span>Precio Venta PVP (${product.precio.toFixed(2)})</span>
+                    <span className="text-[9px] bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded font-bold">
+                      Predominante
+                    </span>
                   </span>
                 </label>
 
@@ -293,6 +386,9 @@ export const ShoeLabelModal: React.FC<ShoeLabelModalProps> = ({
                 <span>
                   Vista Previa {labelFormat === 'thermal_40x25' ? '40×25mm (Medida Exacta)' : 'de la Etiqueta'}
                 </span>
+                <span className="text-[10px] text-slate-400 font-normal">
+                  (Sin bordes negros alrededor)
+                </span>
               </span>
 
               {/* Quick Image Download Badges */}
@@ -319,62 +415,95 @@ export const ShoeLabelModal: React.FC<ShoeLabelModalProps> = ({
               </div>
             </div>
 
-            {/* Label Visual Canvas Container */}
-            <div className="bg-slate-200/80 p-6 rounded-2xl flex flex-col items-center justify-center border border-slate-300 overflow-x-auto">
+            {/* Label Visual Canvas Container (Clean sticker mockup on soft backdrop) */}
+            <div className="bg-slate-100/90 p-5 sm:p-7 rounded-2xl flex flex-col items-center justify-center border border-slate-200 overflow-x-auto">
               
-              {/* 40x25mm Label Card Preview */}
+              {/* 40x25mm Label Card Preview: NO BLACK BORDER AROUND, PREDOMINANT TALLA & PRECIO */}
               {labelFormat === 'thermal_40x25' ? (
                 <div
                   id="printable-shoe-label"
-                  className="w-[340px] h-[212px] bg-white text-black border-2 border-dashed border-slate-700 p-2.5 shadow-lg flex flex-col justify-between rounded-md relative select-none"
+                  className="w-[340px] min-h-[212px] bg-white text-slate-900 p-3 shadow-xl rounded-xl relative select-none flex flex-col justify-between border-0"
                   style={{ boxSizing: 'border-box' }}
                 >
-                  {/* Top Bar: Store & Size Badge */}
-                  <div>
-                    <div className="flex items-center justify-between border-b-2 border-black pb-1">
-                      <span className="font-black text-xs tracking-wider text-black">MAKD SHOP</span>
-                      <span className="font-black text-[11px] uppercase bg-black text-white px-2 py-0.5 rounded leading-none">
-                        TALLA: {product.talla}
+                  {/* Top Section: Store Brand + Predominant TALLA */}
+                  <div className="flex items-start justify-between gap-2 pb-1.5 border-b border-slate-100">
+                    <div className="flex-1 min-w-0">
+                      <span className="font-black text-sm tracking-wider text-slate-900 block leading-tight">
+                        MAKD SHOP
+                      </span>
+                      {showStoreAddress && (
+                        <span className="text-[8px] text-slate-500 font-medium block tracking-tight">
+                          Puerto Ordaz • Cdad. Alta Vista II, Loc. 163
+                        </span>
+                      )}
+                      <div className="font-black text-xs uppercase text-slate-900 truncate mt-1 leading-snug">
+                        {product.nombre}
+                      </div>
+                      <div className="text-[9px] text-slate-600 font-semibold truncate">
+                        {product.marca} • {product.tipo} | {product.color}
+                      </div>
+                    </div>
+
+                    {/* PREDOMINANT TALLA DISPLAY */}
+                    <div className="bg-slate-950 text-white px-3.5 py-1.5 rounded-xl flex flex-col items-center justify-center shrink-0 shadow-xs min-w-[70px]">
+                      <span className="text-[8px] font-black uppercase text-slate-400 tracking-widest leading-none mb-0.5">
+                        TALLA
+                      </span>
+                      <span className="text-2xl font-black font-mono leading-none tracking-tight text-white">
+                        {product.talla}
                       </span>
                     </div>
-                    {showStoreAddress && (
-                      <div className="text-[8px] text-slate-600 font-medium tracking-tight mt-0.5">
-                        Puerto Ordaz • Cdad. Alta Vista II, Loc. 163
-                      </div>
-                    )}
                   </div>
 
-                  {/* Shoe Title & Details */}
-                  <div className="my-0.5">
-                    <div className="font-black text-xs leading-tight text-black uppercase truncate">
-                      {product.nombre}
+                  {/* Available Sizes for this Shoe Style */}
+                  {showAvailableSizes && availableSizes.length > 0 && (
+                    <div className="my-1.5 bg-slate-50 p-1.5 rounded-lg border border-slate-100">
+                      <div className="flex items-center justify-between text-[8px] font-black uppercase tracking-wider text-slate-500 mb-1">
+                        <span>Tallas Disp. en este Estilo:</span>
+                        <span className="text-[7px] text-emerald-700 font-bold bg-emerald-50 px-1 rounded">
+                          {availableSizes.length} disp.
+                        </span>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-1">
+                        {availableSizes.slice(0, 9).map((sz) => {
+                          const isCurrent = sz.trim() === product.talla.trim();
+                          return (
+                            <span
+                              key={sz}
+                              className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-bold leading-tight ${
+                                isCurrent
+                                  ? 'bg-slate-950 text-white shadow-2xs ring-1 ring-slate-950'
+                                  : 'bg-white text-slate-700 border border-slate-200'
+                              }`}
+                            >
+                              {sz}
+                            </span>
+                          );
+                        })}
+                      </div>
                     </div>
-                    <div className="text-[10px] text-slate-800 font-semibold flex items-center justify-between truncate">
-                      <span>{product.marca} • {product.tipo}</span>
-                      <span className="text-slate-600 font-mono text-[9px]">{product.color}</span>
-                    </div>
-                  </div>
+                  )}
 
                   {/* Barcode & SKU */}
-                  <div className="text-center py-0.5 bg-slate-50 rounded border border-slate-200 my-0.5">
+                  <div className="text-center py-1 bg-slate-50/70 rounded-lg my-1">
                     {showBarcode && (
                       <div className="flex justify-center my-0.5">
-                        <BarcodeSvg value={product.sku} width={220} height={28} />
+                        <BarcodeSvg value={product.sku} width={220} height={26} />
                       </div>
                     )}
-                    <div className="font-mono font-black text-[11px] tracking-wider text-black">
+                    <div className="font-mono font-black text-[10px] tracking-wider text-slate-800">
                       SKU: {product.sku}
                     </div>
                   </div>
 
-                  {/* Bottom Line: Cost & Price */}
-                  <div className="pt-1 border-t-2 border-black flex items-end justify-between">
+                  {/* Bottom Row: Cost and PREDOMINANT PRECIO */}
+                  <div className="pt-1.5 border-t border-slate-100 flex items-end justify-between">
                     {showCost ? (
-                      <div className="border border-black px-1.5 py-0.5 rounded text-left bg-slate-50">
-                        <div className="text-[7px] uppercase tracking-wider text-slate-600 font-bold leading-tight">
+                      <div className="text-left bg-slate-50 px-2 py-1 rounded-lg border border-slate-100">
+                        <div className="text-[7px] uppercase tracking-wider text-slate-500 font-bold leading-tight">
                           Costo Compra
                         </div>
-                        <div className="font-mono font-black text-xs text-black leading-tight">
+                        <div className="font-mono font-bold text-xs text-slate-800 leading-tight">
                           ${product.costo.toFixed(2)}
                         </div>
                       </div>
@@ -384,15 +513,15 @@ export const ShoeLabelModal: React.FC<ShoeLabelModalProps> = ({
 
                     {showPrice && (
                       <div className="text-right">
-                        <div className="text-[7px] uppercase tracking-wider text-slate-600 font-bold leading-tight">
-                          PVP Venta
+                        <div className="text-[8px] uppercase tracking-wider text-slate-500 font-black leading-tight">
+                          PVP VENTA
                         </div>
-                        <div className="font-mono font-black text-sm text-black leading-none">
+                        <div className="font-mono font-black text-2xl sm:text-3xl text-slate-950 leading-none">
                           ${product.precio.toFixed(2)}
                         </div>
                         {showBsPrice && (
-                          <div className="text-[8px] font-mono text-slate-700 font-bold leading-tight">
-                            {priceBs.toFixed(0)} Bs
+                          <div className="text-[10px] font-mono text-slate-700 font-bold leading-tight mt-0.5">
+                            {priceBs.toLocaleString('es-VE', { minimumFractionDigits: 0, maximumFractionDigits: 0 })} Bs
                           </div>
                         )}
                       </div>
@@ -400,37 +529,42 @@ export const ShoeLabelModal: React.FC<ShoeLabelModalProps> = ({
                   </div>
                 </div>
               ) : (
-                /* Other Label Formats Preview */
+                /* Other Label Formats Preview (Clean, No Harsh Black Outlines) */
                 <div
                   id="printable-shoe-label"
-                  className={`bg-white text-slate-900 border-2 border-dashed border-slate-700 p-3.5 shadow-md flex flex-col justify-between transition-all ${
+                  className={`bg-white text-slate-900 p-4 shadow-xl flex flex-col justify-between transition-all border-0 rounded-xl relative ${
                     labelFormat === 'thermal_50x30'
-                      ? 'w-72 min-h-44 rounded-lg'
+                      ? 'w-76 min-h-48'
                       : labelFormat === 'hangtag'
-                      ? 'w-64 min-h-56 rounded-2xl border-solid border-slate-800 relative'
-                      : 'w-80 min-h-48 rounded-xl'
+                      ? 'w-64 min-h-60 rounded-2xl relative'
+                      : 'w-84 min-h-52'
                   }`}
                 >
                   {/* Hangtag punch hole */}
                   {labelFormat === 'hangtag' && (
-                    <div className="absolute -top-3 left-1/2 -translate-x-1/2 w-6 h-6 rounded-full bg-slate-200 border-2 border-slate-800 flex items-center justify-center">
-                      <div className="w-2.5 h-2.5 rounded-full bg-white border border-slate-400" />
+                    <div className="absolute -top-3 left-1/2 -translate-x-1/2 w-6 h-6 rounded-full bg-slate-200 border-2 border-slate-400 flex items-center justify-center">
+                      <div className="w-2.5 h-2.5 rounded-full bg-white" />
                     </div>
                   )}
 
-                  {/* Brand & Store Header */}
-                  <div className="border-b-2 border-slate-900 pb-1 mb-1 text-center">
-                    <div className="flex items-center justify-between">
-                      <span className="font-black text-xs tracking-wider text-black">MAKD SHOP</span>
-                      <span className="font-bold text-[10px] uppercase bg-black text-white px-2 py-0.5 rounded">
-                        TALLA: {product.talla}
+                  {/* Brand & Predominant Size Header */}
+                  <div className="flex items-start justify-between border-b border-slate-100 pb-2 mb-1.5">
+                    <div>
+                      <span className="font-black text-sm tracking-wider text-slate-900 block">
+                        MAKD SHOP
                       </span>
+                      {showStoreAddress && (
+                        <div className="text-[8px] text-slate-500 font-medium tracking-tight">
+                          Puerto Ordaz • Cdad. Alta Vista II, Local 163
+                        </div>
+                      )}
                     </div>
-                    {showStoreAddress && (
-                      <div className="text-[8px] text-slate-600 font-medium tracking-tight mt-0.5">
-                        Puerto Ordaz • Cdad. Alta Vista II, Local 163
-                      </div>
-                    )}
+                    <div className="bg-slate-950 text-white px-3.5 py-1.5 rounded-xl flex flex-col items-center justify-center shadow-xs">
+                      <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest leading-none">
+                        TALLA
+                      </span>
+                      <span className="text-xl font-black font-mono leading-tight">{product.talla}</span>
+                    </div>
                   </div>
 
                   {/* Product Description */}
@@ -438,17 +572,46 @@ export const ShoeLabelModal: React.FC<ShoeLabelModalProps> = ({
                     <div className="font-black text-xs leading-tight text-slate-900 uppercase">
                       {product.nombre}
                     </div>
-                    <div className="text-[10px] text-slate-700 flex items-center justify-between">
+                    <div className="text-[10px] text-slate-600 flex items-center justify-between">
                       <span className="font-semibold">{product.marca} • {product.tipo}</span>
                       <span className="text-slate-500 font-mono">{product.color}</span>
                     </div>
                   </div>
 
+                  {/* Available Sizes for this Shoe Style */}
+                  {showAvailableSizes && availableSizes.length > 0 && (
+                    <div className="my-1.5 bg-slate-50 p-1.5 rounded-lg border border-slate-100">
+                      <div className="flex items-center justify-between text-[8px] font-black uppercase tracking-wider text-slate-500 mb-1">
+                        <span>Tallas Disp. en este Estilo:</span>
+                        <span className="text-[7px] text-emerald-700 font-bold bg-emerald-50 px-1 rounded">
+                          {availableSizes.length} disp.
+                        </span>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-1">
+                        {availableSizes.slice(0, 10).map((sz) => {
+                          const isCurrent = sz.trim() === product.talla.trim();
+                          return (
+                            <span
+                              key={sz}
+                              className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-bold leading-tight ${
+                                isCurrent
+                                  ? 'bg-slate-950 text-white'
+                                  : 'bg-white text-slate-700 border border-slate-200'
+                              }`}
+                            >
+                              {sz}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
                   {/* SKU and Barcode Section */}
-                  <div className="my-1 text-center py-1 bg-slate-50/80 rounded border border-slate-200">
+                  <div className="my-1 text-center py-1 bg-slate-50/80 rounded-lg">
                     {showBarcode && (
                       <div className="flex justify-center my-0.5">
-                        <BarcodeSvg value={product.sku} width={200} height={34} />
+                        <BarcodeSvg value={product.sku} width={200} height={32} />
                       </div>
                     )}
                     <div className="font-mono font-black text-xs tracking-widest text-slate-900">
@@ -456,10 +619,10 @@ export const ShoeLabelModal: React.FC<ShoeLabelModalProps> = ({
                     </div>
                   </div>
 
-                  {/* Cost and Pricing Section */}
-                  <div className="pt-1.5 border-t-2 border-slate-900 mt-auto flex items-end justify-between">
+                  {/* Cost and PREDOMINANT PRECIO */}
+                  <div className="pt-2 border-t border-slate-100 mt-auto flex items-end justify-between">
                     {showCost ? (
-                      <div className="bg-slate-100 border border-slate-300 px-1.5 py-0.5 rounded text-left">
+                      <div className="bg-slate-50 px-2 py-1 rounded-lg text-left border border-slate-100">
                         <div className="text-[8px] uppercase tracking-wider text-slate-500 font-bold">
                           Costo Compra
                         </div>
@@ -476,11 +639,11 @@ export const ShoeLabelModal: React.FC<ShoeLabelModalProps> = ({
                         <div className="text-[8px] uppercase tracking-wider text-slate-500 font-bold">
                           PVP Venta
                         </div>
-                        <div className="font-mono font-black text-base text-slate-900 leading-none">
+                        <div className="font-mono font-black text-2xl text-slate-950 leading-none">
                           ${product.precio.toFixed(2)}
                         </div>
                         {showBsPrice && (
-                          <div className="text-[9px] font-mono text-slate-600 font-bold">
+                          <div className="text-[10px] font-mono text-slate-600 font-bold mt-0.5">
                             {priceBs.toLocaleString('es-VE', { minimumFractionDigits: 0, maximumFractionDigits: 0 })} Bs
                           </div>
                         )}
@@ -491,11 +654,11 @@ export const ShoeLabelModal: React.FC<ShoeLabelModalProps> = ({
               )}
 
               {/* Dimension tag helper */}
-              <div className="mt-3 text-[10px] text-slate-600 font-medium flex items-center gap-1.5 bg-white/80 px-3 py-1 rounded-full border border-slate-300">
+              <div className="mt-3 text-[10px] text-slate-600 font-medium flex items-center gap-1.5 bg-white/90 px-3 py-1 rounded-full border border-slate-200 shadow-2xs">
                 <FileCheck className="w-3.5 h-3.5 text-indigo-600" />
                 <span>
                   {labelFormat === 'thermal_40x25'
-                    ? 'Medida: 40mm de ancho × 25mm de alto (ideal para rollos térmicos de calzado y cajas)'
+                    ? 'Medida exacta: 40mm ancho × 25mm alto (ideal para rollos térmicos de calzado y cajas)'
                     : labelFormat === 'thermal_50x30'
                     ? 'Medida: 50mm × 30mm'
                     : labelFormat === 'hangtag'
@@ -507,7 +670,7 @@ export const ShoeLabelModal: React.FC<ShoeLabelModalProps> = ({
             </div>
           </div>
 
-          {/* Hidden Print Container with repeat copies for printer */}
+          {/* Hidden Print Container with repeat copies for thermal printer */}
           <div className="hidden print:block print:w-full" id="print-label-batch">
             <style>{`
               @media print {
@@ -539,9 +702,10 @@ export const ShoeLabelModal: React.FC<ShoeLabelModalProps> = ({
                       max-height: 25mm !important;
                       page-break-inside: avoid;
                       break-inside: avoid;
-                      padding: 1.5mm !important;
+                      padding: 1.2mm !important;
                       box-sizing: border-box !important;
                       overflow: hidden !important;
+                      border: none !important;
                     }
                     `
                     : `
@@ -549,6 +713,7 @@ export const ShoeLabelModal: React.FC<ShoeLabelModalProps> = ({
                       page-break-inside: avoid;
                       break-inside: avoid;
                       margin-bottom: 8mm;
+                      border: none !important;
                     }
                     `
                 }
@@ -559,57 +724,75 @@ export const ShoeLabelModal: React.FC<ShoeLabelModalProps> = ({
               {Array.from({ length: copies }).map((_, idx) => (
                 <div
                   key={idx}
-                  className={`shoe-tag-item p-2.5 bg-white border border-black rounded text-black font-sans flex flex-col justify-between ${
+                  className={`shoe-tag-item p-2 bg-white text-black font-sans flex flex-col justify-between border-0 ${
                     labelFormat === 'thermal_40x25' ? 'w-[40mm] h-[25mm]' : 'w-72 min-h-44'
                   }`}
                   style={{ boxSizing: 'border-box' }}
                 >
-                  <div className="border-b border-black pb-0.5 mb-0.5 text-center">
-                    <div className="flex justify-between items-center">
-                      <strong className="text-[11px] font-black">MAKD SHOP</strong>
-                      <span className="text-[9px] font-black border border-black px-1 rounded">
-                        TALLA: {product.talla}
-                      </span>
-                    </div>
-                    {showStoreAddress && (
-                      <div className="text-[7px] text-gray-700">
-                        Puerto Ordaz • Alta Vista II, Local 163
+                  {/* Top Bar with Predominant Size */}
+                  <div className="flex justify-between items-start pb-0.5 mb-0.5">
+                    <div>
+                      <strong className="text-[10px] font-black leading-tight block">MAKD SHOP</strong>
+                      <div className="text-[8px] font-black uppercase truncate max-w-[24mm] leading-tight">
+                        {product.nombre}
                       </div>
-                    )}
-                  </div>
-
-                  <div className="my-0.5">
-                    <div className="text-[10px] font-black uppercase leading-tight truncate">{product.nombre}</div>
-                    <div className="text-[8px] text-gray-800 flex justify-between">
-                      <span>{product.marca} • {product.tipo}</span>
-                      <span>{product.color}</span>
+                    </div>
+                    <div className="bg-black text-white px-1.5 py-0.5 rounded text-center shrink-0">
+                      <div className="text-[6px] font-bold uppercase leading-none">TALLA</div>
+                      <div className="text-[12px] font-black font-mono leading-none">{product.talla}</div>
                     </div>
                   </div>
 
-                  <div className="text-center my-0.5">
+                  {/* Available Sizes for this style (Print) */}
+                  {showAvailableSizes && availableSizes.length > 0 && (
+                    <div className="text-[6px] font-bold text-gray-800 leading-tight my-0.2">
+                      <span>Tallas: </span>
+                      {availableSizes.map((sz, sIdx) => (
+                        <span
+                          key={sIdx}
+                          className={sz.trim() === product.talla.trim() ? 'font-black underline mr-1' : 'mr-1'}
+                        >
+                          {sz}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Barcode & SKU */}
+                  <div className="text-center my-0.2">
                     {showBarcode && (
                       <div className="flex justify-center my-0.2">
-                        <BarcodeSvg value={product.sku} width={labelFormat === 'thermal_40x25' ? 140 : 190} height={labelFormat === 'thermal_40x25' ? 22 : 32} />
+                        <BarcodeSvg
+                          value={product.sku}
+                          width={labelFormat === 'thermal_40x25' ? 140 : 190}
+                          height={labelFormat === 'thermal_40x25' ? 18 : 30}
+                        />
                       </div>
                     )}
-                    <div className="font-mono font-black text-[9px] tracking-wider">
+                    <div className="font-mono font-black text-[8px] tracking-wider leading-none">
                       SKU: {product.sku}
                     </div>
                   </div>
 
-                  <div className="border-t border-black pt-0.5 flex justify-between items-end">
-                    {showCost && (
-                      <div className="border border-black px-1 py-0.2 rounded text-left">
-                        <div className="text-[6px] uppercase font-bold text-gray-700">Costo</div>
-                        <div className="font-mono font-bold text-[9px]">${product.costo.toFixed(2)}</div>
+                  {/* Bottom Row with Predominant Price */}
+                  <div className="flex justify-between items-end pt-0.5 border-t border-gray-200">
+                    {showCost ? (
+                      <div className="text-left">
+                        <div className="text-[5px] uppercase font-bold text-gray-600">Costo</div>
+                        <div className="font-mono font-bold text-[8px]">${product.costo.toFixed(2)}</div>
                       </div>
+                    ) : (
+                      <div />
                     )}
+
                     {showPrice && (
                       <div className="text-right">
-                        <div className="text-[6px] uppercase font-bold text-gray-700">PVP Venta</div>
-                        <div className="font-mono font-black text-[11px] leading-tight">${product.precio.toFixed(2)}</div>
+                        <div className="text-[5px] uppercase font-bold text-gray-600">PVP Venta</div>
+                        <div className="font-mono font-black text-[13px] leading-tight text-black">
+                          ${product.precio.toFixed(2)}
+                        </div>
                         {showBsPrice && (
-                          <div className="text-[8px] font-mono font-bold leading-tight">
+                          <div className="text-[7px] font-mono font-bold leading-tight">
                             {priceBs.toFixed(0)} Bs
                           </div>
                         )}

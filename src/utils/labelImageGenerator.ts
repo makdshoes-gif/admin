@@ -10,6 +10,8 @@ export interface LabelOptions {
   showBarcode: boolean;
   showStoreAddress: boolean;
   exchangeRate: number;
+  availableSizes?: string[];
+  showAvailableSizes?: boolean;
 }
 
 // Code 39 barcode patterns
@@ -59,6 +61,33 @@ const CODE39_PATTERNS: Record<string, string> = {
   '%': '000101010',
   '*': '010010100',
 };
+
+/**
+ * Helper to draw rounded rectangle safely on any HTML5 canvas.
+ */
+function drawRoundedRect(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  r: number
+) {
+  if (typeof ctx.roundRect === 'function') {
+    ctx.roundRect(x, y, w, h, r);
+  } else {
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+    ctx.lineTo(x + w, y + h - r);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    ctx.lineTo(x + r, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+    ctx.lineTo(x, y + r);
+    ctx.quadraticCurveTo(x, y, x + r, y);
+    ctx.closePath();
+  }
+}
 
 /**
  * Draws a Code 39 barcode onto a 2D canvas context.
@@ -124,6 +153,10 @@ function fitText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number):
 
 /**
  * Renders a complete shoe label onto an HTML5 Canvas at high resolution.
+ * User requirements:
+ * 1. NO black lines / border around the label.
+ * 2. TALLA and PRECIO are predominant and large.
+ * 3. Shows available sizes for the same shoe style.
  */
 export function renderLabelToCanvas(
   product: ShoeProduct,
@@ -151,217 +184,338 @@ export function renderLabelToCanvas(
   canvas.width = width;
   canvas.height = height;
 
-  // 1. Fill clean white background
+  // 1. Fill clean white background without outer border (no black line around!)
   ctx.fillStyle = '#FFFFFF';
   ctx.fillRect(0, 0, width, height);
 
-  // 2. Draw border
-  ctx.strokeStyle = '#000000';
-  ctx.lineWidth = 3;
-  ctx.strokeRect(6, 6, width - 12, height - 12);
-
   const priceBs = product.precio * options.exchangeRate;
+  const showSizes = options.showAvailableSizes !== false && options.availableSizes && options.availableSizes.length > 0;
+  const availableSizesList = options.availableSizes || (product.talla ? [product.talla] : []);
 
   if (options.format === 'thermal_40x25') {
     // -------------------------------------------------------------
-    // OPTIMIZED ULTRA-CRISP 40x25mm LAYOUT (480 x 300 px)
+    // OPTIMIZED 40x25mm LAYOUT (480 x 300 px)
+    // No outer black line; TALLA and PRECIO predominant; Tallas disp. row
     // -------------------------------------------------------------
-    
-    // Top Bar: MAKD SHOP on left, TALLA badge on right
-    ctx.fillStyle = '#000000';
-    ctx.font = 'bold 24px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+
+    // 1. TOP SECTION: BRAND & PREDOMINANT TALLA
+    // Store Title
+    ctx.fillStyle = '#0f172a';
+    ctx.font = '900 20px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
     ctx.textBaseline = 'top';
     ctx.textAlign = 'left';
-    ctx.fillText('MAKD SHOP', 16, 16);
+    ctx.fillText('MAKD SHOP', 14, 14);
 
-    // TALLA badge
-    const tallaText = `TALLA: ${product.talla}`;
-    ctx.font = 'bold 18px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace';
-    const tallaWidth = ctx.measureText(tallaText).width + 16;
-    ctx.fillStyle = '#000000';
-    ctx.fillRect(width - 16 - tallaWidth, 14, tallaWidth, 28);
-    ctx.fillStyle = '#FFFFFF';
-    ctx.textAlign = 'center';
-    ctx.fillText(tallaText, width - 16 - tallaWidth / 2, 19);
-
-    // Subtle address line under title if enabled
     if (options.showStoreAddress) {
-      ctx.fillStyle = '#555555';
-      ctx.font = '11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-      ctx.textAlign = 'left';
-      ctx.fillText('Puerto Ordaz • Cdad. Alta Vista II, Loc. 163', 16, 44);
+      ctx.fillStyle = '#64748b';
+      ctx.font = '10px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+      ctx.fillText('Puerto Ordaz • Cdad. Alta Vista II, Loc. 163', 14, 38);
     }
 
-    // Divider
-    ctx.fillStyle = '#000000';
-    ctx.fillRect(16, 60, width - 32, 2);
+    // PREDOMINANT TALLA BADGE (Top-Right: Large, High-Contrast, Eye-catching)
+    const tallaVal = product.talla || '--';
+    const tallaBoxWidth = 138;
+    const tallaBoxHeight = 52;
+    const tallaBoxX = width - 14 - tallaBoxWidth;
+    const tallaBoxY = 12;
 
-    // Shoe Name (Bold)
-    ctx.fillStyle = '#000000';
-    ctx.font = 'bold 20px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    ctx.fillStyle = '#090d16';
+    ctx.beginPath();
+    drawRoundedRect(ctx, tallaBoxX, tallaBoxY, tallaBoxWidth, tallaBoxHeight, 8);
+    ctx.fill();
+
+    // "TALLA" label
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = 'bold 11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('TALLA', tallaBoxX + tallaBoxWidth / 2, tallaBoxY + 6);
+
+    // Giant Size Numeral
+    ctx.fillStyle = '#FFFFFF';
+    ctx.font = '900 30px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace';
+    ctx.fillText(tallaVal, tallaBoxX + tallaBoxWidth / 2, tallaBoxY + 18);
+
+    // 2. SHOE DETAILS
+    ctx.fillStyle = '#0f172a';
+    ctx.font = '800 17px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
     ctx.textAlign = 'left';
-    const shoeName = fitText(ctx, product.nombre.toUpperCase(), width - 36);
-    ctx.fillText(shoeName, 16, 68);
+    const shoeName = fitText(ctx, product.nombre.toUpperCase(), tallaBoxX - 22);
+    ctx.fillText(shoeName, 14, 54);
 
-    // Brand and Color / Type
-    ctx.fillStyle = '#333333';
-    ctx.font = 'bold 13px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    ctx.fillStyle = '#334155';
+    ctx.font = '600 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
     const details = `${product.marca || ''} • ${product.tipo || ''} | ${product.color || ''}`.trim();
-    ctx.fillText(fitText(ctx, details, width - 36), 16, 94);
+    ctx.fillText(fitText(ctx, details, width - 28), 14, 75);
 
-    // Barcode Section
-    if (options.showBarcode) {
-      // Draw Code 39 Barcode (clean black bars)
-      drawBarcode(ctx, product.sku, width / 2, 118, width - 60, 48);
-
-      // SKU text below barcode
-      ctx.fillStyle = '#000000';
-      ctx.font = 'bold 15px monospace';
-      ctx.textAlign = 'center';
-      ctx.fillText(`SKU: ${product.sku}`, width / 2, 172);
-    } else {
-      ctx.fillStyle = '#000000';
-      ctx.font = 'bold 22px monospace';
-      ctx.textAlign = 'center';
-      ctx.fillText(`SKU: ${product.sku}`, width / 2, 140);
-    }
-
-    // Bottom Divider
-    ctx.fillStyle = '#000000';
-    ctx.fillRect(16, 198, width - 32, 2);
-
-    // Bottom Row: Cost (left) and Price (right)
-    const bottomY = 208;
-
-    if (options.showCost) {
-      // Cost box on left
-      ctx.strokeStyle = '#000000';
-      ctx.lineWidth = 1.5;
-      ctx.strokeRect(16, bottomY, 150, 72);
-
-      ctx.fillStyle = '#666666';
-      ctx.font = 'bold 11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    // 3. AVAILABLE SIZES FOR THIS SHOE STYLE
+    // "que de el mismo estilo de zapato te diga las tallas disponibles"
+    let currentY = 96;
+    if (showSizes) {
+      ctx.fillStyle = '#475569';
+      ctx.font = 'bold 10px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
       ctx.textAlign = 'left';
-      ctx.fillText('COSTO COMPRA', 24, bottomY + 8);
+      ctx.fillText('TALLAS DISP. EN ESTE ESTILO:', 14, currentY);
 
-      ctx.fillStyle = '#000000';
-      ctx.font = 'bold 20px monospace';
-      ctx.fillText(`$${product.costo.toFixed(2)}`, 24, bottomY + 28);
+      let chipX = 14;
+      const chipY = currentY + 14;
+      const chipHeight = 22;
 
-      // Equivalent cost in Bs
-      const costBs = product.costo * options.exchangeRate;
-      ctx.fillStyle = '#555555';
-      ctx.font = '10px monospace';
-      ctx.fillText(`≈ ${costBs.toFixed(0)} Bs`, 24, bottomY + 52);
+      // Draw up to 8 sizes, clearly highlighted
+      availableSizesList.slice(0, 9).forEach((sz) => {
+        ctx.font = 'bold 12px monospace';
+        const txtW = ctx.measureText(sz).width;
+        const chipW = Math.max(26, txtW + 10);
+
+        if (chipX + chipW > width - 14) return; // prevent overflow
+
+        const isCurrent = sz.trim() === product.talla.trim();
+        if (isCurrent) {
+          // Highlight current shoe size
+          ctx.fillStyle = '#090d16';
+          ctx.beginPath();
+          drawRoundedRect(ctx, chipX, chipY, chipW, chipHeight, 5);
+          ctx.fill();
+
+          ctx.fillStyle = '#FFFFFF';
+          ctx.textAlign = 'center';
+          ctx.fillText(sz, chipX + chipW / 2, chipY + 4);
+        } else {
+          // Other available sizes
+          ctx.fillStyle = '#f8fafc';
+          ctx.beginPath();
+          drawRoundedRect(ctx, chipX, chipY, chipW, chipHeight, 5);
+          ctx.fill();
+
+          ctx.strokeStyle = '#cbd5e1';
+          ctx.lineWidth = 1;
+          ctx.stroke();
+
+          ctx.fillStyle = '#334155';
+          ctx.textAlign = 'center';
+          ctx.fillText(sz, chipX + chipW / 2, chipY + 4);
+        }
+
+        chipX += chipW + 5;
+      });
+
+      currentY = chipY + chipHeight + 8;
     }
 
-    if (options.showPrice) {
-      // Price on right
-      ctx.textAlign = 'right';
-      ctx.fillStyle = '#444444';
-      ctx.font = 'bold 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-      ctx.fillText('PVP VENTA', width - 16, bottomY + 6);
+    // 4. BARCODE & SKU
+    if (options.showBarcode) {
+      drawBarcode(ctx, product.sku, width / 2, currentY, width - 80, 36);
+      ctx.fillStyle = '#0f172a';
+      ctx.font = 'bold 13px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText(`SKU: ${product.sku}`, width / 2, currentY + 40);
+    } else {
+      ctx.fillStyle = '#0f172a';
+      ctx.font = 'bold 18px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText(`SKU: ${product.sku}`, width / 2, currentY + 12);
+    }
 
-      ctx.fillStyle = '#000000';
-      ctx.font = 'bold 28px monospace';
-      ctx.fillText(`$${product.precio.toFixed(2)}`, width - 16, bottomY + 24);
+    // 5. BOTTOM SECTION: COST (OPTIONAL) & PREDOMINANT PRECIO
+    const bottomY = height - 68;
+
+    // Subtle hairline separator above price
+    ctx.strokeStyle = '#e2e8f0';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(14, bottomY - 6);
+    ctx.lineTo(width - 14, bottomY - 6);
+    ctx.stroke();
+
+    // Cost on left (clean, without harsh dark border)
+    if (options.showCost) {
+      ctx.fillStyle = '#64748b';
+      ctx.font = 'bold 10px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillText('COSTO COMPRA', 14, bottomY + 2);
+
+      ctx.fillStyle = '#0f172a';
+      ctx.font = 'bold 18px monospace';
+      ctx.fillText(`$${product.costo.toFixed(2)}`, 14, bottomY + 18);
+
+      const costBs = product.costo * options.exchangeRate;
+      ctx.fillStyle = '#64748b';
+      ctx.font = '10px monospace';
+      ctx.fillText(`≈ ${costBs.toFixed(0)} Bs`, 14, bottomY + 42);
+    }
+
+    // PREDOMINANT PRECIO (Bottom Right: Huge, dominant font)
+    if (options.showPrice) {
+      ctx.textAlign = 'right';
+      ctx.fillStyle = '#64748b';
+      ctx.font = 'bold 11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+      ctx.fillText('PVP VENTA', width - 14, bottomY + 2);
+
+      // Giant Price
+      ctx.fillStyle = '#090d16';
+      ctx.font = '900 36px monospace';
+      ctx.fillText(`$${product.precio.toFixed(2)}`, width - 14, bottomY + 16);
 
       if (options.showBsPrice) {
-        ctx.fillStyle = '#222222';
-        ctx.font = 'bold 13px monospace';
-        ctx.fillText(`${priceBs.toLocaleString('es-VE', { minimumFractionDigits: 0, maximumFractionDigits: 0 })} Bs`, width - 16, bottomY + 54);
+        ctx.fillStyle = '#1e293b';
+        ctx.font = 'bold 15px monospace';
+        ctx.fillText(
+          `${priceBs.toLocaleString('es-VE', { minimumFractionDigits: 0, maximumFractionDigits: 0 })} Bs`,
+          width - 14,
+          bottomY + 48
+        );
       }
     }
   } else {
     // -------------------------------------------------------------
     // GENERAL / STANDARD LAYOUT (50x30mm, HangTag, Box)
+    // Also no outer black border; Predominant Talla and Price; Tallas disp.
     // -------------------------------------------------------------
-    ctx.fillStyle = '#000000';
-    ctx.font = 'bold 28px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    ctx.fillStyle = '#0f172a';
+    ctx.font = '900 24px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
     ctx.textBaseline = 'top';
     ctx.textAlign = 'left';
-    ctx.fillText('MAKD SHOP', 20, 20);
-
-    const tallaText = `TALLA: ${product.talla}`;
-    ctx.font = 'bold 20px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace';
-    const tallaWidth = ctx.measureText(tallaText).width + 20;
-    ctx.fillStyle = '#000000';
-    ctx.fillRect(width - 20 - tallaWidth, 18, tallaWidth, 32);
-    ctx.fillStyle = '#FFFFFF';
-    ctx.textAlign = 'center';
-    ctx.fillText(tallaText, width - 20 - tallaWidth / 2, 23);
+    ctx.fillText('MAKD SHOP', 18, 16);
 
     if (options.showStoreAddress) {
-      ctx.fillStyle = '#555555';
-      ctx.font = '12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-      ctx.textAlign = 'left';
-      ctx.fillText('Puerto Ordaz • Cdad. Alta Vista II, Local 163', 20, 56);
+      ctx.fillStyle = '#64748b';
+      ctx.font = '11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+      ctx.fillText('Puerto Ordaz • Cdad. Alta Vista II, Local 163', 18, 44);
     }
 
-    ctx.fillStyle = '#000000';
-    ctx.fillRect(20, 78, width - 40, 2);
+    // PREDOMINANT TALLA
+    const tallaVal = product.talla || '--';
+    const tallaBoxWidth = 150;
+    const tallaBoxHeight = 56;
+    const tallaBoxX = width - 18 - tallaBoxWidth;
+    const tallaBoxY = 14;
 
-    ctx.fillStyle = '#000000';
-    ctx.font = 'bold 22px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    ctx.fillStyle = '#090d16';
+    ctx.beginPath();
+    drawRoundedRect(ctx, tallaBoxX, tallaBoxY, tallaBoxWidth, tallaBoxHeight, 8);
+    ctx.fill();
+
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = 'bold 11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('TALLA', tallaBoxX + tallaBoxWidth / 2, tallaBoxY + 6);
+
+    ctx.fillStyle = '#FFFFFF';
+    ctx.font = '900 32px monospace';
+    ctx.fillText(tallaVal, tallaBoxX + tallaBoxWidth / 2, tallaBoxY + 20);
+
+    // Shoe title & details
+    ctx.fillStyle = '#0f172a';
+    ctx.font = '800 20px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
     ctx.textAlign = 'left';
-    ctx.fillText(fitText(ctx, product.nombre.toUpperCase(), width - 44), 20, 88);
+    ctx.fillText(fitText(ctx, product.nombre.toUpperCase(), tallaBoxX - 25), 18, 70);
 
-    ctx.fillStyle = '#444444';
-    ctx.font = 'bold 14px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    ctx.fillStyle = '#334155';
+    ctx.font = '600 13px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
     const details = `${product.marca || ''} • ${product.tipo || ''} | ${product.color || ''}`.trim();
-    ctx.fillText(fitText(ctx, details, width - 44), 20, 118);
+    ctx.fillText(fitText(ctx, details, width - 36), 18, 98);
 
-    if (options.showBarcode) {
-      drawBarcode(ctx, product.sku, width / 2, 146, width - 80, 56);
-      ctx.fillStyle = '#000000';
-      ctx.font = 'bold 16px monospace';
-      ctx.textAlign = 'center';
-      ctx.fillText(`SKU: ${product.sku}`, width / 2, 210);
-    } else {
-      ctx.fillStyle = '#000000';
-      ctx.font = 'bold 24px monospace';
-      ctx.textAlign = 'center';
-      ctx.fillText(`SKU: ${product.sku}`, width / 2, 170);
+    // Available Sizes Row
+    let curY = 126;
+    if (showSizes) {
+      ctx.fillStyle = '#475569';
+      ctx.font = 'bold 11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+      ctx.fillText('TALLAS DISP. EN ESTE ESTILO:', 18, curY);
+
+      let chipX = 18;
+      const chipY = curY + 16;
+      const chipHeight = 24;
+
+      availableSizesList.slice(0, 10).forEach((sz) => {
+        ctx.font = 'bold 13px monospace';
+        const txtW = ctx.measureText(sz).width;
+        const chipW = Math.max(28, txtW + 12);
+        if (chipX + chipW > width - 18) return;
+
+        const isCurrent = sz.trim() === product.talla.trim();
+        if (isCurrent) {
+          ctx.fillStyle = '#090d16';
+          ctx.beginPath();
+          drawRoundedRect(ctx, chipX, chipY, chipW, chipHeight, 5);
+          ctx.fill();
+          ctx.fillStyle = '#FFFFFF';
+          ctx.textAlign = 'center';
+          ctx.fillText(sz, chipX + chipW / 2, chipY + 4);
+        } else {
+          ctx.fillStyle = '#f8fafc';
+          ctx.beginPath();
+          drawRoundedRect(ctx, chipX, chipY, chipW, chipHeight, 5);
+          ctx.fill();
+          ctx.strokeStyle = '#cbd5e1';
+          ctx.lineWidth = 1;
+          ctx.stroke();
+          ctx.fillStyle = '#334155';
+          ctx.textAlign = 'center';
+          ctx.fillText(sz, chipX + chipW / 2, chipY + 4);
+        }
+        chipX += chipW + 6;
+      });
+
+      curY = chipY + chipHeight + 14;
     }
 
-    const bottomY = height - 100;
-    ctx.fillStyle = '#000000';
-    ctx.fillRect(20, bottomY - 10, width - 40, 2);
+    // Barcode Section
+    if (options.showBarcode) {
+      drawBarcode(ctx, product.sku, width / 2, curY, width - 80, 48);
+      ctx.fillStyle = '#0f172a';
+      ctx.font = 'bold 15px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText(`SKU: ${product.sku}`, width / 2, curY + 54);
+    } else {
+      ctx.fillStyle = '#0f172a';
+      ctx.font = 'bold 22px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText(`SKU: ${product.sku}`, width / 2, curY + 20);
+    }
+
+    // Bottom Section: Cost & Giant Price
+    const bottomY = height - 80;
+
+    ctx.strokeStyle = '#e2e8f0';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(18, bottomY - 8);
+    ctx.lineTo(width - 18, bottomY - 8);
+    ctx.stroke();
 
     if (options.showCost) {
-      ctx.strokeStyle = '#000000';
-      ctx.lineWidth = 1.5;
-      ctx.strokeRect(20, bottomY, 170, 78);
-
-      ctx.fillStyle = '#555555';
-      ctx.font = 'bold 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+      ctx.fillStyle = '#64748b';
+      ctx.font = 'bold 11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
       ctx.textAlign = 'left';
-      ctx.fillText('COSTO COMPRA', 30, bottomY + 10);
+      ctx.fillText('COSTO COMPRA', 18, bottomY + 2);
 
-      ctx.fillStyle = '#000000';
-      ctx.font = 'bold 22px monospace';
-      ctx.fillText(`$${product.costo.toFixed(2)}`, 30, bottomY + 32);
+      ctx.fillStyle = '#0f172a';
+      ctx.font = 'bold 20px monospace';
+      ctx.fillText(`$${product.costo.toFixed(2)}`, 18, bottomY + 20);
 
       const costBs = product.costo * options.exchangeRate;
-      ctx.fillStyle = '#555555';
+      ctx.fillStyle = '#64748b';
       ctx.font = '11px monospace';
-      ctx.fillText(`≈ ${costBs.toFixed(0)} Bs`, 30, bottomY + 58);
+      ctx.fillText(`≈ ${costBs.toFixed(0)} Bs`, 18, bottomY + 46);
     }
 
     if (options.showPrice) {
       ctx.textAlign = 'right';
-      ctx.fillStyle = '#555555';
-      ctx.font = 'bold 13px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-      ctx.fillText('PVP VENTA', width - 20, bottomY + 8);
+      ctx.fillStyle = '#64748b';
+      ctx.font = 'bold 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+      ctx.fillText('PVP VENTA', width - 18, bottomY + 2);
 
-      ctx.fillStyle = '#000000';
-      ctx.font = 'bold 30px monospace';
-      ctx.fillText(`$${product.precio.toFixed(2)}`, width - 20, bottomY + 28);
+      ctx.fillStyle = '#090d16';
+      ctx.font = '900 40px monospace';
+      ctx.fillText(`$${product.precio.toFixed(2)}`, width - 18, bottomY + 18);
 
       if (options.showBsPrice) {
-        ctx.fillStyle = '#222222';
-        ctx.font = 'bold 15px monospace';
-        ctx.fillText(`${priceBs.toLocaleString('es-VE', { minimumFractionDigits: 0, maximumFractionDigits: 0 })} Bs`, width - 20, bottomY + 62);
+        ctx.fillStyle = '#1e293b';
+        ctx.font = 'bold 16px monospace';
+        ctx.fillText(
+          `${priceBs.toLocaleString('es-VE', { minimumFractionDigits: 0, maximumFractionDigits: 0 })} Bs`,
+          width - 18,
+          bottomY + 54
+        );
       }
     }
   }
@@ -382,7 +536,12 @@ export function downloadLabelImage(
       const canvas = renderLabelToCanvas(product, options);
       const mimeType = formatType === 'jpeg' ? 'image/jpeg' : 'image/png';
       const extension = formatType === 'jpeg' ? 'jpg' : 'png';
-      const sizeLabel = options.format === 'thermal_40x25' ? '40x25mm' : options.format === 'thermal_50x30' ? '50x30mm' : options.format;
+      const sizeLabel =
+        options.format === 'thermal_40x25'
+          ? '40x25mm'
+          : options.format === 'thermal_50x30'
+          ? '50x30mm'
+          : options.format;
 
       const dataUrl = canvas.toDataURL(mimeType, 0.98);
       const link = document.createElement('a');

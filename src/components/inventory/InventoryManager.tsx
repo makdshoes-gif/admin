@@ -1066,12 +1066,13 @@ export const InventoryManager: React.FC = () => {
         }}
       />
 
-      {/* Modal: Shoe Label Print (SKU, Description & Cost) */}
+      {/* Modal: Shoe Label Print (SKU, Description, Cost, Talla Predominante & Tallas Disp.) */}
       <ShoeLabelModal
         isOpen={isLabelModalOpen}
         onClose={() => setIsLabelModalOpen(false)}
         product={labelProduct}
         exchangeRate={exchangeRate}
+        allProducts={products}
       />
 
       {/* Modal: GitHub Catalog Synchronization (makdshoes-gif/makd) */}
