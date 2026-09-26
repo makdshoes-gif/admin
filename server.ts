@@ -23,6 +23,7 @@ import {
   deleteLayawayFromDb,
   getSalesClosures,
   addSalesClosure,
+  deductStockForSaleItems,
 } from './server/db.js';
 import { verifyBdvPayment, getBdvApiConfig, getRecentVerifications } from './server/bdv.js';
 import { analyzeShoeImage } from './server/shoeAi.js';
@@ -660,22 +661,12 @@ async function startServer() {
             notas = EXCLUDED.notas;
         `;
 
-        // Also adjust product stock in Neon if items present
+        // Also adjust product stock in Neon if items present. Se usa la
+        // función compartida en server/db.ts (deductStockForSaleItems) para
+        // que server.ts (Render) y server/app.ts (Vercel) nunca vuelvan a
+        // desincronizarse en esta lógica.
         if (Array.isArray(s.items)) {
-          for (const item of s.items) {
-            const qty = Math.max(1, Number(item.cantidad) || 1);
-            const prodId = item.producto_id ? String(item.producto_id).trim() : '';
-            const sku = item.sku ? String(item.sku).trim() : '';
-            const nombre = item.nombre_producto ? String(item.nombre_producto).trim() : '';
-            const talla = item.talla ? String(item.talla).trim() : '';
-            await sql`
-              UPDATE shoe_products
-              SET stock = GREATEST(0, stock - ${qty})
-              WHERE (id = ${prodId})
-                 OR (${sku} != '' AND sku = ${sku})
-                 OR (${nombre} != '' AND ${talla} != '' AND LOWER(nombre) = LOWER(${nombre}) AND talla = ${talla});
-            `;
-          }
+          await deductStockForSaleItems(s.items);
         }
 
         // Also update exact stock from body.updatedProducts into Neon
