@@ -12,6 +12,7 @@ import {
   insertSale,
   updateSale,
   voidSale,
+  deductStockForSaleItems,
   getSalesClosures,
   addSalesClosure,
 } from './db.js';
@@ -282,6 +283,7 @@ app.post('/api/sales', async (req, res) => {
   try {
     await initDatabaseSchema();
     await insertSale(sale);
+    await deductStockForSaleItems(sale.items);
     res.json({ saved: true, id: sale.id });
   } catch (err) {
     console.error('Error guardando venta en Neon:', err);
