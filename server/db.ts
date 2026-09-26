@@ -457,58 +457,34 @@ export async function insertSale(sale: any): Promise<boolean> {
 }
 
 // Descuenta el stock vendido de shoe_products en Neon, para cada ítem de
-// una venta. Busca el producto igual que el resto de la app: por id, o si
-// no por sku, o si no por nombre+talla — así, si el id no coincide
-// exactamente por cualquier motivo, el descuento igual encuentra el
-// producto correcto en vez de fallar en silencio.
+// una venta. IMPORTANTE: busca el producto igual que el resto de la app
+// (por id, o si no por sku, o si no por nombre+talla) — antes esta consulta
+// SOLO buscaba por id exacto. Si ese id no coincidía con el de Neon por
+// cualquier motivo, la venta se guardaba pero el stock nunca bajaba de
+// verdad, y "reaparecía" en la siguiente sincronización aunque sí se
+// hubiera vendido.
 export async function deductStockForSaleItems(items: any[]): Promise<void> {
   const sql = getNeonSql();
   if (!sql || !Array.isArray(items)) return;
   for (const item of items) {
     const cantidad = Math.max(1, Number(item?.cantidad) || 1);
-    const id = item?.producto_id ? String(item.producto_id).trim() : '';
-    const sku = item?.sku ? String(item.sku).trim() : '';
-    const nombre = item?.nombre_producto ? String(item.nombre_producto).trim() : '';
-    const talla = item?.talla ? String(item.talla).trim() : '';
+    const id = item?.producto_id ? String(item.producto_id) : null;
+    const sku = item?.sku ? String(item.sku) : null;
+    const nombre = item?.nombre_producto ? String(item.nombre_producto) : null;
+    const talla = item?.talla ? String(item.talla) : null;
     if (!id && !sku && !(nombre && talla)) continue;
 
     try {
-      await sql`
-        UPDATE shoe_products
-        SET stock = GREATEST(0, stock - ${cantidad})
-        WHERE (${id} != '' AND id = ${id})
-           OR (${sku} != '' AND LOWER(sku) = LOWER(${sku}))
-           OR (${nombre} != '' AND ${talla} != '' AND LOWER(nombre) = LOWER(${nombre}) AND talla = ${talla});
-      `;
+      await (sql as any).query(
+        `UPDATE shoe_products
+         SET stock = GREATEST(0, stock - $1)
+         WHERE id = $2
+            OR (sku IS NOT NULL AND $3 IS NOT NULL AND lower(sku) = lower($3))
+            OR (lower(nombre) = lower(COALESCE($4, '')) AND talla = COALESCE($5, '') AND $4 IS NOT NULL AND $5 IS NOT NULL)`,
+        [cantidad, id, sku, nombre, talla]
+      );
     } catch (err) {
       console.error('Error descontando stock en Neon para item de venta:', item, err);
-    }
-  }
-}
-
-// Devuelve stock al inventario (usado al anular una venta), con la misma
-// búsqueda flexible que deductStockForSaleItems.
-async function restockItemsWithFallbackMatch(items: any[]): Promise<void> {
-  const sql = getNeonSql();
-  if (!sql || !Array.isArray(items)) return;
-  for (const item of items) {
-    const cantidad = Math.max(1, Number(item?.cantidad) || 1);
-    const id = item?.producto_id ? String(item.producto_id).trim() : '';
-    const sku = item?.sku ? String(item.sku).trim() : '';
-    const nombre = item?.nombre_producto ? String(item.nombre_producto).trim() : '';
-    const talla = item?.talla ? String(item.talla).trim() : '';
-    if (!id && !sku && !(nombre && talla)) continue;
-
-    try {
-      await sql`
-        UPDATE shoe_products
-        SET stock = stock + ${cantidad}
-        WHERE (${id} != '' AND id = ${id})
-           OR (${sku} != '' AND LOWER(sku) = LOWER(${sku}))
-           OR (${nombre} != '' AND ${talla} != '' AND LOWER(nombre) = LOWER(${nombre}) AND talla = ${talla});
-      `;
-    } catch (err) {
-      console.error('Error restituyendo stock en Neon para item anulado:', item, err);
     }
   }
 }
@@ -552,6 +528,34 @@ export async function voidSale(id: string, motivo: string): Promise<{ ok: boolea
   const items = Array.isArray(sale.items) ? sale.items : [];
   await restockItemsWithFallbackMatch(items);
   return { ok: true, items };
+}
+
+// Devuelve stock al inventario (usado al anular una venta), con la misma
+// búsqueda flexible (id, o sku, o nombre+talla) que deductStockForSaleItems.
+async function restockItemsWithFallbackMatch(items: any[]): Promise<void> {
+  const sql = getNeonSql();
+  if (!sql || !Array.isArray(items)) return;
+  for (const item of items) {
+    const cantidad = Math.max(1, Number(item?.cantidad) || 1);
+    const id = item?.producto_id ? String(item.producto_id) : null;
+    const sku = item?.sku ? String(item.sku) : null;
+    const nombre = item?.nombre_producto ? String(item.nombre_producto) : null;
+    const talla = item?.talla ? String(item.talla) : null;
+    if (!id && !sku && !(nombre && talla)) continue;
+
+    try {
+      await (sql as any).query(
+        `UPDATE shoe_products
+         SET stock = stock + $1
+         WHERE id = $2
+            OR (sku IS NOT NULL AND $3 IS NOT NULL AND lower(sku) = lower($3))
+            OR (lower(nombre) = lower(COALESCE($4, '')) AND talla = COALESCE($5, '') AND $4 IS NOT NULL AND $5 IS NOT NULL)`,
+        [cantidad, id, sku, nombre, talla]
+      );
+    } catch (err) {
+      console.error('Error restituyendo stock en Neon para item anulado:', item, err);
+    }
+  }
 }
 
 // ==========================================
