@@ -164,17 +164,17 @@ export const CashClosure: React.FC = () => {
               key={acc.id}
               className="p-3 rounded-xl bg-white border border-slate-200 shadow-xs flex flex-col justify-between"
             >
-              <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center justify-between mb-2 gap-1">
                 <span className="text-xs font-semibold text-slate-700 truncate">{acc.nombre}</span>
-                {getAccountIcon(acc.nombre)}
+                <span className="shrink-0">{getAccountIcon(acc.nombre)}</span>
               </div>
-              <div>
-                <div className="text-base font-bold font-mono text-slate-900">
+              <div className="min-w-0">
+                <div className="text-sm sm:text-base font-bold font-mono text-slate-900 truncate">
                   {acc.moneda === 'Bs'
                     ? `${acc.saldo.toLocaleString('es-VE', { minimumFractionDigits: 0, maximumFractionDigits: 0 })} Bs`
                     : `$${acc.saldo.toFixed(2)}`}
                 </div>
-                <div className="text-[10px] text-slate-400 font-mono mt-0.5">
+                <div className="text-[10px] text-slate-400 font-mono mt-0.5 truncate">
                   {acc.moneda === 'Bs'
                     ? `~$${(acc.saldo / exchangeRate).toFixed(2)} USD`
                     : `~${(acc.saldo * exchangeRate).toFixed(0)} Bs`}
@@ -279,9 +279,9 @@ export const CashClosure: React.FC = () => {
             <button
               id="execute-closure-btn"
               onClick={handleExecuteClosure}
-              className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs uppercase tracking-wider rounded-lg shadow-xs flex items-center justify-center gap-2 transition-colors cursor-pointer"
+              className="w-full py-2.5 sm:py-3 px-4 bg-indigo-600 hover:bg-indigo-700 active:scale-[0.99] text-white font-bold text-xs uppercase tracking-wider rounded-xl shadow-xs flex items-center justify-center gap-2 transition-colors cursor-pointer whitespace-nowrap"
             >
-              <CheckCircle className="w-4 h-4" />
+              <CheckCircle className="w-4 h-4 shrink-0" />
               <span>Registrar y Guardar Arqueo de Caja</span>
             </button>
           </div>

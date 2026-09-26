@@ -1446,14 +1446,14 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     {/* Background cleaning button */}
                     <button
                       type="button"
                       onClick={() => handleCleanBackground()}
                       disabled={isRemovingBackground}
                       title="Quitar fondo y poner fondo blanco de estudio"
-                      className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-indigo-700 border border-slate-200 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer disabled:opacity-50"
+                      className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-indigo-700 border border-slate-200 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer disabled:opacity-50 whitespace-nowrap"
                     >
                       <Wand2 className={`w-3.5 h-3.5 text-indigo-600 ${isRemovingBackground ? 'animate-spin' : ''}`} />
                       <span>{isRemovingBackground ? 'Limpiando...' : 'Fondo Blanco'}</span>
@@ -1464,10 +1464,10 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
                       type="button"
                       onClick={() => handleAnalyzeWithAi()}
                       disabled={isAiAnalyzing}
-                      className="px-3 py-1.5 bg-linear-to-r from-cyan-600 via-indigo-600 to-purple-600 hover:opacity-95 disabled:opacity-50 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-xs transition cursor-pointer"
+                      className="px-3 py-1.5 bg-linear-to-r from-cyan-600 via-indigo-600 to-purple-600 hover:opacity-95 disabled:opacity-50 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-xs transition cursor-pointer whitespace-nowrap"
                     >
                       <Sparkles className={`w-3.5 h-3.5 text-cyan-200 ${isAiAnalyzing ? 'animate-spin' : ''}`} />
-                      <span>{isAiAnalyzing ? 'Analizando con IA...' : '✨ Identificar Zapato con IA'}</span>
+                      <span>{isAiAnalyzing ? 'Analizando...' : '✨ Auto-Identificar con IA'}</span>
                     </button>
 
                     <button
@@ -1511,25 +1511,25 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
           </div>
 
           {/* Footer Actions */}
-          <div className="pt-4 border-t border-slate-200 flex items-center justify-between">
+          <div className="pt-4 border-t border-slate-200 flex items-center justify-between gap-3">
             <button
               type="button"
               onClick={handleCloseModal}
-              className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-800 rounded-lg transition cursor-pointer"
+              className="px-3.5 py-2 text-xs font-semibold text-slate-600 hover:text-slate-800 rounded-lg transition cursor-pointer whitespace-nowrap"
             >
               Cancelar
             </button>
 
             <button
               type="submit"
-              className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-bold text-xs rounded-xl shadow-xs flex items-center gap-2 transition cursor-pointer"
+              className="px-4 py-2 sm:px-5 sm:py-2.5 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-bold text-xs rounded-xl shadow-xs flex items-center gap-2 transition cursor-pointer whitespace-nowrap"
             >
-              <Check className="w-4 h-4" />
+              <Check className="w-4 h-4 shrink-0" />
               <span>
                 {editingProduct
                   ? 'Guardar Cambios'
                   : entryMode === 'multi'
-                  ? `Guardar Modelo y Crear ${activeSizes.length} Tallas (${totalPairsCount} pares)`
+                  ? `Guardar Modelo (${activeSizes.length} Tallas, ${totalPairsCount} pares)`
                   : 'Guardar Producto'}
               </span>
             </button>

@@ -520,7 +520,7 @@ export const SalesReports: React.FC = () => {
             onClick={() => syncBcvRate(false)}
             disabled={isBcvSyncing}
             title="Sincronizar métricas con la última tasa oficial del BCV en tiempo real"
-            className="px-2.5 py-1.5 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 hover:bg-emerald-100 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs disabled:opacity-50"
+            className="px-2.5 py-1.5 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 hover:bg-emerald-100 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs disabled:opacity-50 whitespace-nowrap shrink-0"
           >
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
             <span className="text-[11px] font-mono font-bold">BCV: {exchangeRate.toFixed(2)} Bs</span>
@@ -530,7 +530,7 @@ export const SalesReports: React.FC = () => {
           <button
             onClick={() => setLastGeneratedTime(new Date().toLocaleTimeString())}
             title="Recalcular métricas"
-            className="p-1.5 rounded-lg bg-slate-50 border border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-100 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+            className="p-1.5 rounded-lg bg-slate-50 border border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-100 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0"
           >
             <RefreshCw className="w-3.5 h-3.5" />
             <span className="text-[11px] text-slate-500 hidden sm:inline">{lastGeneratedTime}</span>
@@ -539,7 +539,7 @@ export const SalesReports: React.FC = () => {
           <button
             id="export-excel-btn"
             onClick={handleExportExcel}
-            className="px-3 py-1.5 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+            className="px-3 py-1.5 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer whitespace-nowrap shrink-0"
           >
             <Download className="w-4 h-4" />
             <span>Excel (.xlsx)</span>
@@ -548,7 +548,7 @@ export const SalesReports: React.FC = () => {
           <button
             id="export-sheets-btn"
             onClick={() => setIsSheetsModalOpen(true)}
-            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer whitespace-nowrap shrink-0"
             title="Sincronizar y exportar a Google Sheets"
           >
             <FileSpreadsheet className="w-4 h-4" />
@@ -558,10 +558,10 @@ export const SalesReports: React.FC = () => {
           <button
             id="print-report-btn"
             onClick={handlePrintReport}
-            className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+            className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0"
           >
             <Printer className="w-4 h-4" />
-            <span>Imprimir Reporte</span>
+            <span>Imprimir</span>
           </button>
         </div>
       </div>
@@ -1531,19 +1531,19 @@ export const SalesReports: React.FC = () => {
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
+          <table className="w-full text-left text-xs min-w-[950px]">
             <thead className="bg-slate-50 text-slate-500 uppercase tracking-wider text-[10px] border-b border-slate-200">
               <tr>
-                <th className="py-2.5 px-4 font-semibold">Factura #</th>
-                <th className="py-2.5 px-3 font-semibold">Fecha</th>
-                <th className="py-2.5 px-4 font-semibold">Cliente</th>
-                <th className="py-2.5 px-4 font-semibold">Calzado Comprado</th>
-                <th className="py-2.5 px-3 text-right font-semibold">Total ($)</th>
-                <th className="py-2.5 px-3 text-right font-semibold">Total (Bs)</th>
-                <th className="py-2.5 px-3 text-right font-semibold">Ganancia ($)</th>
-                <th className="py-2.5 px-3 font-semibold min-w-[200px]">Forma de Pago</th>
-                <th className="py-2.5 px-4 text-center font-semibold">Recibo</th>
-                <th className="py-2.5 px-4 text-center font-semibold">Acciones</th>
+                <th className="py-2.5 px-3 font-semibold min-w-[95px]">Factura #</th>
+                <th className="py-2.5 px-3 font-semibold min-w-[130px]">Fecha</th>
+                <th className="py-2.5 px-3 font-semibold min-w-[140px]">Cliente</th>
+                <th className="py-2.5 px-3 font-semibold min-w-[170px]">Calzado Comprado</th>
+                <th className="py-2.5 px-3 text-right font-semibold min-w-[80px]">Total ($)</th>
+                <th className="py-2.5 px-3 text-right font-semibold min-w-[85px]">Total (Bs)</th>
+                <th className="py-2.5 px-3 text-right font-semibold min-w-[80px]">Ganancia ($)</th>
+                <th className="py-2.5 px-3 font-semibold min-w-[190px]">Forma de Pago</th>
+                <th className="py-2.5 px-2 text-center font-semibold min-w-[60px]">Recibo</th>
+                <th className="py-2.5 px-2 text-center font-semibold min-w-[60px]">Acciones</th>
               </tr>
             </thead>
 

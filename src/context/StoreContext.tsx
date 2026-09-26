@@ -35,25 +35,9 @@ import {
   deleteExpenseApi,
   fetchBankReconciliationsApi,
   saveBankReconciliationApi,
-  updateBankReconciliationApi
+  updateBankReconciliationApi,
+  syncDataToNeon
 } from '../services/api';
-import {
-  db,
-  auth,
-  OperationType,
-  handleFirestoreError,
-  loginWithGoogle,
-  logoutUser,
-} from '../lib/firebase';
-import {
-  collection,
-  doc,
-  setDoc,
-  deleteDoc,
-  onSnapshot,
-  writeBatch,
-} from 'firebase/firestore';
-import { onAuthStateChanged, User } from 'firebase/auth';
 import {
   sendInventoryWebhook,
   WebhookSyncResult,
@@ -154,7 +138,7 @@ interface StoreContextType {
   syncStatus: 'synced' | 'syncing' | 'error';
   lastSyncedAt: string;
   forceSync: () => Promise<void>;
-  currentUser: User | null;
+  currentUser: any;
   isFirebaseConnected: boolean;
   loginWithGoogleAction: () => Promise<void>;
   logoutUserAction: () => Promise<void>;
@@ -324,17 +308,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [syncStatus, setSyncStatus] = useState<'synced' | 'syncing' | 'error'>('synced');
   const [lastSyncedAt, setLastSyncedAt] = useState<string>('Al iniciar');
 
-  // Firebase Auth State
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [isFirebaseConnected, setIsFirebaseConnected] = useState<boolean>(false);
-
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      setCurrentUser(user);
-      setIsFirebaseConnected(!!user);
-    });
-    return () => unsubscribe();
-  }, []);
+  // Cloud / Database Auth State (Authentication handled via local PIN roles; cloud sync via Neon)
+  const currentUser = null;
+  const isFirebaseConnected = false;
 
   // Persist whenever state changes
   useEffect(() => {
@@ -667,215 +643,40 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }, []);
 
   const loginWithGoogleAction = useCallback(async () => {
-    try {
-      const user = await loginWithGoogle();
-      setCurrentUser(user);
-      setIsFirebaseConnected(true);
-      addNotification(
-        'Google Conectado',
-        `Sesión iniciada como ${user.email}. Tu catálogo y ventas se sincronizan en tiempo real con Firestore en todas tus PCs.`,
-        'success'
-      );
-    } catch (err: any) {
-      console.error('Login error:', err);
-      addNotification('Error de Autenticación', err.message || 'No se pudo conectar con Google.', 'critical');
-    }
-  }, [addNotification]);
+    // Sincronización multi-dispositivo gestionada a través de Neon PostgreSQL
+  }, []);
 
   const logoutUserAction = useCallback(async () => {
-    try {
-      await logoutUser();
-      setCurrentUser(null);
-      setIsFirebaseConnected(false);
-      addNotification('Sesión Cerrada', 'Has desconectado la cuenta de Google en este equipo.', 'info');
-    } catch (err: any) {
-      console.error('Logout error:', err);
-    }
-  }, [addNotification]);
+    // Sesión gestionada localmente
+  }, []);
 
-  // Real-time Firestore sync via onSnapshot when currentUser is logged in
-  useEffect(() => {
-    if (!currentUser) return;
+  // Sincronización completa directa con Neon PostgreSQL
+  const pushAllToCloud = useCallback(async () => {
     setSyncStatus('syncing');
-
-    const unsubProducts = onSnapshot(
-      collection(db, 'products'),
-      (snap) => {
-        if (!snap.empty) {
-          const cloudProducts = snap.docs.map((d) => d.data() as ShoeProduct);
-          setProducts(cloudProducts);
-          try {
-            localStorage.setItem(`${STORAGE_KEY}_products`, JSON.stringify(cloudProducts));
-          } catch {}
-        }
+    try {
+      const res = await syncDataToNeon(products, sales);
+      if (res.success) {
         setSyncStatus('synced');
         setLastSyncedAt(
           new Date().toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
         );
-      },
-      (err) => handleFirestoreError(err, OperationType.GET, 'products')
-    );
-
-    const unsubSales = onSnapshot(
-      collection(db, 'sales'),
-      (snap) => {
-        if (!snap.empty) {
-          const cloudSales = snap.docs.map((d) => d.data() as Sale);
-          cloudSales.sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime());
-          setSales(cloudSales);
-          try {
-            localStorage.setItem(`${STORAGE_KEY}_sales`, JSON.stringify(cloudSales));
-          } catch {}
-        }
-      },
-      (err) => handleFirestoreError(err, OperationType.GET, 'sales')
-    );
-
-    const unsubLayaways = onSnapshot(
-      collection(db, 'layaways'),
-      (snap) => {
-        if (!snap.empty) {
-          const cloudLayaways = snap.docs.map((d) => d.data() as Layaway);
-          cloudLayaways.sort((a, b) => new Date(b.fecha_apartado).getTime() - new Date(a.fecha_apartado).getTime());
-          setLayaways(cloudLayaways);
-          try {
-            localStorage.setItem(`${STORAGE_KEY}_layaways`, JSON.stringify(cloudLayaways));
-          } catch {}
-        }
-      },
-      (err) => handleFirestoreError(err, OperationType.GET, 'layaways')
-    );
-
-    const unsubMovements = onSnapshot(
-      collection(db, 'movements'),
-      (snap) => {
-        if (!snap.empty) {
-          const cloudMovs = snap.docs.map((d) => d.data() as StockMovement);
-          cloudMovs.sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime());
-          setMovements(cloudMovs);
-          try {
-            localStorage.setItem(`${STORAGE_KEY}_movements`, JSON.stringify(cloudMovs));
-          } catch {}
-        }
-      },
-      (err) => handleFirestoreError(err, OperationType.GET, 'movements')
-    );
-
-    const unsubExpenses = onSnapshot(
-      collection(db, 'expenses'),
-      (snap) => {
-        if (!snap.empty) {
-          const cloudExp = snap.docs.map((d) => d.data() as Expense);
-          setExpenses(cloudExp);
-          try {
-            localStorage.setItem(`${STORAGE_KEY}_expenses`, JSON.stringify(cloudExp));
-          } catch {}
-        }
-      },
-      (err) => handleFirestoreError(err, OperationType.GET, 'expenses')
-    );
-
-    const unsubClosures = onSnapshot(
-      collection(db, 'cash_closures'),
-      (snap) => {
-        if (!snap.empty) {
-          const cloudClosures = snap.docs.map((d) => d.data() as DailyCashClosure);
-          setCashClosures(cloudClosures);
-          try {
-            localStorage.setItem(`${STORAGE_KEY}_closures`, JSON.stringify(cloudClosures));
-          } catch {}
-        }
-      },
-      (err) => handleFirestoreError(err, OperationType.GET, 'cash_closures')
-    );
-
-    const unsubConfig = onSnapshot(
-      doc(db, 'store_config', 'main'),
-      (snap) => {
-        if (snap.exists()) {
-          const cfg = snap.data();
-          if (typeof cfg.exchangeRate === 'number' && cfg.exchangeRate > 0) {
-            setExchangeRateState(cfg.exchangeRate);
-          }
-          if (cfg.adminPin) {
-            setAdminPinState(cfg.adminPin);
-          }
-        }
-      },
-      (err) => handleFirestoreError(err, OperationType.GET, 'store_config/main')
-    );
-
-    const unsubHistoricalRates = onSnapshot(
-      doc(db, 'store_config', 'historical_rates'),
-      (snap) => {
-        if (snap.exists()) {
-          const data = snap.data();
-          if (data?.rates && typeof data.rates === 'object') {
-            setHistoricalRates((prev) => ({ ...prev, ...data.rates }));
-          }
-        }
-      },
-      () => {}
-    );
-
-    return () => {
-      unsubProducts();
-      unsubSales();
-      unsubLayaways();
-      unsubMovements();
-      unsubExpenses();
-      unsubClosures();
-      unsubConfig();
-      unsubHistoricalRates();
-    };
-  }, [currentUser]);
-
-  const pushAllToCloud = useCallback(async () => {
-    if (!auth.currentUser) {
-      addNotification(
-        'Iniciar Sesión Requerido',
-        'Inicia sesión con Google para subir tus datos a la Nube.',
-        'warning'
-      );
-      return;
-    }
-    setSyncStatus('syncing');
-    try {
-      const batch = writeBatch(db);
-      products.forEach((p) => {
-        batch.set(doc(db, 'products', p.id), p);
-      });
-      sales.slice(0, 100).forEach((s) => {
-        batch.set(doc(db, 'sales', s.id), s);
-      });
-      movements.slice(0, 100).forEach((m) => {
-        batch.set(doc(db, 'movements', m.id), m);
-      });
-      batch.set(
-        doc(db, 'store_config', 'main'),
-        {
-          id: 'main',
-          exchangeRate,
-          adminPin,
-          updatedAt: new Date().toISOString(),
-        },
-        { merge: true }
-      );
-      await batch.commit();
-      setSyncStatus('synced');
-      setLastSyncedAt(
-        new Date().toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-      );
-      addNotification(
-        'Nube Sincronizada con Éxito',
-        `Se han subido ${products.length} productos y ${sales.length} facturas a Firestore. Ya están disponibles en tus otras computadoras.`,
-        'success'
-      );
+        addNotification(
+          'Sincronizado con Neon',
+          `Se han subido ${res.productsCount || products.length} calzados y ${res.salesCount || sales.length} ventas a Neon PostgreSQL.`,
+          'success'
+        );
+      } else {
+        throw new Error(res.message || res.error || 'Error al conectar con Neon');
+      }
     } catch (err: any) {
-      handleFirestoreError(err, OperationType.WRITE, 'pushAllToCloud');
       setSyncStatus('error');
+      addNotification(
+        'Error de Sincronización',
+        err?.message || 'No se pudo sincronizar con la base de datos Neon PostgreSQL.',
+        'critical'
+      );
     }
-  }, [products, sales, movements, exchangeRate, adminPin, addNotification]);
+  }, [products, sales, addNotification]);
 
   // exchangeRate en una ref: syncBcvRate necesita leer el valor actual dentro
   // del mensaje de error, pero SIN que eso obligue a recrear la función cada
@@ -1004,11 +805,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       body: JSON.stringify({ exchangeRate: rate, historicalRates: { [todayKey]: rate } }),
     }).catch(() => {});
 
-    if (currentUser) {
-      setDoc(doc(db, 'store_config', 'main'), { id: 'main', exchangeRate: rate, updatedAt: new Date().toISOString() }, { merge: true }).catch((err) =>
-        handleFirestoreError(err, OperationType.WRITE, 'store_config/main')
-      );
-    }
+
 
     addNotification(
       'Tasa BCV Actualizada',
@@ -1107,16 +904,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         body: JSON.stringify({ historicalRates: { [key]: numRate } }),
       }).catch(() => {});
 
-      if (currentUser) {
-        setDoc(
-          doc(db, 'store_config', 'historical_rates'),
-          {
-            rates: { [key]: numRate },
-            updatedAt: new Date().toISOString(),
-          },
-          { merge: true }
-        ).catch(() => {});
-      }
+
     },
     [currentUser]
   );
@@ -1168,11 +956,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         console.log('Backend sync info:', e);
       });
 
-    if (currentUser) {
-      setDoc(doc(db, 'products', newProduct.id), newProduct).catch((err) =>
-        handleFirestoreError(err, OperationType.WRITE, `products/${newProduct.id}`)
-      );
-    }
+
 
     // If it has initial stock > 0, record movement
     if (newProduct.stock > 0) {
@@ -1198,11 +982,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         body: JSON.stringify(initialMovement),
       }).catch(() => {});
 
-      if (currentUser) {
-        setDoc(doc(db, 'movements', initialMovement.id), initialMovement).catch((err) =>
-          handleFirestoreError(err, OperationType.WRITE, `movements/${initialMovement.id}`)
-        );
-      }
+
     }
 
     addNotification(
@@ -1272,22 +1052,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       body: JSON.stringify({ products: formattedProducts, replaceExisting: replaceAll }),
     }).catch((e) => console.log('Backend bulk sync info:', e));
 
-    if (currentUser) {
-      try {
-        const batch = writeBatch(db);
-        formattedProducts.forEach((p) => {
-          batch.set(doc(db, 'products', p.id), p);
-        });
-        newMovements.forEach((m) => {
-          batch.set(doc(db, 'movements', m.id), m);
-        });
-        batch.commit().catch((err) =>
-          handleFirestoreError(err, OperationType.WRITE, 'products/bulk')
-        );
-      } catch (err) {
-        console.warn('Firestore bulk write warning:', err);
-      }
-    }
+
 
     addNotification(
       'Inventario Actualizado',
@@ -1341,11 +1106,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           );
         });
 
-      if (currentUser) {
-        setDoc(doc(db, 'products', id), updatedItem, { merge: true }).catch((err) =>
-          handleFirestoreError(err, OperationType.UPDATE, `products/${id}`)
-        );
-      }
+
     }
 
     addNotification('Producto Actualizado', 'Información guardada con éxito.', 'info');
@@ -1407,14 +1168,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       body: JSON.stringify(movement),
     }).catch(() => {});
 
-    if (currentUser) {
-      setDoc(doc(db, 'products', product.id), { ...product, stock: newStock }, { merge: true }).catch((err) =>
-        handleFirestoreError(err, OperationType.UPDATE, `products/${product.id}`)
-      );
-      setDoc(doc(db, 'movements', movement.id), movement).catch((err) =>
-        handleFirestoreError(err, OperationType.WRITE, `movements/${movement.id}`)
-      );
-    }
+
 
     // Real-time alerts
     if (newStock === 0) {
@@ -1449,11 +1203,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setProducts((prev) => prev.filter((p) => p.id !== id));
     fetch(`/api/products/${id}`, { method: 'DELETE' }).catch(() => {});
 
-    if (currentUser) {
-      deleteDoc(doc(db, 'products', id)).catch((err) =>
-        handleFirestoreError(err, OperationType.DELETE, `products/${id}`)
-      );
-    }
+
 
     addNotification('Producto Eliminado', `${product.nombre} retirado del catálogo.`, 'info');
     dispatchAutoWebhook(products.filter((p) => p.id !== id));
@@ -1630,38 +1380,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       body: JSON.stringify({ sale: completedSale, updatedProducts }),
     }).catch((e) => console.log('Backend sale sync info:', e));
 
-    if (db) {
-      try {
-        const batch = writeBatch(db);
-        const cleanSaleId = completedSale.id.replace(/[^a-zA-Z0-9_.-]/g, '_');
-        batch.set(doc(db, 'sales', cleanSaleId), completedSale);
-        saleMovements.forEach((m) => {
-          const cleanMovId = m.id.replace(/[^a-zA-Z0-9_.-]/g, '_');
-          batch.set(doc(db, 'movements', cleanMovId), m);
-        });
-        saleData.items.forEach((item) => {
-          const prod = updatedProducts.find((p) =>
-            p.id === item.producto_id ||
-            (p.sku && item.sku && p.sku.trim().toLowerCase() === item.sku.trim().toLowerCase()) ||
-            (
-              item.nombre_producto && p.nombre &&
-              p.nombre.trim().toLowerCase() === item.nombre_producto.trim().toLowerCase() &&
-              item.talla && p.talla &&
-              String(item.talla).trim() === String(prod.talla).trim()
-            )
-          );
-          if (prod) {
-            const cleanProdId = prod.id.replace(/[^a-zA-Z0-9_.-]/g, '_');
-            batch.set(doc(db, 'products', cleanProdId), { ...prod, stock: prod.stock }, { merge: true });
-          }
-        });
-        batch.commit().catch((err) =>
-          handleFirestoreError(err, OperationType.WRITE, `sales/${cleanSaleId}`)
-        );
-      } catch (err) {
-        console.warn('Firestore sale write warning:', err);
-      }
-    }
+
 
     addNotification(
       'Venta Exitosa',
@@ -1706,12 +1425,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       body: JSON.stringify({ fecha: newDateIso }),
     }).catch(() => {});
 
-    // Sync to Firestore
-    if (currentUser) {
-      setDoc(doc(db, 'sales', saleId), { fecha: newDateIso }, { merge: true }).catch((err) =>
-        handleFirestoreError(err, OperationType.UPDATE, `sales/${saleId}`)
-      );
-    }
+
 
     addNotification(
       'Fecha Actualizada',
@@ -1776,11 +1490,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       return updated;
     });
 
-    if (currentUser) {
-      setDoc(doc(db, 'sales', saleId), { estado: 'anulada', motivo_anulacion: motivo }, { merge: true }).catch((err) =>
-        handleFirestoreError(err, OperationType.UPDATE, `sales/${saleId}`)
-      );
-    }
+
 
     addNotification(
       'Venta Anulada',
@@ -1874,12 +1584,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       body: JSON.stringify(newLayaway),
     }).catch(() => {});
 
-    // Firestore sync
-    if (currentUser) {
-      setDoc(doc(db, 'layaways', newLayaway.id), newLayaway).catch((err) =>
-        handleFirestoreError(err, OperationType.WRITE, `layaways/${newLayaway.id}`)
-      );
-    }
+
 
     addNotification(
       'Apartado Registrado',
@@ -1951,12 +1656,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(updated),
     }).catch(() => {});
-
-    if (currentUser) {
-      setDoc(doc(db, 'layaways', layawayId), updated).catch((err) =>
-        handleFirestoreError(err, OperationType.WRITE, `layaways/${layawayId}`)
-      );
-    }
 
     addNotification(
       'Abono Registrado',
@@ -2030,12 +1729,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       body: JSON.stringify(updated),
     }).catch(() => {});
 
-    if (currentUser) {
-      setDoc(doc(db, 'layaways', layawayId), updated).catch((err) =>
-        handleFirestoreError(err, OperationType.WRITE, `layaways/${layawayId}`)
-      );
-    }
-
     addNotification(
       'Apartado Cancelado',
       `Apartado ${current.codigo_apartado} cancelado. Los calzados regresaron al inventario activo.`,
@@ -2070,12 +1763,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       body: JSON.stringify(updated),
     }).catch(() => {});
 
-    if (currentUser) {
-      setDoc(doc(db, 'layaways', layawayId), updated).catch((err) =>
-        handleFirestoreError(err, OperationType.WRITE, `layaways/${layawayId}`)
-      );
-    }
-
     addNotification(
       'Apartado Entregado',
       `Apartado ${current.codigo_apartado} entregado al cliente y completado.`,
@@ -2109,12 +1796,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(updated),
     }).catch(() => {});
-
-    if (currentUser) {
-      setDoc(doc(db, 'layaways', layawayId), updated).catch((err) =>
-        handleFirestoreError(err, OperationType.WRITE, `layaways/${layawayId}`)
-      );
-    }
 
     addNotification('Apartado Actualizado', `Información de apartado ${updated.codigo_apartado} actualizada.`, 'info');
     return true;
@@ -2177,12 +1858,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       body: JSON.stringify(closure),
     }).catch(() => {});
 
-    if (currentUser) {
-      setDoc(doc(db, 'cash_closures', closure.id), closure).catch((err) =>
-        handleFirestoreError(err, OperationType.WRITE, `cash_closures/${closure.id}`)
-      );
-    }
-
     addNotification(
       'Cierre de Caja Guardado',
       `Arqueo de ${targetDate} registrado con $${totalUsd.toFixed(2)} en ${todaySales.length} ventas.`,
@@ -2221,12 +1896,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     // Save to Neon API in background
     saveExpenseApi(newExpense).catch((e) => console.warn('Could not sync expense to Neon:', e));
 
-    if (currentUser) {
-      setDoc(doc(db, 'expenses', newExpense.id), newExpense).catch((err) =>
-        handleFirestoreError(err, OperationType.WRITE, `expenses/${newExpense.id}`)
-      );
-    }
-
     addNotification(
       'Gasto Registrado',
       `${expenseData.categoria}: $${expenseData.monto_usd.toFixed(2)} (${expenseData.descripcion})`,
@@ -2254,12 +1923,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         return acc;
       })
     );
-
-    if (currentUser) {
-      deleteDoc(doc(db, 'expenses', id)).catch((err) =>
-        handleFirestoreError(err, OperationType.DELETE, `expenses/${id}`)
-      );
-    }
 
     deleteExpenseApi(id).catch((e) => console.warn('Could not delete expense on Neon:', e));
 

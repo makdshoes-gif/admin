@@ -465,18 +465,18 @@ export const LayawaysManager: React.FC = () => {
       {/* Layaways List / Table */}
       <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-xs">
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
+          <table className="w-full text-left text-xs min-w-[950px]">
             <thead className="bg-slate-50 text-slate-500 uppercase tracking-wider text-[10px] border-b border-slate-200">
               <tr>
-                <th className="py-3 px-4 font-semibold">Código</th>
-                <th className="py-3 px-4 font-semibold">Cliente</th>
-                <th className="py-3 px-4 font-semibold">Calzado Reservado</th>
-                <th className="py-3 px-3 font-semibold">Fechas</th>
-                <th className="py-3 px-3 text-right font-semibold">Total ($)</th>
-                <th className="py-3 px-3 text-right font-semibold">Abonado ($)</th>
-                <th className="py-3 px-3 text-right font-semibold">Saldo Pendiente</th>
-                <th className="py-3 px-3 text-center font-semibold">Estado</th>
-                <th className="py-3 px-4 text-center font-semibold">Acciones</th>
+                <th className="py-3 px-3 font-semibold min-w-[90px]">Código</th>
+                <th className="py-3 px-3 font-semibold min-w-[150px]">Cliente</th>
+                <th className="py-3 px-3 font-semibold min-w-[180px]">Calzado Reservado</th>
+                <th className="py-3 px-3 font-semibold min-w-[120px]">Fechas</th>
+                <th className="py-3 px-3 text-right font-semibold min-w-[85px]">Total ($)</th>
+                <th className="py-3 px-3 text-right font-semibold min-w-[85px]">Abonado ($)</th>
+                <th className="py-3 px-3 text-right font-semibold min-w-[95px]">Saldo Pendiente</th>
+                <th className="py-3 px-3 text-center font-semibold min-w-[110px]">Estado</th>
+                <th className="py-3 px-3 text-center font-semibold min-w-[170px] whitespace-nowrap">Acciones</th>
               </tr>
             </thead>
 
@@ -597,8 +597,8 @@ export const LayawaysManager: React.FC = () => {
                       </td>
 
                       {/* Action buttons */}
-                      <td className="py-3 px-4 text-center">
-                        <div className="flex items-center justify-center gap-1">
+                      <td className="py-2.5 px-3 text-center whitespace-nowrap">
+                        <div className="inline-flex items-center justify-center gap-1 shrink-0">
                           {/* Add Payment button */}
                           {layaway.estado === 'activo' && !isFullyPaid && (
                             <button
@@ -606,7 +606,7 @@ export const LayawaysManager: React.FC = () => {
                                 setSelectedLayawayForPayment(layaway);
                                 setNuevoAbonoMonto(0);
                               }}
-                              className="px-2 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded text-[11px] font-bold border border-indigo-200 cursor-pointer"
+                              className="px-2 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded text-[11px] font-bold border border-indigo-200 cursor-pointer shrink-0 whitespace-nowrap"
                               title="Registrar Abono"
                             >
                               + Abono
@@ -617,11 +617,11 @@ export const LayawaysManager: React.FC = () => {
                           {layaway.estado === 'activo' && isFullyPaid && (
                             <button
                               onClick={() => deliverLayaway(layaway.id)}
-                              className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[11px] font-bold shadow-2xs cursor-pointer flex items-center gap-1"
+                              className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[11px] font-bold shadow-2xs cursor-pointer flex items-center gap-1 shrink-0 whitespace-nowrap"
                               title="Entregar Calzado al Cliente"
                             >
                               <CheckCircle className="w-3 h-3" />
-                              Entregar
+                              <span>Entregar</span>
                             </button>
                           )}
 
@@ -629,7 +629,7 @@ export const LayawaysManager: React.FC = () => {
                           {layaway.cliente_telefono && layaway.estado === 'activo' && (
                             <button
                               onClick={() => handleSendWhatsAppReminder(layaway)}
-                              className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded cursor-pointer"
+                              className="p-1 text-emerald-600 hover:bg-emerald-50 rounded cursor-pointer shrink-0"
                               title="Enviar recordatorio por WhatsApp"
                             >
                               <Share2 className="w-3.5 h-3.5" />
@@ -639,7 +639,7 @@ export const LayawaysManager: React.FC = () => {
                           {/* Print Receipt */}
                           <button
                             onClick={() => setSelectedLayawayForReceipt(layaway)}
-                            className="p-1.5 text-slate-500 hover:bg-slate-100 rounded cursor-pointer"
+                            className="p-1 text-slate-500 hover:bg-slate-100 rounded cursor-pointer shrink-0"
                             title="Ver / Imprimir Comprobante"
                           >
                             <Printer className="w-3.5 h-3.5" />
@@ -649,7 +649,7 @@ export const LayawaysManager: React.FC = () => {
                           {layaway.estado === 'activo' && (
                             <button
                               onClick={() => setCancellingLayawayId(layaway.id)}
-                              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded cursor-pointer"
+                              className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded cursor-pointer shrink-0"
                               title="Anular Apartado (reintegra stock)"
                             >
                               <Trash2 className="w-3.5 h-3.5" />

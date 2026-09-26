@@ -663,11 +663,34 @@ async function startServer() {
         // Also adjust product stock in Neon if items present
         if (Array.isArray(s.items)) {
           for (const item of s.items) {
+            const qty = Math.max(1, Number(item.cantidad) || 1);
+            const prodId = item.producto_id ? String(item.producto_id).trim() : '';
+            const sku = item.sku ? String(item.sku).trim() : '';
+            const nombre = item.nombre_producto ? String(item.nombre_producto).trim() : '';
+            const talla = item.talla ? String(item.talla).trim() : '';
             await sql`
               UPDATE shoe_products
-              SET stock = GREATEST(0, stock - ${item.cantidad})
-              WHERE id = ${item.producto_id};
+              SET stock = GREATEST(0, stock - ${qty})
+              WHERE (id = ${prodId})
+                 OR (${sku} != '' AND sku = ${sku})
+                 OR (${nombre} != '' AND ${talla} != '' AND LOWER(nombre) = LOWER(${nombre}) AND talla = ${talla});
             `;
+          }
+        }
+
+        // Also update exact stock from body.updatedProducts into Neon
+        if (Array.isArray(body?.updatedProducts) && body.updatedProducts.length > 0) {
+          for (const fresh of body.updatedProducts) {
+            if (fresh.id) {
+              const freshStock = Number(fresh.stock) || 0;
+              const freshSku = fresh.sku ? String(fresh.sku).trim() : '';
+              await sql`
+                UPDATE shoe_products
+                SET stock = ${freshStock}
+                WHERE id = ${fresh.id}
+                   OR (${freshSku} != '' AND sku = ${freshSku});
+              `;
+            }
           }
         }
       } catch (err) {

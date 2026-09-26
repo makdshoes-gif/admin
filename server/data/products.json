@@ -33,7 +33,7 @@
     "moneda": "USD",
     "precio": 75,
     "costo": 42,
-    "stock": 5,
+    "stock": 6,
     "stock_minimo": 2,
     "activo": true,
     "imagen": "/adizero-purehustle-studio.jpg",

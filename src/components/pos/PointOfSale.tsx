@@ -774,77 +774,77 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
             <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-6 shadow-sm space-y-5">
               
               {/* Top Toolbar: Title, View Switcher & Action buttons */}
-              <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-slate-100">
-                <div className="flex items-center gap-3">
-                  <div className="w-11 h-11 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-sm shrink-0">
-                    <Receipt className="w-6 h-6" />
+              <div className="flex flex-wrap items-center justify-between gap-2.5 pb-4 border-b border-slate-100">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-xs shrink-0">
+                    <Receipt className="w-5 h-5" />
                   </div>
-                  <div>
+                  <div className="min-w-0">
                     <div className="flex items-center gap-2">
-                      <h2 className="font-black text-lg sm:text-xl text-slate-900 tracking-tight">
+                      <h2 className="font-bold text-base sm:text-lg text-slate-900 tracking-tight truncate">
                         Mesa de Facturación & Cobro
                       </h2>
-                      <span className="px-3 py-1 rounded-full bg-indigo-100 border border-indigo-300 text-indigo-800 font-black text-xs sm:text-sm">
+                      <span className="px-2.5 py-0.5 rounded-full bg-indigo-100 border border-indigo-200 text-indigo-800 font-bold text-xs whitespace-nowrap shrink-0">
                         {cart.reduce((s, i) => s + i.quantity, 0)} {cart.reduce((s, i) => s + i.quantity, 0) === 1 ? 'par' : 'pares'}
                       </span>
                     </div>
-                    <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
-                      MAKD SHOP • Alta Vista II • Tasa Oficial BCV: <span className="font-mono font-black text-slate-900">{exchangeRate.toFixed(2)} Bs/USD</span>
+                    <p className="text-xs text-slate-500 mt-0.5 truncate">
+                      MAKD SHOP • Alta Vista II • Tasa Oficial BCV: <span className="font-mono font-bold text-slate-900">{exchangeRate.toFixed(2)} Bs/USD</span>
                     </p>
                   </div>
                 </div>
 
                 {/* View Switchers & Action buttons */}
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
                   {/* Mobile Back to Catalog Button */}
                   <button
                     type="button"
                     onClick={() => setMobileActiveView('catalog')}
-                    className="lg:hidden text-xs sm:text-sm text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-3 py-2 rounded-xl font-bold flex items-center gap-1.5 transition cursor-pointer"
+                    className="lg:hidden text-xs text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-2.5 py-1.5 rounded-lg font-bold flex items-center gap-1 transition cursor-pointer whitespace-nowrap shrink-0"
                   >
-                    <ArrowLeft className="w-4 h-4" />
-                    <span>+ Agregar Calzados</span>
+                    <ArrowLeft className="w-3.5 h-3.5" />
+                    <span>+ Calzados</span>
                   </button>
 
                   {/* View Mode Switcher Pills on Desktop */}
-                  <div className="hidden sm:flex items-center bg-slate-100 p-0.5 rounded-xl border border-slate-200 text-xs">
+                  <div className="hidden sm:flex items-center bg-slate-100 p-0.5 rounded-lg border border-slate-200 text-xs shrink-0">
                     <button
                       type="button"
                       onClick={() => setBillingViewMode('expanded')}
                       title="Vista Principal Ampliada"
-                      className={`px-3 py-1.5 rounded-lg font-bold flex items-center gap-1.5 transition cursor-pointer ${
+                      className={`px-2.5 py-1 rounded-md font-semibold flex items-center gap-1 transition cursor-pointer whitespace-nowrap ${
                         billingViewMode === 'expanded'
-                          ? 'bg-white text-indigo-700 shadow-xs'
+                          ? 'bg-white text-indigo-700 shadow-2xs font-bold'
                           : 'text-slate-600 hover:text-slate-900'
                       }`}
                     >
-                      <Columns className="w-3.5 h-3.5" />
+                      <Columns className="w-3 h-3" />
                       <span>Ampliada</span>
                     </button>
                     <button
                       type="button"
                       onClick={() => setBillingViewMode('split')}
                       title="Vista Dividida (50/50)"
-                      className={`px-3 py-1.5 rounded-lg font-bold flex items-center gap-1.5 transition cursor-pointer ${
+                      className={`px-2.5 py-1 rounded-md font-semibold flex items-center gap-1 transition cursor-pointer whitespace-nowrap ${
                         billingViewMode === 'split'
-                          ? 'bg-white text-indigo-700 shadow-xs'
+                          ? 'bg-white text-indigo-700 shadow-2xs font-bold'
                           : 'text-slate-600 hover:text-slate-900'
                       }`}
                     >
-                      <LayoutGrid className="w-3.5 h-3.5" />
+                      <LayoutGrid className="w-3 h-3" />
                       <span>Dividida</span>
                     </button>
                     <button
                       type="button"
                       onClick={() => setBillingViewMode('fullscreen')}
                       title="Facturación Pantalla Completa"
-                      className={`px-3 py-1.5 rounded-lg font-bold flex items-center gap-1.5 transition cursor-pointer ${
+                      className={`px-2.5 py-1 rounded-md font-semibold flex items-center gap-1 transition cursor-pointer whitespace-nowrap ${
                         billingViewMode === 'fullscreen'
-                          ? 'bg-white text-indigo-700 shadow-xs'
+                          ? 'bg-white text-indigo-700 shadow-2xs font-bold'
                           : 'text-slate-600 hover:text-slate-900'
                       }`}
                     >
-                      <Maximize2 className="w-3.5 h-3.5" />
+                      <Maximize2 className="w-3 h-3" />
                       <span>Completa</span>
                     </button>
                   </div>
@@ -853,11 +853,11 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
                     <button
                       type="button"
                       onClick={() => setBillingViewMode('expanded')}
-                      className="text-xs text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-3 py-2 rounded-xl font-bold flex items-center gap-1.5 transition cursor-pointer"
+                      className="text-xs text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-2.5 py-1.5 rounded-lg font-bold flex items-center gap-1 transition cursor-pointer whitespace-nowrap shrink-0"
                       title="Ver catálogo para agregar más calzados"
                     >
-                      <Plus className="w-4 h-4" />
-                      <span>+ Agregar Calzado</span>
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>+ Calzado</span>
                     </button>
                   )}
 
@@ -865,10 +865,10 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
                     <button
                       type="button"
                       onClick={onNavigateToLayaways}
-                      className="text-xs sm:text-sm text-amber-800 hover:text-amber-900 bg-amber-50 hover:bg-amber-100 border border-amber-200 px-3 py-2 rounded-xl font-bold flex items-center gap-1.5 transition cursor-pointer"
+                      className="text-xs text-amber-800 hover:text-amber-900 bg-amber-50 hover:bg-amber-100 border border-amber-200 px-2.5 py-1.5 rounded-lg font-bold flex items-center gap-1 transition cursor-pointer whitespace-nowrap shrink-0"
                       title="Ver o gestionar apartados de clientes"
                     >
-                      <BookmarkCheck className="w-4 h-4 text-amber-600" />
+                      <BookmarkCheck className="w-3.5 h-3.5 text-amber-600" />
                       <span className="hidden sm:inline">Apartados</span>
                     </button>
                   )}
@@ -876,10 +876,10 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
                   <button
                     type="button"
                     onClick={handleClearCart}
-                    className="text-xs sm:text-sm text-rose-700 hover:text-rose-800 bg-rose-50 hover:bg-rose-100 border border-rose-200 px-3 py-2 rounded-xl flex items-center gap-1.5 font-bold transition cursor-pointer"
+                    className="text-xs text-rose-700 hover:text-rose-800 bg-rose-50 hover:bg-rose-100 border border-rose-200 px-2.5 py-1.5 rounded-lg flex items-center gap-1 font-bold transition cursor-pointer whitespace-nowrap shrink-0"
                     title="Vaciar carrito actual"
                   >
-                    <Trash2 className="w-4 h-4" />
+                    <Trash2 className="w-3.5 h-3.5" />
                     <span>Vaciar</span>
                   </button>
                 </div>
@@ -918,8 +918,8 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
                           <div className="flex items-start sm:items-center justify-between gap-3">
                             
                             {/* Product Thumbnail & Details */}
-                            <div className="flex items-center gap-3.5 min-w-0 flex-1">
-                              <div className="w-18 h-18 sm:w-22 sm:h-22 rounded-2xl overflow-hidden bg-slate-100 border border-slate-200 shrink-0 flex items-center justify-center shadow-2xs">
+                            <div className="flex items-center gap-3 min-w-0 flex-1">
+                              <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl overflow-hidden bg-slate-100 border border-slate-200 shrink-0 flex items-center justify-center shadow-2xs">
                                 {item.product.imagen ? (
                                   <img
                                     src={item.product.imagen}
@@ -928,17 +928,17 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
                                     referrerPolicy="no-referrer"
                                   />
                                 ) : (
-                                  <span className="text-3xl">👟</span>
+                                  <span className="text-2xl">👟</span>
                                 )}
                               </div>
 
                               <div className="min-w-0 flex-1 space-y-1">
-                                <div className="flex items-center gap-2">
-                                  <span className="text-xs font-black text-indigo-600 uppercase tracking-wider">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className="text-[11px] font-bold text-indigo-600 uppercase tracking-wider">
                                     {item.product.marca}
                                   </span>
                                   {item.product.es_original !== undefined && (
-                                    <span className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider ${
+                                    <span className={`px-1.5 py-0.2 rounded text-[9px] font-bold uppercase tracking-wider ${
                                       item.product.es_original
                                         ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
                                         : 'bg-indigo-100 text-indigo-800 border border-indigo-300'
@@ -947,76 +947,76 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
                                     </span>
                                   )}
                                   {(isPriceModified || isCostModified) && (
-                                    <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
+                                    <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
                                       Modificado
                                     </span>
                                   )}
                                 </div>
 
-                                <h4 className="font-black text-base sm:text-lg text-slate-900 leading-snug line-clamp-2">
+                                <h4 className="font-bold text-sm sm:text-base text-slate-900 leading-snug line-clamp-2">
                                   {item.product.nombre}
                                 </h4>
 
-                                <div className="flex flex-wrap items-center gap-2.5 pt-0.5 text-xs sm:text-sm">
-                                  <span className="px-2.5 py-1 rounded-lg font-black bg-indigo-50 border border-indigo-200 text-indigo-800 text-xs sm:text-sm shadow-2xs">
+                                <div className="flex flex-wrap items-center gap-2 pt-0.5 text-xs">
+                                  <span className="px-2 py-0.5 rounded-md font-bold bg-indigo-50 border border-indigo-200 text-indigo-800 text-xs shadow-2xs">
                                     Talla: {item.product.talla}
                                   </span>
-                                  <span className="font-mono text-slate-900 font-black text-sm sm:text-base">
+                                  <span className="font-mono text-slate-900 font-bold text-xs sm:text-sm">
                                     ${unitPrice.toFixed(2)} c/u
                                   </span>
-                                  <span className="text-xs sm:text-sm text-slate-500 font-mono font-semibold">
+                                  <span className="text-xs text-slate-500 font-mono">
                                     (~{(unitPrice * effectiveExchangeRate).toFixed(2)} Bs)
                                   </span>
                                   <button
                                     type="button"
                                     onClick={() => setEditingPricingId(isEditing ? null : item.product.id)}
-                                    className="text-xs font-bold text-indigo-600 hover:text-indigo-800 underline flex items-center gap-1 cursor-pointer ml-1"
+                                    className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 underline flex items-center gap-1 cursor-pointer"
                                   >
-                                    <Edit3 className="w-3.5 h-3.5" />
-                                    <span>{isEditing ? 'Cerrar' : 'Ajustar precio/costo'}</span>
+                                    <Edit3 className="w-3 h-3" />
+                                    <span>{isEditing ? 'Cerrar' : 'Ajustar'}</span>
                                   </button>
                                 </div>
                               </div>
                             </div>
 
                             {/* Quantity Controls & Line Total */}
-                            <div className="flex flex-col sm:flex-row items-end sm:items-center gap-3 shrink-0">
+                            <div className="flex flex-col sm:flex-row items-end sm:items-center gap-2.5 shrink-0">
                               {/* Quantity Stepper */}
-                              <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-2xl border border-slate-200 shadow-2xs">
+                              <div className="flex items-center gap-0.5 bg-slate-100 p-0.5 rounded-xl border border-slate-200 shadow-2xs">
                                 <button
                                   type="button"
                                   onClick={() => handleUpdateQuantity(item.product.id, -1)}
-                                  className="w-9 h-9 sm:w-10 sm:h-10 flex items-center justify-center bg-white hover:bg-slate-200 text-slate-800 rounded-xl shadow-2xs cursor-pointer transition font-bold"
+                                  className="w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center bg-white hover:bg-slate-200 text-slate-800 rounded-lg shadow-2xs cursor-pointer transition font-bold"
                                   title="Disminuir"
                                 >
-                                  <Minus className="w-4 h-4" />
+                                  <Minus className="w-3.5 h-3.5" />
                                 </button>
-                                <span className="font-mono text-base sm:text-lg font-black text-slate-900 w-8 text-center">
+                                <span className="font-mono text-sm sm:text-base font-bold text-slate-900 w-7 text-center">
                                   {item.quantity}
                                 </span>
                                 <button
                                   type="button"
                                   onClick={() => handleUpdateQuantity(item.product.id, 1)}
                                   disabled={item.quantity >= item.product.stock}
-                                  className="w-9 h-9 sm:w-10 sm:h-10 flex items-center justify-center bg-white hover:bg-slate-200 text-slate-800 rounded-xl shadow-2xs disabled:opacity-30 cursor-pointer transition font-bold"
+                                  className="w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center bg-white hover:bg-slate-200 text-slate-800 rounded-lg shadow-2xs disabled:opacity-30 cursor-pointer transition font-bold"
                                   title="Aumentar"
                                 >
-                                  <Plus className="w-4 h-4" />
+                                  <Plus className="w-3.5 h-3.5" />
                                 </button>
                               </div>
 
                               {/* Line Total */}
-                              <div className="text-right min-w-[85px]">
-                                <div className="text-lg sm:text-2xl font-black text-indigo-700 font-mono tracking-tight">
+                              <div className="text-right min-w-[80px]">
+                                <div className="text-base sm:text-xl font-bold text-indigo-700 font-mono tracking-tight">
                                   ${(unitPrice * item.quantity).toFixed(2)}
                                 </div>
-                                <div className="text-xs sm:text-sm font-bold text-slate-600 font-mono">
-                                  {((unitPrice * item.quantity) * effectiveExchangeRate).toFixed(2)} Bs
+                                <div className="text-[11px] font-semibold text-slate-600 font-mono">
+                                  {((unitPrice * item.quantity) * effectiveExchangeRate).toFixed(0)} Bs
                                 </div>
                                 <button
                                   type="button"
                                   onClick={() => handleRemoveFromCart(item.product.id)}
-                                  className="mt-1 px-2 py-0.5 rounded-md bg-rose-50 hover:bg-rose-100 text-rose-600 font-bold text-xs cursor-pointer transition inline-flex items-center gap-1 ml-auto"
+                                  className="mt-1 px-2 py-0.5 rounded-md bg-rose-50 hover:bg-rose-100 text-rose-600 font-semibold text-xs cursor-pointer transition inline-flex items-center gap-1 ml-auto"
                                 >
                                   <Trash2 className="w-3 h-3" />
                                   <span>Quitar</span>
@@ -1391,14 +1391,14 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
                         ))}
 
                         {/* Add payment line */}
-                        <div className="grid grid-cols-3 gap-2 pt-1">
+                        <div className="flex flex-col sm:flex-row gap-2 pt-1">
                           <select
                             id="mixed-pay-account"
-                            className="col-span-1 px-2.5 py-2 bg-white border border-slate-200 rounded-xl text-xs sm:text-sm text-slate-800 font-semibold"
+                            className="flex-1 min-w-[130px] px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs sm:text-sm text-slate-800 font-semibold"
                           >
                             {accounts.map((a, idx) => (
                               <option key={a.id ? `opt-acc-${a.id}-${idx}` : `opt-acc-${a.nombre}-${idx}`} value={a.nombre}>
-                                {a.nombre}
+                                {a.nombre} ({a.moneda})
                               </option>
                             ))}
                           </select>
@@ -1407,7 +1407,7 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
                             type="number"
                             step="0.01"
                             placeholder="Monto"
-                            className="col-span-1 px-2.5 py-2 bg-white border border-slate-200 rounded-xl text-xs sm:text-sm text-slate-900 font-mono font-bold"
+                            className="w-full sm:w-28 px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs sm:text-sm text-slate-900 font-mono font-bold"
                           />
                           <button
                             type="button"
@@ -1419,9 +1419,9 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
                                 (document.getElementById('mixed-pay-amount') as HTMLInputElement).value = '';
                               }
                             }}
-                            className="col-span-1 px-2.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-black rounded-xl text-xs sm:text-sm cursor-pointer shadow-xs"
+                            className="w-full sm:w-auto px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-black rounded-xl text-xs sm:text-sm cursor-pointer shadow-xs shrink-0 flex items-center justify-center gap-1"
                           >
-                            + Cobrar
+                            <span>+ Cobrar</span>
                           </button>
                         </div>
 
@@ -1627,54 +1627,54 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
                     )}
                   </div>
 
-                  {/* TOTAL A FACTURAR (MUCHO MÁS GRANDE Y VISIBLE - NÚMEROS Y LETRAS GIGANTES) */}
-                  <div className="bg-gradient-to-br from-white via-indigo-50/30 to-indigo-100/40 p-5 sm:p-6 rounded-3xl border-2 border-indigo-600/40 shadow-sm space-y-3.5">
-                    <div className="flex justify-between items-center text-sm sm:text-base text-slate-700 font-bold">
+                  {/* TOTAL A FACTURAR (NÚMEROS Y LETRAS AJUSTADOS AL CONTENEDOR) */}
+                  <div className="bg-gradient-to-br from-white via-indigo-50/30 to-indigo-100/40 p-4 sm:p-5 rounded-2xl border-2 border-indigo-600/40 shadow-sm space-y-3">
+                    <div className="flex justify-between items-center text-xs sm:text-sm text-slate-700 font-bold">
                       <span>Subtotal Calzados:</span>
-                      <span className="font-mono font-black text-slate-900 text-base sm:text-xl">${subtotalUsd.toFixed(2)}</span>
+                      <span className="font-mono font-bold text-slate-900 text-sm sm:text-base">${subtotalUsd.toFixed(2)}</span>
                     </div>
                     {discountUsd > 0 && (
-                      <div className="flex justify-between items-center text-sm sm:text-base text-emerald-700 font-bold">
+                      <div className="flex justify-between items-center text-xs sm:text-sm text-emerald-700 font-bold">
                         <span>Descuento aplicado:</span>
-                        <span className="font-mono font-black text-base sm:text-xl">-${discountUsd.toFixed(2)}</span>
+                        <span className="font-mono font-bold text-sm sm:text-base">-${discountUsd.toFixed(2)}</span>
                       </div>
                     )}
                     {applyIva && (
-                      <div className="flex justify-between items-center text-sm sm:text-base text-slate-700 font-bold">
+                      <div className="flex justify-between items-center text-xs sm:text-sm text-slate-700 font-bold">
                         <span>IVA (16% SENIAT):</span>
-                        <span className="font-mono font-black text-slate-900 text-base sm:text-xl">+${ivaUsd.toFixed(2)}</span>
+                        <span className="font-mono font-bold text-slate-900 text-sm sm:text-base">+${ivaUsd.toFixed(2)}</span>
                       </div>
                     )}
                     
-                    <div className="pt-3.5 border-t-2 border-slate-300/80 flex flex-col sm:flex-row sm:items-baseline sm:justify-between gap-1">
-                      <div>
-                        <span className="text-base sm:text-xl font-black text-slate-900 uppercase tracking-tight block">
+                    <div className="pt-3 border-t-2 border-slate-300/80 flex flex-col sm:flex-row sm:items-baseline sm:justify-between gap-1">
+                      <div className="min-w-0">
+                        <span className="text-sm sm:text-base font-bold text-slate-900 uppercase tracking-tight block">
                           TOTAL A FACTURAR:
                         </span>
-                        <span className="text-xs font-mono font-bold text-slate-500">
+                        <span className="text-xs font-mono font-semibold text-slate-500">
                           Tasa Oficial: {effectiveExchangeRate.toFixed(2)} Bs/$
                         </span>
                       </div>
-                      <div className="text-left sm:text-right mt-1 sm:mt-0">
-                        <div className="text-4xl sm:text-5xl lg:text-6xl font-black text-indigo-700 font-mono tracking-tight">
+                      <div className="text-left sm:text-right mt-1 sm:mt-0 min-w-0">
+                        <div className="text-2xl sm:text-3xl lg:text-4xl font-black text-indigo-700 font-mono tracking-tight truncate">
                           ${totalUsd.toFixed(2)}
                         </div>
-                        <div className="text-2xl sm:text-3xl font-black text-slate-900 font-mono mt-1">
+                        <div className="text-sm sm:text-lg font-bold text-slate-900 font-mono mt-0.5 truncate">
                           {totalBs.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Bs
                         </div>
                       </div>
                     </div>
                   </div>
 
-                  {/* Botón Principal de Facturación (Letras y botón más grandes y accesibles) */}
+                  {/* Botón Principal de Facturación */}
                   <button
                     id="complete-sale-btn"
                     onClick={handleFinalizeSale}
                     disabled={cart.length === 0}
-                    className="w-full py-4 sm:py-5 bg-indigo-600 hover:bg-indigo-700 active:scale-[0.99] disabled:bg-slate-200 disabled:text-slate-400 text-white font-black text-base sm:text-lg uppercase tracking-wider rounded-2xl shadow-xl shadow-indigo-600/30 flex items-center justify-center gap-2.5 transition-all cursor-pointer disabled:cursor-not-allowed"
+                    className="w-full py-3 sm:py-3.5 px-4 bg-indigo-600 hover:bg-indigo-700 active:scale-[0.99] disabled:bg-slate-200 disabled:text-slate-400 text-white font-bold text-xs sm:text-sm uppercase tracking-wider rounded-xl shadow-md shadow-indigo-600/25 flex items-center justify-center gap-2 transition-all cursor-pointer disabled:cursor-not-allowed whitespace-nowrap truncate"
                   >
-                    <Check className="w-6 h-6 stroke-[3]" />
-                    <span>Confirmar y Facturar Venta (${totalUsd.toFixed(2)})</span>
+                    <Check className="w-4 h-4 stroke-[3] shrink-0" />
+                    <span className="truncate">Confirmar y Facturar Venta (${totalUsd.toFixed(2)})</span>
                   </button>
 
                 </div>

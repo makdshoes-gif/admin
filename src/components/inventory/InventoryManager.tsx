@@ -197,65 +197,8 @@ export const InventoryManager: React.FC = () => {
           </p>
         </div>
 
-        {/* Action Buttons: Cámara IA, Subir Excel and Nuevo Producto */}
+        {/* Action Buttons: Primary + Clean Toolbar */}
         <div className="flex items-center gap-2 self-start md:self-auto flex-wrap">
-          <button
-            id="open-ai-scanner-btn"
-            type="button"
-            onClick={() => setIsAiScannerOpen(true)}
-            className="px-3.5 py-2 bg-linear-to-r from-cyan-600 via-indigo-600 to-purple-600 hover:opacity-95 text-white font-semibold rounded-lg text-xs flex items-center gap-2 shadow-xs transition cursor-pointer"
-            title="Escanear calzado con cámara o imagen para autocompletar con IA Gemini"
-          >
-            <Sparkles className="w-4 h-4 text-cyan-200" />
-            <span>Cámara IA Escáner</span>
-          </button>
-
-          <button
-            id="import-excel-btn"
-            type="button"
-            onClick={() => setIsExcelModalOpen(true)}
-            className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-semibold rounded-lg text-xs flex items-center gap-2 shadow-xs transition-colors cursor-pointer"
-            title="Importar inventario masivo desde archivo Excel (.xlsx / .xls)"
-          >
-            <FileSpreadsheet className="w-4 h-4" />
-            <span>Subir Excel / CSV</span>
-          </button>
-
-          <button
-            id="sync-github-catalog-btn"
-            type="button"
-            onClick={() => setIsGitHubSyncOpen(true)}
-            className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 active:bg-black text-white font-semibold rounded-lg text-xs flex items-center gap-2 shadow-xs transition-colors cursor-pointer border border-slate-700"
-            title="Sincronizar inventario con el catálogo web en GitHub (makdshoes-gif/makd)"
-          >
-            <Globe className="w-4 h-4 text-indigo-400" />
-            <span>Sincronizar Catálogo Web</span>
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-          </button>
-
-          <button
-            id="sync-webhook-catalog-btn"
-            type="button"
-            onClick={() => setIsWebhookModalOpen(true)}
-            className="px-3.5 py-2 bg-indigo-950/80 hover:bg-indigo-900 active:bg-slate-900 text-indigo-300 hover:text-white font-semibold rounded-lg text-xs flex items-center gap-2 shadow-xs transition-colors cursor-pointer border border-indigo-700/50"
-            title="Sincronizar webhook automático al registrar ventas o inventario"
-          >
-            <Webhook className="w-4 h-4 text-indigo-400" />
-            <span>Webhook Inventario</span>
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-          </button>
-
-          <button
-            id="batch-white-bg-btn"
-            type="button"
-            onClick={() => setIsBatchWhiteBgOpen(true)}
-            className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 active:bg-black text-cyan-300 font-semibold rounded-lg text-xs flex items-center gap-2 shadow-xs transition-colors cursor-pointer border border-cyan-500/40"
-            title="Poner fondo blanco puro de estudio a todos los calzados registrados"
-          >
-            <Sparkles className="w-4 h-4 text-cyan-400" />
-            <span>Fondo Blanco Masivo</span>
-          </button>
-
           <button
             id="new-product-btn"
             type="button"
@@ -265,10 +208,66 @@ export const InventoryManager: React.FC = () => {
               setInitialAiImage(null);
               setIsProductModalOpen(true);
             }}
-            className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-semibold rounded-lg text-xs flex items-center gap-2 shadow-xs transition-colors cursor-pointer"
+            className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer shrink-0 whitespace-nowrap"
           >
             <Plus className="w-4 h-4" />
-            <span>Nuevo Modelo / Producto</span>
+            <span>Nuevo Calzado</span>
+          </button>
+
+          <button
+            id="open-ai-scanner-btn"
+            type="button"
+            onClick={() => setIsAiScannerOpen(true)}
+            className="px-3 py-2 bg-slate-900 hover:bg-slate-800 text-cyan-300 font-semibold rounded-xl text-xs flex items-center gap-1.5 shadow-xs transition cursor-pointer shrink-0 whitespace-nowrap border border-slate-700"
+            title="Escanear calzado con IA Gemini"
+          >
+            <Sparkles className="w-4 h-4 text-cyan-400" />
+            <span>Cámara IA</span>
+          </button>
+
+          <button
+            id="import-excel-btn"
+            type="button"
+            onClick={() => setIsExcelModalOpen(true)}
+            className="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-semibold rounded-xl text-xs flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer shrink-0 whitespace-nowrap"
+            title="Importar inventario masivo desde Excel (.xlsx / .csv)"
+          >
+            <FileSpreadsheet className="w-4 h-4" />
+            <span>Excel / CSV</span>
+          </button>
+
+          <button
+            id="sync-github-catalog-btn"
+            type="button"
+            onClick={() => setIsGitHubSyncOpen(true)}
+            className="px-3 py-2 bg-white hover:bg-slate-50 text-slate-700 font-semibold rounded-xl text-xs flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer border border-slate-200 shrink-0 whitespace-nowrap"
+            title="Sincronizar inventario con el catálogo web en GitHub"
+          >
+            <Globe className="w-4 h-4 text-indigo-600" />
+            <span>Catálogo Web</span>
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+          </button>
+
+          <button
+            id="sync-webhook-catalog-btn"
+            type="button"
+            onClick={() => setIsWebhookModalOpen(true)}
+            className="px-3 py-2 bg-white hover:bg-slate-50 text-slate-700 font-semibold rounded-xl text-xs flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer border border-slate-200 shrink-0 whitespace-nowrap"
+            title="Sincronizar webhook automático"
+          >
+            <Webhook className="w-4 h-4 text-indigo-600" />
+            <span>Webhook</span>
+          </button>
+
+          <button
+            id="batch-white-bg-btn"
+            type="button"
+            onClick={() => setIsBatchWhiteBgOpen(true)}
+            className="px-3 py-2 bg-white hover:bg-slate-50 text-slate-700 font-semibold rounded-xl text-xs flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer border border-slate-200 shrink-0 whitespace-nowrap"
+            title="Poner fondo blanco puro de estudio a todos los calzados registrados"
+          >
+            <Sparkles className="w-4 h-4 text-amber-500" />
+            <span>Fondo Blanco</span>
           </button>
         </div>
       </div>
@@ -540,17 +539,17 @@ export const InventoryManager: React.FC = () => {
           {/* Table Container (High Density Design Theme) */}
           <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
+              <table className="w-full text-left text-xs min-w-[850px]">
                 <thead className="bg-slate-50 text-slate-500 uppercase tracking-wider text-[10px] font-bold border-b border-slate-200">
                   <tr>
-                    <th className="py-3 px-4">Calzado / Modelo</th>
-                    <th className="py-3 px-3">Talla</th>
-                    <th className="py-3 px-3">Marca / Tipo</th>
-                    <th className="py-3 px-3 text-right">Costo ($)</th>
-                    <th className="py-3 px-3 text-right">PVP ($)</th>
-                    <th className="py-3 px-3 text-right">Margen</th>
-                    <th className="py-3 px-3 text-center">Stock en Vivo</th>
-                    <th className="py-3 px-4 text-center">Acciones</th>
+                    <th className="py-3 px-4 min-w-[220px]">Calzado / Modelo</th>
+                    <th className="py-3 px-2.5 text-center min-w-[65px]">Talla</th>
+                    <th className="py-3 px-3 min-w-[110px]">Marca / Tipo</th>
+                    <th className="py-3 px-3 text-right min-w-[75px]">Costo ($)</th>
+                    <th className="py-3 px-3 text-right min-w-[85px]">PVP ($)</th>
+                    <th className="py-3 px-3 text-right min-w-[80px]">Margen</th>
+                    <th className="py-3 px-3 text-center min-w-[110px]">Stock en Vivo</th>
+                    <th className="py-3 px-3 text-center min-w-[190px] whitespace-nowrap">Acciones</th>
                   </tr>
                 </thead>
 
@@ -696,14 +695,14 @@ export const InventoryManager: React.FC = () => {
                           </td>
 
                           {/* Action Buttons */}
-                          <td className="py-3 px-4 text-center">
-                            <div className="flex items-center justify-center gap-1.5">
+                          <td className="py-2.5 px-3 text-center whitespace-nowrap">
+                            <div className="inline-flex items-center justify-center gap-1 shrink-0">
                               {/* Quick -1 */}
                               <button
                                 onClick={() => adjustStock(p.id, -1, 'Ajuste rápido manual (-1 par)', 'salida_ajuste')}
                                 disabled={p.stock <= 0}
                                 title="Restar 1 par"
-                                className="p-1 rounded-md bg-slate-50 border border-slate-200 text-slate-500 hover:text-slate-900 hover:bg-slate-100 disabled:opacity-30 cursor-pointer"
+                                className="w-6 h-6 flex items-center justify-center rounded bg-slate-50 border border-slate-200 text-slate-500 hover:text-slate-900 hover:bg-slate-100 disabled:opacity-30 cursor-pointer shrink-0"
                               >
                                 <Minus className="w-3 h-3" />
                               </button>
@@ -712,7 +711,7 @@ export const InventoryManager: React.FC = () => {
                               <button
                                 onClick={() => adjustStock(p.id, 1, 'Ingreso rápido manual (+1 par)', 'entrada')}
                                 title="Sumar 1 par"
-                                className="p-1 rounded-md bg-slate-50 border border-slate-200 text-slate-500 hover:text-emerald-600 hover:bg-slate-100 cursor-pointer"
+                                className="w-6 h-6 flex items-center justify-center rounded bg-slate-50 border border-slate-200 text-slate-500 hover:text-emerald-600 hover:bg-slate-100 cursor-pointer shrink-0"
                               >
                                 <Plus className="w-3 h-3" />
                               </button>
@@ -721,7 +720,7 @@ export const InventoryManager: React.FC = () => {
                               <button
                                 onClick={() => handleOpenLabelModal(p)}
                                 title="Imprimir Etiqueta para Zapato (SKU, Descripción y Costo)"
-                                className="px-2 py-1 rounded-md bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[11px] font-semibold border border-indigo-200 cursor-pointer transition-colors flex items-center gap-1"
+                                className="px-2 py-1 rounded bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[11px] font-semibold border border-indigo-200 cursor-pointer transition-colors flex items-center gap-1 shrink-0"
                               >
                                 <Tag className="w-3 h-3 text-indigo-600" />
                                 <span className="hidden xl:inline">Etiqueta</span>
@@ -731,7 +730,7 @@ export const InventoryManager: React.FC = () => {
                               <button
                                 onClick={() => handleOpenMovement(p)}
                                 title="Movimiento de Lote / Kardex"
-                                className="px-2 py-1 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-medium border border-slate-200 cursor-pointer transition-colors"
+                                className="px-2 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-medium border border-slate-200 cursor-pointer transition-colors shrink-0"
                               >
                                 Lote
                               </button>
@@ -742,7 +741,7 @@ export const InventoryManager: React.FC = () => {
                                   <button
                                     onClick={() => handleOpenEdit(p)}
                                     title="Editar calzado"
-                                    className="p-1 rounded-md bg-slate-50 border border-slate-200 text-slate-500 hover:text-indigo-600 hover:bg-slate-100 cursor-pointer"
+                                    className="w-6 h-6 flex items-center justify-center rounded bg-slate-50 border border-slate-200 text-slate-500 hover:text-indigo-600 hover:bg-slate-100 cursor-pointer shrink-0"
                                   >
                                     <Edit2 className="w-3 h-3" />
                                   </button>
@@ -755,7 +754,7 @@ export const InventoryManager: React.FC = () => {
                                       }
                                     }}
                                     title="Eliminar del catálogo"
-                                    className="p-1 rounded-md bg-slate-50 border border-slate-200 text-slate-500 hover:text-rose-600 hover:bg-slate-100 cursor-pointer"
+                                    className="w-6 h-6 flex items-center justify-center rounded bg-slate-50 border border-slate-200 text-slate-500 hover:text-rose-600 hover:bg-slate-100 cursor-pointer shrink-0"
                                   >
                                     <Trash2 className="w-3 h-3" />
                                   </button>

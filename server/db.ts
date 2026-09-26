@@ -494,10 +494,17 @@ export async function voidSale(id: string, motivo: string): Promise<{ ok: boolea
 
   const items = Array.isArray(sale.items) ? sale.items : [];
   for (const item of items) {
-    if (item?.producto_id && item?.cantidad) {
+    if (item?.cantidad) {
+      const qty = Math.max(1, Number(item.cantidad) || 1);
+      const prodId = item.producto_id ? String(item.producto_id).trim() : '';
+      const sku = item.sku ? String(item.sku).trim() : '';
+      const nombre = item.nombre_producto ? String(item.nombre_producto).trim() : '';
+      const talla = item.talla ? String(item.talla).trim() : '';
       await sql`
-        UPDATE shoe_products SET stock = stock + ${item.cantidad}
-        WHERE id = ${item.producto_id}
+        UPDATE shoe_products SET stock = stock + ${qty}
+        WHERE (id = ${prodId})
+           OR (${sku} != '' AND sku = ${sku})
+           OR (${nombre} != '' AND ${talla} != '' AND LOWER(nombre) = LOWER(${nombre}) AND talla = ${talla});
       `;
     }
   }

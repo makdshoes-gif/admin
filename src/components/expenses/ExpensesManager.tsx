@@ -322,24 +322,24 @@ export const ExpensesManager: React.FC = () => {
           </div>
         </div>
 
-        <div className="flex items-center space-x-3">
+        <div className="flex items-center gap-2 flex-wrap">
           {/* Period Selector */}
-          <div className="flex items-center bg-slate-100 p-1 rounded-lg border border-slate-200 text-xs font-medium">
+          <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs font-medium shrink-0">
             <button
               onClick={() => setSelectedPeriod('este_mes')}
-              className={`px-3 py-1.5 rounded-md transition-colors ${
+              className={`px-2.5 py-1.5 rounded-lg transition-colors cursor-pointer ${
                 selectedPeriod === 'este_mes'
-                  ? 'bg-white text-slate-900 font-bold shadow-xs'
+                  ? 'bg-white text-slate-900 font-bold shadow-2xs'
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              Mes Actual
+              Este Mes
             </button>
             <button
               onClick={() => setSelectedPeriod('mes_anterior')}
-              className={`px-3 py-1.5 rounded-md transition-colors ${
+              className={`px-2.5 py-1.5 rounded-lg transition-colors cursor-pointer ${
                 selectedPeriod === 'mes_anterior'
-                  ? 'bg-white text-slate-900 font-bold shadow-xs'
+                  ? 'bg-white text-slate-900 font-bold shadow-2xs'
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
@@ -347,9 +347,9 @@ export const ExpensesManager: React.FC = () => {
             </button>
             <button
               onClick={() => setSelectedPeriod('todo')}
-              className={`px-3 py-1.5 rounded-md transition-colors ${
+              className={`px-2.5 py-1.5 rounded-lg transition-colors cursor-pointer ${
                 selectedPeriod === 'todo'
-                  ? 'bg-white text-slate-900 font-bold shadow-xs'
+                  ? 'bg-white text-slate-900 font-bold shadow-2xs'
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
@@ -358,40 +358,40 @@ export const ExpensesManager: React.FC = () => {
           </div>
 
           <button
-            onClick={() => setIsCurrencyModalOpen(true)}
-            className="flex items-center space-x-1.5 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold shadow-xs transition-colors cursor-pointer"
-            title="Registrar compra de Binance USDT, Zelle o Dólares Efectivo con Bolívares"
+            id="btn-nuevo-gasto"
+            onClick={() => setIsModalOpen(true)}
+            className="flex items-center gap-1.5 px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-xs transition-colors cursor-pointer shrink-0 whitespace-nowrap"
           >
-            <ArrowRightLeft className="w-4 h-4" />
-            <span>Comprar Divisas (Bs ➔ USD)</span>
+            <PlusCircle className="w-4 h-4" />
+            <span>Registrar Gasto</span>
           </button>
 
           <button
-            onClick={() => setIsSheetsModalOpen(true)}
-            className="flex items-center space-x-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-xs transition-colors cursor-pointer"
-            title="Exportar reporte de fin de mes y divisas a Google Sheets"
+            onClick={() => setIsCurrencyModalOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-xs transition-colors cursor-pointer shrink-0 whitespace-nowrap"
+            title="Registrar compra de Binance USDT, Zelle o Dólares Efectivo con Bolívares"
           >
-            <FileSpreadsheet className="w-4 h-4" />
-            <span>Google Sheets</span>
+            <ArrowRightLeft className="w-4 h-4" />
+            <span>Comprar Divisas</span>
           </button>
 
           <button
             onClick={() => setIsScannerModalOpen(true)}
-            className="flex items-center space-x-1.5 px-3.5 py-2 bg-gradient-to-r from-indigo-600 via-indigo-700 to-indigo-800 hover:from-indigo-500 hover:to-indigo-700 text-white rounded-lg text-xs font-bold shadow-sm hover:shadow-indigo-500/25 transition-all cursor-pointer"
-            title="Tomar foto a la factura para extraer datos y subir el gasto automáticamente con IA"
+            className="flex items-center gap-1.5 px-3 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold shadow-xs transition-all cursor-pointer shrink-0 whitespace-nowrap border border-slate-700"
+            title="Extraer datos de factura con IA"
           >
-            <Camera className="w-4 h-4 text-indigo-200" />
-            <span>Tomar Foto a Factura</span>
-            <span className="text-[10px] px-1.5 py-0.2 bg-white/20 rounded font-mono font-bold">IA</span>
+            <Camera className="w-4 h-4 text-cyan-400" />
+            <span>Escanear Factura</span>
+            <span className="text-[9px] px-1 py-0.2 bg-white/20 rounded font-mono font-bold">IA</span>
           </button>
 
           <button
-            id="btn-nuevo-gasto"
-            onClick={() => setIsModalOpen(true)}
-            className="flex items-center space-x-1.5 px-3 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-semibold shadow-xs transition-colors cursor-pointer"
+            onClick={() => setIsSheetsModalOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-xl text-xs font-bold shadow-2xs transition-colors cursor-pointer shrink-0 whitespace-nowrap"
+            title="Exportar reporte de fin de mes a Google Sheets"
           >
-            <PlusCircle className="w-4 h-4" />
-            <span>Registrar Gasto</span>
+            <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+            <span>Sheets</span>
           </button>
         </div>
       </div>
