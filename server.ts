@@ -661,28 +661,14 @@ async function startServer() {
             notas = EXCLUDED.notas;
         `;
 
-        // Also adjust product stock in Neon if items present. Se usa la
-        // función compartida en server/db.ts (deductStockForSaleItems) para
-        // que server.ts (Render) y server/app.ts (Vercel) nunca vuelvan a
-        // desincronizarse en esta lógica.
+        // Also adjust product stock in Neon if items present. Usa la misma
+        // búsqueda flexible que el resto de la app (id, o sku, o
+        // nombre+talla) — antes esto SOLO buscaba por id exacto, y si no
+        // coincidía, el stock nunca bajaba de verdad en Neon aunque la
+        // venta sí se guardara: la próxima sincronización "reponía" el
+        // producto como si no se hubiera vendido.
         if (Array.isArray(s.items)) {
           await deductStockForSaleItems(s.items);
-        }
-
-        // Also update exact stock from body.updatedProducts into Neon
-        if (Array.isArray(body?.updatedProducts) && body.updatedProducts.length > 0) {
-          for (const fresh of body.updatedProducts) {
-            if (fresh.id) {
-              const freshStock = Number(fresh.stock) || 0;
-              const freshSku = fresh.sku ? String(fresh.sku).trim() : '';
-              await sql`
-                UPDATE shoe_products
-                SET stock = ${freshStock}
-                WHERE id = ${fresh.id}
-                   OR (${freshSku} != '' AND sku = ${freshSku});
-              `;
-            }
-          }
         }
       } catch (err) {
         console.error('Error saving sale to Neon:', err);
