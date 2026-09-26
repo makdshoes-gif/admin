@@ -14,7 +14,7 @@ function normalizeNumericFields<T extends Record<string, any>>(row: T, fields: s
   for (const field of fields) {
     if (out[field] !== null && out[field] !== undefined && out[field] !== '') {
       const n = Number(out[field]);
-      if (!Number.isNaN(n)) out[field] = n;
+      if (!Number.isNaN(n)) out[field] = n; 
     }
   }
   return out;
@@ -463,30 +463,156 @@ export async function insertSale(sale: any): Promise<boolean> {
 // cualquier motivo, la venta se guardaba pero el stock nunca bajaba de
 // verdad, y "reaparecía" en la siguiente sincronización aunque sí se
 // hubiera vendido.
-export async function deductStockForSaleItems(items: any[]): Promise<void> {
+export async function deductStockForSaleItems(
+  items: any[]
+): Promise<{
+  ok: boolean;
+  error?: string;
+  updatedProducts?: Array<{ id: string; stock: number }>;
+}> {
   const sql = getNeonSql();
-  if (!sql || !Array.isArray(items)) return;
+
+  if (!sql) {
+    return {
+      ok: false,
+      error: 'Base de datos Neon no configurada.',
+    };
+  }
+
+  if (!Array.isArray(items) || items.length === 0) {
+    return {
+      ok: false,
+      error: 'La venta no contiene productos.',
+    };
+  }
+
+  const updatedProducts: Array<{ id: string; stock: number }> = [];
+
   for (const item of items) {
     const cantidad = Math.max(1, Number(item?.cantidad) || 1);
-    const id = item?.producto_id ? String(item.producto_id) : null;
-    const sku = item?.sku ? String(item.sku) : null;
-    const nombre = item?.nombre_producto ? String(item.nombre_producto) : null;
-    const talla = item?.talla ? String(item.talla) : null;
-    if (!id && !sku && !(nombre && talla)) continue;
+
+    const id = item?.producto_id
+      ? String(item.producto_id).trim()
+      : null;
+
+    const sku = item?.sku
+      ? String(item.sku).trim()
+      : null;
+
+    const nombre = item?.nombre_producto
+      ? String(item.nombre_producto).trim()
+      : null;
+
+    const talla = item?.talla
+      ? String(item.talla).trim()
+      : null;
+
+    if (!id && !sku && !(nombre && talla)) {
+      return {
+        ok: false,
+        error: `No se pudo identificar el producto de la venta: ${JSON.stringify(item)}`,
+      };
+    }
 
     try {
-      await (sql as any).query(
-        `UPDATE shoe_products
-         SET stock = GREATEST(0, stock - $1)
-         WHERE id = $2
-            OR (sku IS NOT NULL AND $3 IS NOT NULL AND lower(sku) = lower($3))
-            OR (lower(nombre) = lower(COALESCE($4, '')) AND talla = COALESCE($5, '') AND $4 IS NOT NULL AND $5 IS NOT NULL)`,
-        [cantidad, id, sku, nombre, talla]
+      // Primero encontramos UN SOLO producto.
+      // Priorizamos ID, después SKU y finalmente nombre + talla.
+      const rows = await (sql as any).query(
+        `
+        SELECT id, stock
+        FROM shoe_products
+        WHERE
+          ($1 IS NOT NULL AND id = $1)
+          OR
+          ($2 IS NOT NULL AND sku IS NOT NULL AND lower(sku) = lower($2))
+          OR
+          (
+            $3 IS NOT NULL
+            AND $4 IS NOT NULL
+            AND lower(nombre) = lower($3)
+            AND talla = $4
+          )
+        ORDER BY
+          CASE
+            WHEN $1 IS NOT NULL AND id = $1 THEN 1
+            WHEN $2 IS NOT NULL AND sku IS NOT NULL AND lower(sku) = lower($2) THEN 2
+            ELSE 3
+          END
+        LIMIT 1
+        `,
+        [id, sku, nombre, talla]
       );
+
+      const product = rows?.[0];
+
+      if (!product) {
+        return {
+          ok: false,
+          error:
+            `No se encontró en Neon el producto vendido. ` +
+            `ID=${id || '-'} SKU=${sku || '-'} ` +
+            `Nombre=${nombre || '-'} Talla=${talla || '-'}`,
+        };
+      }
+
+      const stockActual = Number(product.stock) || 0;
+
+      if (stockActual < cantidad) {
+        return {
+          ok: false,
+          error:
+            `Stock insuficiente para ${nombre || sku || id}. ` +
+            `Disponible: ${stockActual}, vendido: ${cantidad}.`,
+        };
+      }
+
+      // Descontamos usando el ID REAL encontrado en Neon.
+      const updatedRows = await (sql as any).query(
+        `
+        UPDATE shoe_products
+        SET
+          stock = stock - $1,
+          updated_at = NOW()
+        WHERE id = $2
+        RETURNING id, stock
+        `,
+        [cantidad, product.id]
+      );
+
+      const updated = updatedRows?.[0];
+
+      if (!updated) {
+        return {
+          ok: false,
+          error: `No se pudo actualizar el stock del producto ${product.id}.`,
+        };
+      }
+
+      updatedProducts.push({
+        id: String(updated.id),
+        stock: Number(updated.stock) || 0,
+      });
     } catch (err) {
-      console.error('Error descontando stock en Neon para item de venta:', item, err);
+      console.error(
+        'Error descontando stock en Neon para item de venta:',
+        item,
+        err
+      );
+
+      return {
+        ok: false,
+        error:
+          err instanceof Error
+            ? err.message
+            : 'Error desconocido actualizando inventario.',
+      };
     }
   }
+
+  return {
+    ok: true,
+    updatedProducts,
+  };
 }
 
 export async function updateSale(id: string, updates: Record<string, any>): Promise<boolean> {
