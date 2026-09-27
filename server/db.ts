@@ -519,30 +519,32 @@ export async function deductStockForSaleItems(
       // Priorizamos ID, después SKU y finalmente nombre + talla.
       const rows = await (sql as any).query(
         `
-        SELECT id, stock
-        FROM shoe_products
-        WHERE
-          ($1 IS NOT NULL AND id = $1)
-          OR
-          ($2 IS NOT NULL AND sku IS NOT NULL AND lower(sku) = lower($2))
-          OR
-          (
-            $3 IS NOT NULL
-            AND $4 IS NOT NULL
-            AND lower(nombre) = lower($3)
-            AND talla = $4
-          )
-        ORDER BY
-          CASE
-            WHEN $1 IS NOT NULL AND id = $1 THEN 1
-            WHEN $2 IS NOT NULL AND sku IS NOT NULL AND lower(sku) = lower($2) THEN 2
-            ELSE 3
-          END
-        LIMIT 1
-        `,
-        [id, sku, nombre, talla]
-      );
-
+       const rows = await (sql as any).query(
+  `
+  SELECT id, stock
+  FROM shoe_products
+  WHERE
+    ($1::varchar IS NOT NULL AND id = $1::varchar)
+    OR
+    ($2::varchar IS NOT NULL AND sku IS NOT NULL AND lower(sku) = lower($2::varchar))
+    OR
+    (
+      $3::varchar IS NOT NULL
+      AND $4::varchar IS NOT NULL
+      AND lower(nombre) = lower($3::varchar)
+      AND talla = $4::varchar
+    )
+  ORDER BY
+    CASE
+      WHEN $1::varchar IS NOT NULL AND id = $1::varchar THEN 1
+      WHEN $2::varchar IS NOT NULL AND sku IS NOT NULL
+        AND lower(sku) = lower($2::varchar) THEN 2
+      ELSE 3
+    END
+  LIMIT 1
+  `,
+  [id, sku, nombre, talla]
+);
       const product = rows?.[0];
 
       if (!product) {
