@@ -517,9 +517,7 @@ export async function deductStockForSaleItems(
     try {
       // Primero encontramos UN SOLO producto.
       // Priorizamos ID, después SKU y finalmente nombre + talla.
-      const rows = await (sql as any).query(
-        `
-       const rows = await (sql as any).query(
+const rows = await (sql as any).query(
   `
   SELECT id, stock
   FROM shoe_products
@@ -537,7 +535,8 @@ export async function deductStockForSaleItems(
   ORDER BY
     CASE
       WHEN $1::varchar IS NOT NULL AND id = $1::varchar THEN 1
-      WHEN $2::varchar IS NOT NULL AND sku IS NOT NULL
+      WHEN $2::varchar IS NOT NULL
+        AND sku IS NOT NULL
         AND lower(sku) = lower($2::varchar) THEN 2
       ELSE 3
     END
@@ -545,6 +544,8 @@ export async function deductStockForSaleItems(
   `,
   [id, sku, nombre, talla]
 );
+
+const product = rows?.[0];
       const product = rows?.[0];
 
       if (!product) {
