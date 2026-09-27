@@ -10,6 +10,7 @@ import {
   normalizeExpenses,
   normalizeBankReconciliations,
   insertSale,
+  deductStockForSaleItems,
   updateSale,
   voidSale,
   getSalesClosures,
