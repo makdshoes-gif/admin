@@ -546,7 +546,6 @@ const rows = await (sql as any).query(
 );
 
 const product = rows?.[0];
-      const product = rows?.[0];
 
       if (!product) {
         return {
