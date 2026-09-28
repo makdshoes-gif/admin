@@ -98,20 +98,18 @@ app.get('/api/store/state', async (_req, res) => {
       });
     } catch (err) {
       console.error('Error al sincronizar estado de Neon:', err);
+      return res.status(503).json({
+        success: false,
+        source: 'neon_error',
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
   }
 
-  res.json({
-    success: true,
-    source: 'local_fallback',
-    data: {
-      products: [],
-      sales: [],
-      movements: [],
-      cashClosures: [],
-      expenses: [],
-      accounts: [],
-    },
+  return res.status(503).json({
+    success: false,
+    source: 'no_database_configured',
+    error: 'DATABASE_URL no configurada en Vercel.',
   });
 });
 
@@ -272,8 +270,6 @@ app.get('/api/sales', async (_req, res) => {
 
 // Crear una nueva venta (se llama justo al completar la venta en el POS)
 app.post('/api/sales', async (req, res) => {
-  // Compatibilidad con versiones anteriores del frontend:
-  // acepta tanto la venta directa como { sale: venta }.
   const sale = req.body?.sale || req.body;
 
   if (!sale || !sale.id || !Array.isArray(sale.items)) {
@@ -284,7 +280,6 @@ app.post('/api/sales', async (req, res) => {
   }
 
   const sql = getNeonSql();
-
   if (!sql) {
     return res.status(503).json({
       saved: false,
@@ -295,21 +290,14 @@ app.post('/api/sales', async (req, res) => {
   try {
     await initDatabaseSchema();
 
-    // Guardar primero la venta.
     const saved = await insertSale(sale);
-
     if (!saved) {
       throw new Error('No se pudo guardar la venta en Neon.');
     }
 
-    // Descontar el inventario real de Neon.
     const stockResult = await deductStockForSaleItems(sale.items);
-
     if (!stockResult.ok) {
-      throw new Error(
-        stockResult.error ||
-        'La venta se guardó, pero no se pudo actualizar el inventario.'
-      );
+      throw new Error(stockResult.error || 'La venta se guardó, pero no se pudo actualizar el inventario.');
     }
 
     return res.json({
@@ -320,7 +308,6 @@ app.post('/api/sales', async (req, res) => {
     });
   } catch (err) {
     console.error('Error guardando venta en Neon:', err);
-
     return res.status(500).json({
       saved: false,
       error: err instanceof Error ? err.message : String(err),

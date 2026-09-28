@@ -6,7 +6,23 @@ export interface ShoeAnalysisResult {
   modelo: string;
   nombre: string;
   categoria: string;
-  tipo: 'Deportivo' | 'Casual' | 'Botas' | 'Tacones' | 'Sandalias' | 'Mocasines' | 'Infantil' | 'Otros';
+  tipo:
+    | 'Botines Fútbol Campo'
+    | 'Fútbol Campo'
+    | 'Micro Tacos'
+    | 'Futsala'
+    | 'Running'
+    | 'Béisbol'
+    | 'Béisbol Gancho'
+    | 'Deportivo'
+    | 'Casual'
+    | 'Botas'
+    | 'Tacones'
+    | 'Sandalias'
+    | 'Mocasines'
+    | 'Infantil'
+    | 'Otros'
+    | string;
   genero: 'Caballero' | 'Dama' | 'Unisex' | 'Niño' | 'Niña';
   color: string;
   material: string;
@@ -92,9 +108,19 @@ Examina atentamente la fotografía adjunta y analiza cada detalle visual del cal
      * Asics: Franjas entrecruzadas Tiger Stripes, siluetas Gel-Kayano, Gel-NYC.
      * Reebok: Logotipo vectorial y silueta Club C 85 o Classic Leather.
      * Otras marcas o calzado genérico: Si es bota, mocasín, tacón, sandalia o no tiene marca visible reconocida, indica la marca real visible o "Genérica" / "Marca Local" y describe fielmente su silueta.
-2. COLORWAY REAL:
+2. CLASIFICACIÓN DE TIPO DE CALZADO PARA MAKD SHOP:
+   - "Botines Fútbol Campo": Calzado con tacos altos para césped natural con tobillera o cuello alto/calcetín.
+   - "Fútbol Campo": Calzado tradicional de fútbol con tacos / toperoles para césped natural.
+   - "Micro Tacos": Calzado con suela multitaco turf o pequeños tacos de goma para césped sintético.
+   - "Futsala": Calzado para fútbol sala o indoor con suela lisa o de goma caramelo sin tacos.
+   - "Running": Calzado deportivo ligero para correr / trotar con amortiguación y suela ranurada.
+   - "Béisbol": Zapatos o spikes para béisbol / softball con tacos de TPU.
+   - "Béisbol Gancho": Spikes de béisbol con ganchos o tacos metálicos de tracción.
+   - "Casual": Zapatillas urbanas de moda (Dunk, Air Force, Samba, Campus, etc.).
+   - "Deportivo": Calzado deportivo de uso general o entrenamiento.
+3. COLORWAY REAL:
    - Describe con exactitud los colores reales que ves en la imagen (por ejemplo: "Blanco Triple", "Negro y Blanco (Panda)", "Rojo y Blanco", "Gris con suela crema", etc.).
-3. MATERIALES VISIBLES:
+4. MATERIALES VISIBLES:
    - Cuero liso, gamuza / serraje, lona textil, malla transpirable, suela de goma vulcanizada o entresuela de espuma EVA.
 
 ${userHint ? `INFORMACIÓN O PISTA ADICIONAL PROPORCIONADA POR EL USUARIO: "${userHint}". Úsala para afinar el modelo exacto si coincide con lo visible.` : ''}
@@ -105,7 +131,7 @@ IMPORTANTE: Responde ÚNICAMENTE con un objeto JSON válido (sin formato markdow
   "modelo": "Nombre exacto del modelo o silueta (ej: Dunk Low, Air Force 1 07, Samba OG, Campus 00s, Forum Low, 550, Suede Classic, Chuck 70, Old Skool, etc.)",
   "nombre": "Nombre comercial completo y atractivo para MAKD SHOP que combine marca, modelo y color (ej: Nike Dunk Low Black & White Panda)",
   "categoria": "Calzado",
-  "tipo": "Deportivo" | "Casual" | "Botas" | "Tacones" | "Sandalias" | "Mocasines" | "Infantil",
+  "tipo": "Botines Fútbol Campo" | "Fútbol Campo" | "Micro Tacos" | "Futsala" | "Running" | "Béisbol" | "Béisbol Gancho" | "Deportivo" | "Casual" | "Botas" | "Tacones" | "Sandalias" | "Mocasines" | "Infantil",
   "genero": "Unisex" | "Caballero" | "Dama" | "Niño" | "Niña",
   "color": "Colorway visible real (ej: Blanco y Negro, Azul Marino con detalles en Blanco, etc.)",
   "material": "Materiales reales visibles (ej: Cuero sintético suave con puntera reforzada y suela de caucho)",
@@ -226,9 +252,35 @@ IMPORTANTE: Responde ÚNICAMENTE con un objeto JSON válido (sin formato markdow
   throw new Error(friendlyMsg);
 }
 
-function validateTipo(val: string): 'Deportivo' | 'Casual' | 'Botas' | 'Tacones' | 'Sandalias' | 'Mocasines' | 'Infantil' | 'Otros' {
-  const allowed = ['Deportivo', 'Casual', 'Botas', 'Tacones', 'Sandalias', 'Mocasines', 'Infantil'];
-  return allowed.includes(val) ? (val as any) : 'Deportivo';
+function validateTipo(val: string): any {
+  const allowed = [
+    'Botines Fútbol Campo',
+    'Fútbol Campo',
+    'Micro Tacos',
+    'Futsala',
+    'Running',
+    'Béisbol',
+    'Béisbol Gancho',
+    'Casual',
+    'Deportivo',
+    'Botas',
+    'Tacones',
+    'Sandalias',
+    'Mocasines',
+    'Infantil',
+    'Otros',
+  ];
+  if (allowed.includes(val)) return val;
+  const lower = (val || '').toLowerCase();
+  if (lower.includes('botin') && (lower.includes('futbol') || lower.includes('campo'))) return 'Botines Fútbol Campo';
+  if (lower.includes('micro') || lower.includes('taco')) return 'Micro Tacos';
+  if (lower.includes('futsal') || lower.includes('sala')) return 'Futsala';
+  if (lower.includes('gancho')) return 'Béisbol Gancho';
+  if (lower.includes('beisbol') || lower.includes('baseball')) return 'Béisbol';
+  if (lower.includes('futbol') || lower.includes('campo')) return 'Fútbol Campo';
+  if (lower.includes('run')) return 'Running';
+  if (lower.includes('casual')) return 'Casual';
+  return 'Fútbol Campo';
 }
 
 function validateGenero(val: string): 'Caballero' | 'Dama' | 'Unisex' | 'Niño' | 'Niña' {

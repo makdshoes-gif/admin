@@ -2,6 +2,49 @@
 <html lang="es">
   <head>
     <meta charset="UTF-8" />
+    <script>
+      // Early protection: Ensure window.fetch has both a getter and setter to prevent
+      // "TypeError: Cannot set property fetch of #<Window> which has only a getter"
+      // when testing harnesses, proxies or extensions attempt to patch or monitor fetch.
+      (function() {
+        try {
+          var _currentFetch = window.fetch;
+          Object.defineProperty(window, 'fetch', {
+            get: function() {
+              return _currentFetch;
+            },
+            set: function(fn) {
+              _currentFetch = fn;
+            },
+            configurable: true,
+            enumerable: true
+          });
+        } catch (e) {
+          try {
+            var _cur = Window.prototype.fetch;
+            Object.defineProperty(Window.prototype, 'fetch', {
+              get: function() {
+                return _cur;
+              },
+              set: function(fn) {
+                _cur = fn;
+              },
+              configurable: true,
+              enumerable: true
+            });
+          } catch (e2) {}
+        }
+
+        // Global uncaught error guard for getter errors
+        window.addEventListener('error', function(event) {
+          if (event && event.message && event.message.indexOf('fetch') !== -1 && event.message.indexOf('only a getter') !== -1) {
+            if (typeof event.preventDefault === 'function') event.preventDefault();
+            if (typeof event.stopPropagation === 'function') event.stopPropagation();
+            return true;
+          }
+        });
+      })();
+    </script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>MAKD SHOP - Administración de Zapatería</title>
     <meta name="description" content="Panel de administración y gestión integral para tienda de calzado con inventario en tiempo real, punto de venta multimoneda, sistema de apartados, edición de fechas de factura, control de gastos, conciliación bancaria BDV y sincronización cloud." />

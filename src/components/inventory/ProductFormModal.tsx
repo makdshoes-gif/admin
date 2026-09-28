@@ -72,7 +72,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
   const [nombre, setNombre] = useState(editingProduct?.nombre || '');
   const [sku, setSku] = useState(editingProduct?.sku || '');
   const [marca, setMarca] = useState(editingProduct?.marca || 'Nike');
-  const [tipo, setTipo] = useState<ShoeType>(editingProduct?.tipo || 'Deportivo');
+  const [tipo, setTipo] = useState<ShoeType>(editingProduct?.tipo || 'Botines Fútbol Campo');
   const [color, setColor] = useState(editingProduct?.color || 'Blanco');
   const [costo, setCosto] = useState(editingProduct?.costo?.toString() || '40.00');
   const [precio, setPrecio] = useState(editingProduct?.precio?.toString() || '80.00');
@@ -174,7 +174,23 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
   const getTypesForCategory = (cat: ProductCategory): ShoeType[] => {
     switch (cat) {
       case 'Calzado':
-        return ['Deportivo', 'Casual', 'Botas', 'Tacones', 'Sandalias', 'Mocasines', 'Infantil'];
+        return [
+          'Botines Fútbol Campo',
+          'Fútbol Campo',
+          'Micro Tacos',
+          'Futsala',
+          'Running',
+          'Béisbol',
+          'Béisbol Gancho',
+          'Casual',
+          'Deportivo',
+          'Botas',
+          'Tacones',
+          'Sandalias',
+          'Mocasines',
+          'Infantil',
+          'Otros',
+        ];
       case 'Gorras':
         return ['Gorras'];
       case 'Medias':
@@ -825,14 +841,14 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
 
             <div>
               <label className="block text-slate-700 font-bold mb-1">
-                Tipo / Subgénero
+                {categoria === 'Calzado' ? 'Tipo de Calzado' : 'Tipo / Subgénero'}
               </label>
               <select
                 value={tipo}
                 onChange={(e) => setTipo(e.target.value as ShoeType)}
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-indigo-500 focus:bg-white text-xs"
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-indigo-500 focus:bg-white text-xs font-semibold"
               >
-                {getTypesForCategory(categoria).map((t) => (
+                {Array.from(new Set([...getTypesForCategory(categoria), ...(tipo ? [tipo] : [])])).map((t) => (
                   <option key={t} value={t}>{t}</option>
                 ))}
               </select>

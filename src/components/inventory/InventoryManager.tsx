@@ -119,7 +119,27 @@ export const InventoryManager: React.FC = () => {
     return ['Todas', ...list];
   }, [products]);
 
-  const shoeTypes = ['Todos', 'Deportivo', 'Casual', 'Botas', 'Tacones', 'Sandalias', 'Mocasines'];
+  const shoeTypes = useMemo(() => {
+    const requestedTypes = [
+      'Botines Fútbol Campo',
+      'Fútbol Campo',
+      'Micro Tacos',
+      'Futsala',
+      'Running',
+      'Béisbol',
+      'Béisbol Gancho',
+      'Casual',
+      'Deportivo',
+      'Botas',
+      'Tacones',
+      'Sandalias',
+      'Mocasines',
+      'Infantil',
+      'Otros',
+    ];
+    const existing = products.map((p) => p.tipo).filter(Boolean);
+    return ['Todos', ...Array.from(new Set([...requestedTypes, ...existing]))];
+  }, [products]);
   const shoeSizes = ['Todas', '35', '36', '37', '38', '39', '40', '41', '42', '43', '44', '45'];
 
   // Filtered Products
@@ -146,7 +166,11 @@ export const InventoryManager: React.FC = () => {
         talla.toLowerCase().includes(query);
 
       const matchBrand = selectedBrand === 'Todas' || (p.marca || '') === selectedBrand;
-      const matchType = selectedType === 'Todos' || (p.tipo || '') === selectedType;
+      const matchType =
+        selectedType === 'Todos' ||
+        (p.tipo || '').toLowerCase() === selectedType.toLowerCase() ||
+        (p.tipo || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '') ===
+          selectedType.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
       const matchSize = selectedSize === 'Todas' || talla === selectedSize;
 
       let matchStock = true;

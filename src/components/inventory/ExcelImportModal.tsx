@@ -144,10 +144,37 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
         else categoria = 'Calzado';
 
         // Tipo
-        let tipo: ShoeType = 'Deportivo';
+        let tipo: ShoeType = 'Botines Fútbol Campo';
         const rawTipo = String(normalizedMap['tipo'] || normalizedMap['type'] || '').trim();
-        if (rawTipo) {
+        const lowerTipo = rawTipo.toLowerCase();
+        const lowerNombre = nombre.toLowerCase();
+
+        if (lowerTipo.includes('botin') && (lowerTipo.includes('futbol') || lowerTipo.includes('campo'))) {
+          tipo = 'Botines Fútbol Campo';
+        } else if (lowerTipo.includes('micro') || lowerTipo.includes('taco')) {
+          tipo = 'Micro Tacos';
+        } else if (lowerTipo.includes('futsal') || lowerTipo.includes('sala')) {
+          tipo = 'Futsala';
+        } else if (lowerTipo.includes('gancho')) {
+          tipo = 'Béisbol Gancho';
+        } else if (lowerTipo.includes('beisbol') || lowerTipo.includes('baseball')) {
+          tipo = 'Béisbol';
+        } else if (lowerTipo.includes('futbol') || lowerTipo.includes('campo')) {
+          tipo = 'Fútbol Campo';
+        } else if (lowerTipo.includes('run')) {
+          tipo = 'Running';
+        } else if (rawTipo) {
           tipo = rawTipo as ShoeType;
+        } else if (lowerNombre.includes('botin')) {
+          tipo = 'Botines Fútbol Campo';
+        } else if (lowerNombre.includes('micro') || lowerNombre.includes('taco')) {
+          tipo = 'Micro Tacos';
+        } else if (lowerNombre.includes('futsal') || lowerNombre.includes('sala')) {
+          tipo = 'Futsala';
+        } else if (lowerNombre.includes('gancho')) {
+          tipo = 'Béisbol Gancho';
+        } else if (lowerNombre.includes('beisbol') || lowerNombre.includes('baseball')) {
+          tipo = 'Béisbol';
         } else if (categoria === 'Gorras') {
           tipo = 'Gorras';
         } else if (categoria === 'Medias') {
@@ -156,6 +183,8 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
           tipo = 'Accesorios';
         } else if (categoria === 'Ropa') {
           tipo = 'Ropa';
+        } else {
+          tipo = 'Fútbol Campo';
         }
 
         const color = String(

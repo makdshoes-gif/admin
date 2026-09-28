@@ -485,7 +485,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             sku: p.sku || `SKU-${p.id}`,
             categoria: p.categoria || 'Calzado',
             marca: p.marca || 'Genérica',
-            tipo: p.tipo || 'Deportivo',
+            tipo: p.tipo || 'Botines Fútbol Campo',
             talla: String(p.talla || '38'),
             color: p.color || 'Estándar',
             moneda: p.moneda || 'USD',
@@ -1373,50 +1373,44 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       setExchangeRateForDate(saleDateKey, completedSale.tasa_cambio);
     }
 
-// Persist sale and inventory change in Neon
-// IMPORTANTE: /api/sales espera directamente la venta,
-// no { sale: ..., updatedProducts: ... }.
-void (async () => {
-  try {
-    const response = await fetch('/api/sales', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(completedSale),
-    });
+    // Persist sale and inventory change in Neon.
+    // /api/sales acepta directamente la venta (también soporta el formato antiguo).
+    void (async () => {
+      try {
+        const response = await fetch('/api/sales', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(completedSale),
+        });
 
-    const result = await response.json().catch(() => ({}));
+        const result = await response.json().catch(() => ({}));
 
-    if (!response.ok || result.saved !== true) {
-      console.error('Error guardando venta en servidor:', result);
+        if (!response.ok || result.saved !== true) {
+          console.error('Error guardando venta en servidor:', result);
+          addNotification(
+            'Error de sincronización',
+            result.error || 'La venta no pudo guardarse en el servidor.',
+            'critical'
+          );
+          return;
+        }
 
-      addNotification(
-        'Error de sincronización',
-        result.error || 'La venta no pudo guardarse en el servidor.',
-        'critical'
-      );
+        console.log('Venta guardada correctamente en Neon:', completedSale.id);
 
-      return;
-    }
-
-    console.log('✅ Venta guardada correctamente en Neon:', completedSale.id);
-
-    // Confirmar que el inventario mostrado por el navegador
-    // coincide con el inventario real de Neon.
-    try {
-      await syncFromServer();
-    } catch (syncError) {
-      console.error('Error sincronizando inventario después de la venta:', syncError);
-    }
-  } catch (error) {
-    console.error('Error de conexión guardando venta:', error);
-
-    addNotification(
-      'Sin conexión con el servidor',
-      'La venta quedó pendiente de sincronización. Verifica la conexión antes de continuar.',
-      'critical'
-    );
-  }
-})();
+        try {
+          await syncFromServer();
+        } catch (syncError) {
+          console.error('Error sincronizando inventario después de la venta:', syncError);
+        }
+      } catch (error) {
+        console.error('Error de conexión guardando venta:', error);
+        addNotification(
+          'Sin conexión con el servidor',
+          'La venta quedó pendiente de sincronización. Verifica la conexión antes de continuar.',
+          'critical'
+        );
+      }
+    })();
 
 
 

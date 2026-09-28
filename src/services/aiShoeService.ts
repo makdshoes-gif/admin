@@ -4,7 +4,7 @@ export interface ShoeAiResult {
   modelo: string;
   nombre: string;
   categoria: string;
-  tipo: 'Deportivo' | 'Casual' | 'Botas' | 'Tacones' | 'Sandalias' | 'Mocasines' | 'Infantil' | 'Otros';
+  tipo: 'Botines Fútbol Campo' | 'Fútbol Campo' | 'Micro Tacos' | 'Futsala' | 'Running' | 'Béisbol' | 'Béisbol Gancho' | 'Deportivo' | 'Casual' | 'Botas' | 'Tacones' | 'Sandalias' | 'Mocasines' | 'Infantil' | 'Otros' | string;
   genero: 'Caballero' | 'Dama' | 'Unisex' | 'Niño' | 'Niña';
   color: string;
   material: string;
