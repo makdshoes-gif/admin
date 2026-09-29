@@ -324,12 +324,12 @@ export const LayawaysManager: React.FC = () => {
       const matchesStatus = statusFilter === 'todos' ? true : l.estado === statusFilter;
       const matchesSearch =
         !q ||
-        l.codigo_apartado.toLowerCase().includes(q) ||
-        l.cliente_nombre.toLowerCase().includes(q) ||
+        (l.codigo_apartado || '').toLowerCase().includes(q) ||
+        (l.cliente_nombre || '').toLowerCase().includes(q) ||
         (l.cliente_apellido && l.cliente_apellido.toLowerCase().includes(q)) ||
         (l.cliente_cedula && l.cliente_cedula.toLowerCase().includes(q)) ||
         (l.cliente_telefono && l.cliente_telefono.includes(q)) ||
-        l.items.some((it) => it.nombre_producto.toLowerCase().includes(q));
+        l.items.some((it) => (it.nombre_producto || '').toLowerCase().includes(q));
 
       return matchesStatus && matchesSearch;
     });

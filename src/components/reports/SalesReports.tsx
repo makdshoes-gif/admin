@@ -312,7 +312,7 @@ export const SalesReports: React.FC = () => {
       if (typeof s.total_positivo_inmediato_usd === 'number') {
         return acc + s.total_positivo_inmediato_usd;
       }
-      const nonCashea = s.pagos.filter((p) => !p.cuenta.toLowerCase().includes('cashea'));
+      const nonCashea = s.pagos.filter((p) => !(p.cuenta || '').toLowerCase().includes('cashea'));
       return acc + nonCashea.reduce((sum, p) => sum + p.monto_equivalente_usd, 0);
     }, 0);
   }, [filteredSales]);
@@ -324,7 +324,7 @@ export const SalesReports: React.FC = () => {
         return acc + s.total_cashea_pendiente_usd;
       }
       const casheaPays = s.pagos.filter(
-        (p) => p.cuenta.toLowerCase().includes('cashea') && p.estado_liquidacion !== 'conciliado_en_banco'
+        (p) => (p.cuenta || '').toLowerCase().includes('cashea') && p.estado_liquidacion !== 'conciliado_en_banco'
       );
       return acc + casheaPays.reduce((sum, p) => sum + p.monto_equivalente_usd, 0);
     }, 0);
@@ -334,7 +334,7 @@ export const SalesReports: React.FC = () => {
     return filteredSales.reduce((acc, s) => {
       if (s.estado === 'anulada') return acc;
       const reconciledCashea = s.pagos.filter(
-        (p) => p.cuenta.toLowerCase().includes('cashea') && p.estado_liquidacion === 'conciliado_en_banco'
+        (p) => (p.cuenta || '').toLowerCase().includes('cashea') && p.estado_liquidacion === 'conciliado_en_banco'
       );
       return acc + reconciledCashea.reduce((sum, p) => sum + p.monto_equivalente_usd, 0);
     }, 0);
@@ -342,25 +342,25 @@ export const SalesReports: React.FC = () => {
 
   const casheaSalesCount = useMemo(() => {
     return filteredSales.filter(
-      (s) => s.estado !== 'anulada' && s.pagos.some((p) => p.cuenta.toLowerCase().includes('cashea'))
+      (s) => s.estado !== 'anulada' && s.pagos.some((p) => (p.cuenta || '').toLowerCase().includes('cashea'))
     ).length;
   }, [filteredSales]);
 
   const directSalesCount = useMemo(() => {
     return filteredSales.filter(
-      (s) => s.estado !== 'anulada' && !s.pagos.some((p) => p.cuenta.toLowerCase().includes('cashea'))
+      (s) => s.estado !== 'anulada' && !s.pagos.some((p) => (p.cuenta || '').toLowerCase().includes('cashea'))
     ).length;
   }, [filteredSales]);
 
   const displayedSales = useMemo(() => {
     if (paymentTypeFilter === 'cashea') {
       return filteredSales.filter((s) =>
-        s.pagos.some((p) => p.cuenta.toLowerCase().includes('cashea'))
+        s.pagos.some((p) => (p.cuenta || '').toLowerCase().includes('cashea'))
       );
     }
     if (paymentTypeFilter === 'direct') {
       return filteredSales.filter(
-        (s) => !s.pagos.some((p) => p.cuenta.toLowerCase().includes('cashea'))
+        (s) => !s.pagos.some((p) => (p.cuenta || '').toLowerCase().includes('cashea'))
       );
     }
     return filteredSales;
@@ -1654,9 +1654,9 @@ export const SalesReports: React.FC = () => {
                     <td className="py-2.5 px-3 text-[11px]">
                       <div className="space-y-1 min-w-[190px]">
                         {sale.pagos.map((p, idx) => {
-                          const isCashea = p.cuenta.toLowerCase().includes('cashea');
-                          const isPos = p.cuenta.toLowerCase().includes('punto') || p.cuenta.toLowerCase().includes('pos');
-                          const isPagoMovil = p.cuenta.toLowerCase().includes('pago móvil') || p.cuenta.toLowerCase().includes('pago movil');
+                          const isCashea = (p.cuenta || '').toLowerCase().includes('cashea');
+                          const isPos = (p.cuenta || '').toLowerCase().includes('punto') || (p.cuenta || '').toLowerCase().includes('pos');
+                          const isPagoMovil = (p.cuenta || '').toLowerCase().includes('pago móvil') || (p.cuenta || '').toLowerCase().includes('pago movil');
                           const isReconciled = p.estado_liquidacion === 'conciliado_en_banco';
                           return (
                             <div
@@ -1683,7 +1683,7 @@ export const SalesReports: React.FC = () => {
                         })}
 
                         {/* If sale includes Cashea and is a split payment */}
-                        {sale.pagos.some((p) => p.cuenta.toLowerCase().includes('cashea')) && sale.pagos.length > 1 && (
+                        {sale.pagos.some((p) => (p.cuenta || '').toLowerCase().includes('cashea')) && sale.pagos.length > 1 && (
                           <div className="px-1.5 py-0.5 rounded bg-amber-100/70 border border-amber-300/80 text-[9px] font-bold text-amber-900 flex items-center justify-between">
                             <span>Inicial: ${(sale.total_positivo_inmediato_usd || 0).toFixed(2)}</span>
                             <span>Cashea: ${(sale.total_cashea_pendiente_usd || 0).toFixed(2)}</span>
