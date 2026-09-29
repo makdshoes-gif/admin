@@ -45,9 +45,9 @@ export const LayawayReceiptModal: React.FC<LayawayReceiptModalProps> = ({ layawa
       `*Calzados Reservados:*\n` +
       layaway.items.map((it) => `• ${it.nombre_producto} (Talla: ${it.talla}) x${it.cantidad} = $${it.subtotal.toFixed(2)}`).join('\n') +
       `\n\n*Resumen Financiero:*\n` +
-      `Total Apartado: $${layaway.total_usd.toFixed(2)}\n` +
-      `Total Abonado: $${layaway.total_abonado_usd.toFixed(2)}\n` +
-      `*SALDO RESTANTE:* $${layaway.saldo_pendiente_usd.toFixed(2)} (${layaway.saldo_pendiente_bs.toLocaleString('es-VE', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} Bs)\n\n` +
+      `Total Apartado: $${Number(layaway.total_usd ?? 0).toFixed(2)}\n` +
+      `Total Abonado: $${Number(layaway.total_abonado_usd ?? 0).toFixed(2)}\n` +
+      `*SALDO RESTANTE:* $${Number(layaway.saldo_pendiente_usd ?? 0).toFixed(2)} (${layaway.saldo_pendiente_bs.toLocaleString('es-VE', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} Bs)\n\n` +
       `*Historial de Abonos:*\n` +
       layaway.abonos.map((a) => `• ${new Date(a.fecha).toLocaleDateString('es-VE')}: $${a.monto_equivalente_usd.toFixed(2)} (${a.cuenta})`).join('\n') +
       `\n\n¡Gracias por preferir MAKD SHOP!\nRecuerda retirar antes de la fecha límite.`
@@ -254,11 +254,11 @@ export const LayawayReceiptModal: React.FC<LayawayReceiptModalProps> = ({ layawa
                             {item.cantidad}x {item.nombre_producto}
                           </p>
                           <p className="text-[10px] text-stone-600 mt-0.5">
-                            Talla: <strong>{item.talla}</strong> • P.U: ${item.precio_unitario.toFixed(2)}
+                            Talla: <strong>{item.talla}</strong> • P.U: ${Number(item.precio_unitario ?? 0).toFixed(2)}
                           </p>
                         </div>
                         <div className="font-black text-stone-950 font-mono shrink-0 text-right">
-                          ${item.subtotal.toFixed(2)}
+                          ${Number(item.subtotal ?? 0).toFixed(2)}
                         </div>
                       </div>
                     </div>
@@ -270,18 +270,18 @@ export const LayawayReceiptModal: React.FC<LayawayReceiptModalProps> = ({ layawa
               <div className="py-2.5 border-b border-dashed border-stone-400 space-y-1.5 text-right">
                 <div className="flex justify-between text-stone-600">
                   <span>TOTAL APARTADO:</span>
-                  <span className="font-bold text-stone-900">${layaway.total_usd.toFixed(2)}</span>
+                  <span className="font-bold text-stone-900">${Number(layaway.total_usd ?? 0).toFixed(2)}</span>
                 </div>
 
                 <div className="flex justify-between text-emerald-800 font-bold">
                   <span>TOTAL ABONADO:</span>
-                  <span>-${layaway.total_abonado_usd.toFixed(2)}</span>
+                  <span>-${Number(layaway.total_abonado_usd ?? 0).toFixed(2)}</span>
                 </div>
 
                 <div className="pt-2 border-t-2 border-stone-400 flex justify-between items-baseline text-rose-700">
                   <span className="font-black text-xs sm:text-sm">SALDO PENDIENTE:</span>
                   <span className="font-black text-base sm:text-lg">
-                    ${layaway.saldo_pendiente_usd.toFixed(2)}
+                    ${Number(layaway.saldo_pendiente_usd ?? 0).toFixed(2)}
                   </span>
                 </div>
 
@@ -306,7 +306,7 @@ export const LayawayReceiptModal: React.FC<LayawayReceiptModalProps> = ({ layawa
                       {p.referencia && <span className="text-stone-500 ml-1">({p.referencia})</span>}
                     </div>
                     <span className="font-bold text-stone-950 shrink-0 font-mono">
-                      ${p.monto_equivalente_usd.toFixed(2)}
+                      ${Number(p.monto_equivalente_usd ?? 0).toFixed(2)}
                     </span>
                   </div>
                 ))}
@@ -435,18 +435,18 @@ export const LayawayReceiptModal: React.FC<LayawayReceiptModalProps> = ({ layawa
                 <div className="bg-gradient-to-br from-amber-50 to-amber-100/60 p-4 rounded-2xl border border-amber-200 space-y-2">
                   <div className="flex justify-between text-xs text-slate-600 font-semibold">
                     <span>Total del Apartado:</span>
-                    <span className="font-mono text-slate-900">${layaway.total_usd.toFixed(2)}</span>
+                    <span className="font-mono text-slate-900">${Number(layaway.total_usd ?? 0).toFixed(2)}</span>
                   </div>
 
                   <div className="flex justify-between text-xs text-emerald-700 font-bold">
                     <span>Total Abonado a la Fecha:</span>
-                    <span className="font-mono text-emerald-800">-${layaway.total_abonado_usd.toFixed(2)}</span>
+                    <span className="font-mono text-emerald-800">-${Number(layaway.total_abonado_usd ?? 0).toFixed(2)}</span>
                   </div>
 
                   <div className="pt-2 border-t border-amber-300 flex items-baseline justify-between">
                     <span className="font-black text-rose-700 text-sm">SALDO RESTANTE:</span>
                     <span className="text-2xl font-black font-mono text-rose-600">
-                      ${layaway.saldo_pendiente_usd.toFixed(2)}
+                      ${Number(layaway.saldo_pendiente_usd ?? 0).toFixed(2)}
                     </span>
                   </div>
 

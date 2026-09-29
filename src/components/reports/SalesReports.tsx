@@ -176,12 +176,12 @@ export const SalesReports: React.FC = () => {
 
     const roundedDays = daysList.map((d) => ({
       ...d,
-      efectivo: Number(d.efectivo.toFixed(2)),
-      punto: Number(d.punto.toFixed(2)),
-      movil: Number(d.movil.toFixed(2)),
-      cashea: Number(d.cashea.toFixed(2)),
-      otros: Number(d.otros.toFixed(2)),
-      total: Number(d.total.toFixed(2)),
+      efectivo: Number(Number(d.efectivo ?? 0).toFixed(2)),
+      punto: Number(Number(d.punto ?? 0).toFixed(2)),
+      movil: Number(Number(d.movil ?? 0).toFixed(2)),
+      cashea: Number(Number(d.cashea ?? 0).toFixed(2)),
+      otros: Number(Number(d.otros ?? 0).toFixed(2)),
+      total: Number(Number(d.total ?? 0).toFixed(2)),
     }));
 
     let sumEfectivo = 0;
@@ -897,7 +897,7 @@ export const SalesReports: React.FC = () => {
             </div>
             <div className="text-xl font-bold font-mono text-slate-900">
               {weeklyCurrency === 'USD'
-                ? `$${weeklyTotals.efectivo.toFixed(2)}`
+                ? `$${Number(weeklyTotals.efectivo ?? 0).toFixed(2)}`
                 : `${weeklyTotals.efectivo.toLocaleString('es-VE', { maximumFractionDigits: 0 })} Bs`}
             </div>
             <p className="text-[10px] text-slate-500">
@@ -920,7 +920,7 @@ export const SalesReports: React.FC = () => {
             </div>
             <div className="text-xl font-bold font-mono text-slate-900">
               {weeklyCurrency === 'USD'
-                ? `$${weeklyTotals.punto.toFixed(2)}`
+                ? `$${Number(weeklyTotals.punto ?? 0).toFixed(2)}`
                 : `${weeklyTotals.punto.toLocaleString('es-VE', { maximumFractionDigits: 0 })} Bs`}
             </div>
             <p className="text-[10px] text-slate-500">
@@ -943,7 +943,7 @@ export const SalesReports: React.FC = () => {
             </div>
             <div className="text-xl font-bold font-mono text-slate-900">
               {weeklyCurrency === 'USD'
-                ? `$${weeklyTotals.movil.toFixed(2)}`
+                ? `$${Number(weeklyTotals.movil ?? 0).toFixed(2)}`
                 : `${weeklyTotals.movil.toLocaleString('es-VE', { maximumFractionDigits: 0 })} Bs`}
             </div>
             <p className="text-[10px] text-slate-500">
@@ -966,7 +966,7 @@ export const SalesReports: React.FC = () => {
             </div>
             <div className="text-xl font-bold font-mono text-slate-900">
               {weeklyCurrency === 'USD'
-                ? `$${weeklyTotals.cashea.toFixed(2)}`
+                ? `$${Number(weeklyTotals.cashea ?? 0).toFixed(2)}`
                 : `${weeklyTotals.cashea.toLocaleString('es-VE', { maximumFractionDigits: 0 })} Bs`}
             </div>
             <p className="text-[10px] text-slate-500">
@@ -983,7 +983,7 @@ export const SalesReports: React.FC = () => {
               Total facturado en la semana:{' '}
               <strong className="text-slate-900 font-mono">
                 {weeklyCurrency === 'USD'
-                  ? `$${weeklyTotals.total.toFixed(2)}`
+                  ? `$${Number(weeklyTotals.total ?? 0).toFixed(2)}`
                   : `${weeklyTotals.total.toLocaleString('es-VE', { maximumFractionDigits: 0 })} Bs`}
               </strong>{' '}
               ({weeklyTotals.transacciones} {weeklyTotals.transacciones === 1 ? 'venta' : 'ventas'})
@@ -996,7 +996,7 @@ export const SalesReports: React.FC = () => {
               <span className="font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded font-mono text-[11px]">
                 {weeklyTotals.peakDay.dayLabel} (
                 {weeklyCurrency === 'USD'
-                  ? `$${weeklyTotals.peakDay.total.toFixed(2)}`
+                  ? `$${Number(weeklyTotals.peakDay?.total ?? 0).toFixed(2)}`
                   : `${weeklyTotals.peakDay.total.toLocaleString('es-VE', { maximumFractionDigits: 0 })} Bs`}
                 )
               </span>
@@ -1241,34 +1241,34 @@ export const SalesReports: React.FC = () => {
                       </td>
                       <td className="py-2.5 px-3 text-right font-mono font-semibold text-emerald-600">
                         {weeklyCurrency === 'USD'
-                          ? `$${d.efectivo.toFixed(2)}`
+                          ? `$${Number(d.efectivo ?? 0).toFixed(2)}`
                           : `${d.efectivo.toLocaleString('es-VE', { maximumFractionDigits: 0 })} Bs`}
                       </td>
                       <td className="py-2.5 px-3 text-right font-mono font-semibold text-blue-600">
                         {weeklyCurrency === 'USD'
-                          ? `$${d.punto.toFixed(2)}`
+                          ? `$${Number(d.punto ?? 0).toFixed(2)}`
                           : `${d.punto.toLocaleString('es-VE', { maximumFractionDigits: 0 })} Bs`}
                       </td>
                       <td className="py-2.5 px-3 text-right font-mono font-semibold text-purple-600">
                         {weeklyCurrency === 'USD'
-                          ? `$${d.movil.toFixed(2)}`
+                          ? `$${Number(d.movil ?? 0).toFixed(2)}`
                           : `${d.movil.toLocaleString('es-VE', { maximumFractionDigits: 0 })} Bs`}
                       </td>
                       <td className="py-2.5 px-3 text-right font-mono font-semibold text-amber-600">
                         {weeklyCurrency === 'USD'
-                          ? `$${d.cashea.toFixed(2)}`
+                          ? `$${Number(d.cashea ?? 0).toFixed(2)}`
                           : `${d.cashea.toLocaleString('es-VE', { maximumFractionDigits: 0 })} Bs`}
                       </td>
                       {hasOtrosPayments && (
                         <td className="py-2.5 px-3 text-right font-mono text-slate-500">
                           {weeklyCurrency === 'USD'
-                            ? `$${d.otros.toFixed(2)}`
+                            ? `$${Number(d.otros ?? 0).toFixed(2)}`
                             : `${d.otros.toLocaleString('es-VE', { maximumFractionDigits: 0 })} Bs`}
                         </td>
                       )}
                       <td className="py-2.5 px-3 text-right font-mono font-bold text-slate-900 bg-slate-50/50">
                         {weeklyCurrency === 'USD'
-                          ? `$${d.total.toFixed(2)}`
+                          ? `$${Number(d.total ?? 0).toFixed(2)}`
                           : `${d.total.toLocaleString('es-VE', { maximumFractionDigits: 0 })} Bs`}
                       </td>
                     </tr>
@@ -1280,34 +1280,34 @@ export const SalesReports: React.FC = () => {
                     <td className="py-2.5 px-3 text-center font-mono">{weeklyTotals.transacciones}</td>
                     <td className="py-2.5 px-3 text-right font-mono text-emerald-700">
                       {weeklyCurrency === 'USD'
-                        ? `$${weeklyTotals.efectivo.toFixed(2)}`
+                        ? `$${Number(weeklyTotals.efectivo ?? 0).toFixed(2)}`
                         : `${weeklyTotals.efectivo.toLocaleString('es-VE', { maximumFractionDigits: 0 })} Bs`}
                     </td>
                     <td className="py-2.5 px-3 text-right font-mono text-blue-700">
                       {weeklyCurrency === 'USD'
-                        ? `$${weeklyTotals.punto.toFixed(2)}`
+                        ? `$${Number(weeklyTotals.punto ?? 0).toFixed(2)}`
                         : `${weeklyTotals.punto.toLocaleString('es-VE', { maximumFractionDigits: 0 })} Bs`}
                     </td>
                     <td className="py-2.5 px-3 text-right font-mono text-purple-700">
                       {weeklyCurrency === 'USD'
-                        ? `$${weeklyTotals.movil.toFixed(2)}`
+                        ? `$${Number(weeklyTotals.movil ?? 0).toFixed(2)}`
                         : `${weeklyTotals.movil.toLocaleString('es-VE', { maximumFractionDigits: 0 })} Bs`}
                     </td>
                     <td className="py-2.5 px-3 text-right font-mono text-amber-700">
                       {weeklyCurrency === 'USD'
-                        ? `$${weeklyTotals.cashea.toFixed(2)}`
+                        ? `$${Number(weeklyTotals.cashea ?? 0).toFixed(2)}`
                         : `${weeklyTotals.cashea.toLocaleString('es-VE', { maximumFractionDigits: 0 })} Bs`}
                     </td>
                     {hasOtrosPayments && (
                       <td className="py-2.5 px-3 text-right font-mono text-slate-600">
                         {weeklyCurrency === 'USD'
-                          ? `$${weeklyTotals.otros.toFixed(2)}`
+                          ? `$${Number(weeklyTotals.otros ?? 0).toFixed(2)}`
                           : `${weeklyTotals.otros.toLocaleString('es-VE', { maximumFractionDigits: 0 })} Bs`}
                       </td>
                     )}
                     <td className="py-2.5 px-3 text-right font-mono text-emerald-600 bg-slate-200/60">
                       {weeklyCurrency === 'USD'
-                        ? `$${weeklyTotals.total.toFixed(2)}`
+                        ? `$${Number(weeklyTotals.total ?? 0).toFixed(2)}`
                         : `${weeklyTotals.total.toLocaleString('es-VE', { maximumFractionDigits: 0 })} Bs`}
                     </td>
                   </tr>
@@ -1411,7 +1411,7 @@ export const SalesReports: React.FC = () => {
 
                     <div className="text-right shrink-0">
                       <div className="font-mono font-bold text-xs text-emerald-600">
-                        ${item.totalUsd.toFixed(2)}
+                        ${Number(item.totalUsd ?? 0).toFixed(2)}
                       </div>
                       <div className="text-[10px] text-slate-400 font-mono">
                         {sharePercent.toFixed(1)}% del total
@@ -1456,7 +1456,7 @@ export const SalesReports: React.FC = () => {
                   {pm.cuenta}
                 </span>
                 <div className="text-base font-bold font-mono text-slate-900 mt-1">
-                  ${pm.montoUsd.toFixed(2)}
+                  ${Number(pm.montoUsd ?? 0).toFixed(2)}
                 </div>
                 <div className="flex items-center justify-center gap-1.5 mt-1">
                   <span
@@ -1469,7 +1469,7 @@ export const SalesReports: React.FC = () => {
                     {isCashea ? 'Por Liquidar' : 'En Cuenta'}
                   </span>
                   <span className="text-[10px] font-semibold text-slate-500 font-mono">
-                    {pm.porcentaje.toFixed(1)}%
+                    {Number(pm.porcentaje ?? 0).toFixed(1)}%
                   </span>
                 </div>
               </div>
@@ -1640,15 +1640,15 @@ export const SalesReports: React.FC = () => {
                     </td>
 
                     <td className="py-2.5 px-3 text-right font-mono font-bold text-slate-900">
-                      ${sale.total_usd.toFixed(2)}
+                      ${Number(sale.total_usd ?? 0).toFixed(2)}
                     </td>
 
                     <td className="py-2.5 px-3 text-right font-mono text-slate-500 text-[11px]">
-                      {sale.total_bs.toFixed(0)} Bs
+                      {Number(sale.total_bs ?? 0).toFixed(0)} Bs
                     </td>
 
                     <td className="py-2.5 px-3 text-right font-mono font-semibold text-emerald-600">
-                      +${sale.ganancia_neta_usd.toFixed(2)}
+                      +${Number(sale.ganancia_neta_usd ?? 0).toFixed(2)}
                     </td>
 
                     <td className="py-2.5 px-3 text-[11px]">
@@ -1676,7 +1676,7 @@ export const SalesReports: React.FC = () => {
                                 {p.referencia ? ` (${p.referencia})` : ''}
                               </span>
                               <span className="font-bold shrink-0 ml-1">
-                                ${p.monto_equivalente_usd.toFixed(2)}
+                                ${Number(p.monto_equivalente_usd ?? 0).toFixed(2)}
                               </span>
                             </div>
                           );

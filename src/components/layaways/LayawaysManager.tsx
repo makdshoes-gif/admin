@@ -280,9 +280,9 @@ export const LayawaysManager: React.FC = () => {
       `Estimado(a) *${layaway.cliente_nombre}*, le saludamos de MAKD SHOP para recordarle que su apartado *#${layaway.codigo_apartado}* tiene fecha límite el *${new Date(layaway.fecha_vencimiento).toLocaleDateString('es-VE')}*.%0A%0A` +
       `*Calzados Apartados:*%0A` +
       layaway.items.map((it) => `- ${it.nombre_producto} (Talla: ${it.talla})`).join('%0A') +
-      `%0A%0A*Total:* $${layaway.total_usd.toFixed(2)}%0A` +
-      `*Abonado:* $${layaway.total_abonado_usd.toFixed(2)}%0A` +
-      `*SALDO PENDIENTE:* $${layaway.saldo_pendiente_usd.toFixed(2)} (${layaway.saldo_pendiente_bs.toFixed(0)} Bs)%0A%0A` +
+      `%0A%0A*Total:* $${Number(layaway.total_usd ?? 0).toFixed(2)}%0A` +
+      `*Abonado:* $${Number(layaway.total_abonado_usd ?? 0).toFixed(2)}%0A` +
+      `*SALDO PENDIENTE:* $${Number(layaway.saldo_pendiente_usd ?? 0).toFixed(2)} (${Number(layaway.saldo_pendiente_bs ?? 0).toFixed(0)} Bs)%0A%0A` +
       `¡Le esperamos en nuestra tienda en Alta Vista II para completar su entrega!`;
 
     const cleanPhone = (layaway.cliente_telefono || '').replace(/\D/g, '');
@@ -547,13 +547,13 @@ export const LayawaysManager: React.FC = () => {
 
                       {/* Total USD */}
                       <td className="py-3 px-3 text-right font-mono font-bold text-slate-900">
-                        ${layaway.total_usd.toFixed(2)}
+                        ${Number(layaway.total_usd ?? 0).toFixed(2)}
                       </td>
 
                       {/* Abonado */}
                       <td className="py-3 px-3 text-right">
                         <div className="font-mono font-semibold text-emerald-600">
-                          ${layaway.total_abonado_usd.toFixed(2)}
+                          ${Number(layaway.total_abonado_usd ?? 0).toFixed(2)}
                         </div>
                         {/* Mini progress bar */}
                         <div className="w-16 ml-auto bg-slate-100 rounded-full h-1.5 mt-1 overflow-hidden">
@@ -574,10 +574,10 @@ export const LayawaysManager: React.FC = () => {
                         <div className={`font-mono font-bold text-xs ${
                           isFullyPaid ? 'text-emerald-600' : 'text-rose-600'
                         }`}>
-                          ${layaway.saldo_pendiente_usd.toFixed(2)}
+                          ${Number(layaway.saldo_pendiente_usd ?? 0).toFixed(2)}
                         </div>
                         <div className="text-[10px] text-slate-400 font-mono">
-                          {layaway.saldo_pendiente_bs.toFixed(0)} Bs
+                          {Number(layaway.saldo_pendiente_bs ?? 0).toFixed(0)} Bs
                         </div>
                       </td>
 
@@ -871,7 +871,7 @@ export const LayawaysManager: React.FC = () => {
                           </div>
                           <div className="flex items-center gap-3">
                             <span className="font-mono font-bold text-slate-900">
-                              ${item.subtotal.toFixed(2)}
+                              ${Number(item.subtotal ?? 0).toFixed(2)}
                             </span>
                             <button
                               type="button"
