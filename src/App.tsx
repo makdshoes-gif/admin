@@ -11,11 +11,11 @@ import { LoginPage } from './components/auth/LoginPage';
 // Lazy load view components for maximum initial load performance and lightweight bundle
 const PointOfSale = lazy(() => import('./components/pos/PointOfSale').then((m) => ({ default: m.PointOfSale })));
 const InventoryManager = lazy(() => import('./components/inventory/InventoryManager').then((m) => ({ default: m.InventoryManager })));
-const SalesReports = lazy(() => import('./components/reports/SalesReports').then((m) => ({ default: m.SalesReports })));
+import { SalesReports } from './components/reports/SalesReports';
 const CashClosure = lazy(() => import('./components/cash/CashClosure').then((m) => ({ default: m.CashClosure })));
 const ExpensesManager = lazy(() => import('./components/expenses/ExpensesManager').then((m) => ({ default: m.ExpensesManager })));
 const BankReconciliationView = lazy(() => import('./components/banking/BankReconciliationView').then((m) => ({ default: m.BankReconciliationView })));
-const LayawaysManager = lazy(() => import('./components/layaways/LayawaysManager').then((m) => ({ default: m.LayawaysManager })));
+import { LayawaysManager } from './components/layaways/LayawaysManager';
 const AdidasCatalogView = lazy(() => import('./components/catalog/AdidasCatalogView').then((m) => ({ default: m.AdidasCatalogView })));
 
 function ViewFallback() {
