@@ -87,6 +87,7 @@ interface StoreContextType {
     saleData: Omit<Sale, 'id' | 'created_at' | 'costo_total_usd' | 'ganancia_neta_usd'>
   ) => Sale;
   updateSaleDate: (saleId: string, newDateIso: string) => boolean;
+  updateSaleDetails: (saleId: string, updates: Partial<Pick<Sale, 'numero_factura' | 'cliente_nombre' | 'cliente_apellido' | 'cliente_rif' | 'cliente_telefono' | 'cliente_correo' | 'notas'>>) => Promise<boolean>;
   voidSale: (saleId: string, motivo: string) => Promise<boolean>;
   layaways: Layaway[];
   createLayaway: (
@@ -918,6 +919,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const newId = `prod-${Date.now()}`;
     const newProduct: ShoeProduct = {
       ...productData,
+      talla: String(productData.talla || 'Única'),
+      sku: String(productData.sku || `SKU-${newId}`),
+      precio: Number(productData.precio) || 0,
+      costo: Number(productData.costo) || 0,
+      stock: Number(productData.stock) || 0,
       id: newId,
       created_at: new Date().toISOString(),
     };
@@ -1467,6 +1473,34 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return true;
   };
 
+  // Actualizar datos administrativos de una factura sin tocar inventario ni totales.
+  const updateSaleDetails = async (saleId: string, updates: Partial<Pick<Sale, 'numero_factura' | 'cliente_nombre' | 'cliente_apellido' | 'cliente_rif' | 'cliente_telefono' | 'cliente_correo' | 'notas'>>): Promise<boolean> => {
+    const sale = sales.find((s) => s.id === saleId);
+    if (!sale) return false;
+    try {
+      const res = await fetch(`/api/sales/${saleId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...updates, estado: 'modificada' }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || json.updated !== true) {
+        addNotification('No se pudo actualizar la factura', json.error || 'El servidor no confirmó el cambio.', 'critical');
+        return false;
+      }
+      setSales((prev) => {
+        const updated = prev.map((s) => s.id === saleId ? ({ ...s, ...updates, estado: 'modificada' } as Sale) : s);
+        try { localStorage.setItem(`${STORAGE_KEY}_sales`, JSON.stringify(updated)); } catch {}
+        return updated;
+      });
+      addNotification('Factura actualizada', `Factura #${updates.numero_factura || sale.numero_factura} actualizada correctamente.`, 'success');
+      return true;
+    } catch (err) {
+      addNotification('No se pudo actualizar la factura', 'Sin conexión con el servidor.', 'critical');
+      return false;
+    }
+  };
+
   // Anular una venta registrada por error: se conserva en el historial
   // (marcada como anulada, no se borra) y se devuelve el stock vendido.
   const voidSale = async (saleId: string, motivo: string): Promise<boolean> => {
@@ -1479,57 +1513,33 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ motivo }),
       });
-      if (!res.ok) {
-        const errJson = await res.json().catch(() => ({}));
-        addNotification(
-          'No se pudo anular',
-          errJson.error || 'El servidor no confirmó la anulación. Verifica tu conexión e inténtalo de nuevo.',
-          'critical'
-        );
+      const result = await res.json().catch(() => ({}));
+      if (!res.ok || result.success !== true) {
+        addNotification('No se pudo anular', result.error || 'El servidor no confirmó la anulación.', 'critical');
         return false;
       }
-    } catch (err) {
+
+      // El backend hace la anulación + devolución de stock en una sola operación.
+      // No volvemos a sumar stock localmente para evitar duplicarlo.
+      setSales((prev) => {
+        const updated = prev.map((s) =>
+          s.id === saleId ? ({ ...s, estado: 'anulada', motivo_anulacion: motivo } as any) : s
+        );
+        safeLocalStorageSet(`${STORAGE_KEY}_sales`, JSON.stringify(updated));
+        return updated;
+      });
+
+      try { await syncFromServer(false); } catch {}
+      addNotification(
+        'Venta Anulada',
+        `Factura #${sale.numero_factura} fue anulada. El stock vendido fue devuelto al inventario.`,
+        'info'
+      );
+      return true;
+    } catch {
       addNotification('No se pudo anular', 'Sin conexión con el servidor. Inténtalo de nuevo.', 'critical');
       return false;
     }
-
-    // Restaurar stock localmente
-    setProducts((prev) => {
-      const updated = prev.map((p) => {
-        const matching = sale.items.filter((item) =>
-          (item.producto_id && p.id && String(item.producto_id).trim() === String(p.id).trim()) ||
-          (item.sku && p.sku && item.sku.trim().toLowerCase() === p.sku.trim().toLowerCase()) ||
-          (
-            item.nombre_producto && p.nombre &&
-            item.nombre_producto.trim().toLowerCase() === p.nombre.trim().toLowerCase() &&
-            item.talla && p.talla &&
-            String(item.talla).trim() === String(p.talla).trim()
-          )
-        );
-        const qtyToRestore = matching.reduce((sum, it) => sum + (Number(it.cantidad) || 0), 0);
-        return qtyToRestore > 0 ? { ...p, stock: Number(p.stock || 0) + qtyToRestore } : p;
-      });
-      try { localStorage.setItem(`${STORAGE_KEY}_products`, JSON.stringify(updated)); } catch {}
-      return updated;
-    });
-
-    // Marcar la venta como anulada en el estado local (se conserva, no se borra)
-    setSales((prev) => {
-      const updated = prev.map((s) =>
-        s.id === saleId ? ({ ...s, estado: 'anulada', motivo_anulacion: motivo } as any) : s
-      );
-      try { localStorage.setItem(`${STORAGE_KEY}_sales`, JSON.stringify(updated)); } catch {}
-      return updated;
-    });
-
-
-
-    addNotification(
-      'Venta Anulada',
-      `Factura #${sale.numero_factura} fue anulada. El stock vendido fue devuelto al inventario.`,
-      'info'
-    );
-    return true;
   };
 
   // Sistema de Apartados (Layaway)

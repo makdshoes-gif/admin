@@ -273,6 +273,29 @@ export async function initDatabaseSchema() {
       );
     `;
 
+    // Secuencia persistente de facturación. Neon es la fuente de verdad para
+    // evitar que dos terminales generen el mismo número.
+    await sql`
+      CREATE TABLE IF NOT EXISTS invoice_sequences (
+        id VARCHAR(30) PRIMARY KEY,
+        last_number INTEGER NOT NULL DEFAULT 0,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      );
+    `;
+    await sql`
+      INSERT INTO invoice_sequences (id, last_number)
+      VALUES ('MAKD', COALESCE((
+        SELECT MAX(CASE
+          WHEN numero_factura ~ '[0-9]+$'
+          THEN CAST(SUBSTRING(numero_factura FROM '[0-9]+$') AS INTEGER)
+          ELSE 0 END)
+        FROM sales_transactions
+      ), 0))
+      ON CONFLICT (id) DO UPDATE SET
+        last_number = GREATEST(invoice_sequences.last_number, EXCLUDED.last_number),
+        updated_at = NOW();
+    `;
+
     // 3. Table for Cash Closures (Arqueo de caja)
     await sql`
       CREATE TABLE IF NOT EXISTS cash_closures (
@@ -422,6 +445,134 @@ export async function initDatabaseSchema() {
 // Ventas (sales_transactions)
 // ==========================================
 
+export async function getNextInvoiceNumber(): Promise<string | null> {
+  const sql = getNeonSql();
+  if (!sql) return null;
+  try {
+    await initDatabaseSchema();
+    const rows = await (sql as any).query(
+      `INSERT INTO invoice_sequences (id, last_number, updated_at)
+       VALUES ('MAKD', 1, NOW())
+       ON CONFLICT (id) DO UPDATE SET
+         last_number = invoice_sequences.last_number + 1,
+         updated_at = NOW()
+       RETURNING last_number`,
+      []
+    );
+    const n = Number(rows?.[0]?.last_number) || 1;
+    return `MK-${String(n).padStart(6, '0')}`;
+  } catch (err) {
+    console.error('Error generando número de factura:', err);
+    return null;
+  }
+}
+
+export async function saveSaleAndDeductStock(sale: any): Promise<{
+  ok: boolean;
+  alreadySaved?: boolean;
+  error?: string;
+  updatedProducts?: Array<{ id: string; stock: number }>;
+}> {
+  const sql = getNeonSql();
+  if (!sql) return { ok: false, error: 'Base de datos Neon no configurada.' };
+  if (!sale?.id || !Array.isArray(sale.items) || sale.items.length === 0) {
+    return { ok: false, error: 'La venta no tiene ID o productos.' };
+  }
+
+  try {
+    await initDatabaseSchema();
+    const result = await (sql as any).query(
+      `WITH sale_data AS (
+         SELECT $1::jsonb AS sale
+       ), item_data AS (
+         SELECT
+           COALESCE(NULLIF(item->>'producto_id',''), NULL) AS producto_id,
+           COALESCE(NULLIF(item->>'sku',''), NULL) AS sku,
+           COALESCE(NULLIF(item->>'nombre_producto',''), NULL) AS nombre_producto,
+           COALESCE(NULLIF(item->>'talla',''), NULL) AS talla,
+           GREATEST(1, COALESCE((item->>'cantidad')::numeric, 1))::integer AS cantidad
+         FROM sale_data, jsonb_array_elements(sale->'items') item
+       ), matched AS (
+         SELECT i.*, p.id AS matched_id, p.stock
+         FROM item_data i
+         LEFT JOIN LATERAL (
+           SELECT id, stock FROM shoe_products p
+           WHERE (i.producto_id IS NOT NULL AND p.id = i.producto_id)
+              OR (i.sku IS NOT NULL AND lower(p.sku) = lower(i.sku))
+              OR (i.nombre_producto IS NOT NULL AND i.talla IS NOT NULL
+                  AND lower(p.nombre) = lower(i.nombre_producto) AND p.talla = i.talla)
+           ORDER BY CASE WHEN i.producto_id IS NOT NULL AND p.id = i.producto_id THEN 1
+                         WHEN i.sku IS NOT NULL AND lower(p.sku) = lower(i.sku) THEN 2 ELSE 3 END
+           LIMIT 1
+         ) p ON TRUE
+       ), validation AS (
+         SELECT COUNT(*) AS total_items,
+                COUNT(matched_id) AS matched_items,
+                COALESCE(BOOL_AND(stock >= cantidad), FALSE) AS enough_stock
+         FROM matched
+       ), inserted AS (
+         INSERT INTO sales_transactions (
+           id, numero_factura, cliente_nombre, cliente_apellido, cliente_rif,
+           cliente_telefono, cliente_correo, subtotal_usd, descuento_usd, aplica_iva,
+           porcentaje_iva, iva_monto_usd, total_usd, total_bs, costo_total_usd,
+           ganancia_neta_usd, tasa_cambio, items, pagos, fecha, usuario, notas, estado,
+           total_positivo_inmediato_usd, total_cashea_pendiente_usd, estado_cashea
+         )
+         SELECT
+           sale->>'id', sale->>'numero_factura', COALESCE(sale->>'cliente_nombre',''),
+           COALESCE(sale->>'cliente_apellido',''), COALESCE(sale->>'cliente_rif',''),
+           COALESCE(sale->>'cliente_telefono',''), COALESCE(sale->>'cliente_correo',''),
+           COALESCE((sale->>'subtotal_usd')::numeric,0), COALESCE((sale->>'descuento_usd')::numeric,0),
+           COALESCE((sale->>'aplica_iva')::boolean,FALSE), COALESCE((sale->>'porcentaje_iva')::numeric,0),
+           COALESCE((sale->>'iva_monto_usd')::numeric,0), COALESCE((sale->>'total_usd')::numeric,0),
+           COALESCE((sale->>'total_bs')::numeric,0), COALESCE((sale->>'costo_total_usd')::numeric,0),
+           COALESCE((sale->>'ganancia_neta_usd')::numeric,0), COALESCE((sale->>'tasa_cambio')::numeric,0),
+           sale->'items', sale->'pagos', COALESCE(sale->>'fecha',NOW()::text), COALESCE(sale->>'usuario',''),
+           COALESCE(sale->>'notas',''), COALESCE(sale->>'estado','completada'),
+           COALESCE((sale->>'total_positivo_inmediato_usd')::numeric,0),
+           COALESCE((sale->>'total_cashea_pendiente_usd')::numeric,0), COALESCE(sale->>'estado_cashea','sin_cashea')
+         FROM sale_data, validation
+         WHERE validation.total_items = validation.matched_items
+           AND validation.enough_stock
+         ON CONFLICT (id) DO NOTHING
+         RETURNING id
+       ), updated AS (
+         UPDATE shoe_products p
+         SET stock = p.stock - m.cantidad, updated_at = NOW()
+         FROM matched m, inserted ins
+         WHERE p.id = m.matched_id
+         RETURNING p.id, p.stock
+       )
+       SELECT
+         (SELECT COUNT(*) FROM inserted)::integer AS inserted_count,
+         (SELECT COUNT(*) FROM updated)::integer AS updated_count,
+         (SELECT COUNT(*) FROM matched)::integer AS total_items,
+         (SELECT COUNT(*) FROM matched WHERE matched_id IS NOT NULL)::integer AS matched_items,
+         (SELECT COALESCE(BOOL_AND(stock >= cantidad), FALSE) FROM matched) AS enough_stock,
+         (SELECT json_agg(json_build_object('id', id, 'stock', stock)) FROM updated) AS updated_products`,
+      [JSON.stringify(sale)]
+    );
+
+    const row = result?.[0] || {};
+    const total = Number(row.total_items) || 0;
+    const matched = Number(row.matched_items) || 0;
+    const inserted = Number(row.inserted_count) || 0;
+    const updated = Number(row.updated_count) || 0;
+
+    if (inserted === 0) {
+      const existing = await (sql as any).query(`SELECT id, estado FROM sales_transactions WHERE id = $1`, [sale.id]);
+      if (existing?.[0]) return { ok: true, alreadySaved: true, updatedProducts: [] };
+    }
+    if (total !== matched) return { ok: false, error: 'Uno o más productos de la venta no existen en Neon.' };
+    if (!row.enough_stock) return { ok: false, error: 'Stock insuficiente para completar la venta.' };
+    if (inserted !== 1 || updated < 1) return { ok: false, error: 'No se pudo registrar la venta y actualizar el inventario.' };
+    return { ok: true, updatedProducts: row.updated_products || [] };
+  } catch (err) {
+    console.error('Error transaccional venta+inventario:', err);
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
 export async function insertSale(sale: any): Promise<boolean> {
   const sql = getNeonSql();
   if (!sql) return false;
@@ -562,7 +713,7 @@ export async function updateSale(id: string, updates: Record<string, any>): Prom
   const sql = getNeonSql();
   if (!sql) return false;
   const allowed: Record<string, true> = {
-    fecha: true, notas: true, cliente_nombre: true, cliente_apellido: true,
+    numero_factura: true, fecha: true, notas: true, cliente_nombre: true, cliente_apellido: true,
     cliente_rif: true, cliente_telefono: true, cliente_correo: true,
     pagos: true, total_positivo_inmediato_usd: true, total_cashea_pendiente_usd: true,
     estado_cashea: true, estado: true, motivo_anulacion: true,
@@ -580,37 +731,67 @@ export async function updateSale(id: string, updates: Record<string, any>): Prom
 
 // Anular una venta con error: no se borra (se conserva el historial), se
 // marca como 'anulada' y el stock de cada producto vendido se restituye.
-export async function voidSale(id: string, motivo: string): Promise<{ ok: boolean; items?: any[] }> {
+export async function voidSale(id: string, motivo: string): Promise<{ ok: boolean; items?: any[]; alreadyVoided?: boolean }> {
   const sql = getNeonSql();
   if (!sql) return { ok: false };
-  const rows = await sql`SELECT * FROM sales_transactions WHERE id = ${id}`;
-  const sale = rows[0] as any;
-  if (!sale) return { ok: false };
-  if (sale.estado === 'anulada') return { ok: true, items: sale.items };
-
-  await sql`
-    UPDATE sales_transactions
-    SET estado = 'anulada', motivo_anulacion = ${motivo || ''}, anulada_at = NOW()
-    WHERE id = ${id}
-  `;
-
-  const items = Array.isArray(sale.items) ? sale.items : [];
-  for (const item of items) {
-    if (item?.cantidad) {
-      const qty = Math.max(1, Number(item.cantidad) || 1);
-      const prodId = item.producto_id ? String(item.producto_id).trim() : '';
-      const sku = item.sku ? String(item.sku).trim() : '';
-      const nombre = item.nombre_producto ? String(item.nombre_producto).trim() : '';
-      const talla = item.talla ? String(item.talla).trim() : '';
-      await sql`
-        UPDATE shoe_products SET stock = stock + ${qty}
-        WHERE (id = ${prodId})
-           OR (${sku} != '' AND sku = ${sku})
-           OR (${nombre} != '' AND ${talla} != '' AND LOWER(nombre) = LOWER(${nombre}) AND talla = ${talla});
-      `;
-    }
+  try {
+    const result = await (sql as any).query(
+      `WITH target AS (
+         SELECT id, items, estado FROM sales_transactions WHERE id = $1
+       ), item_data AS (
+         SELECT
+           COALESCE(NULLIF(item->>'producto_id',''), NULL) AS producto_id,
+           COALESCE(NULLIF(item->>'sku',''), NULL) AS sku,
+           COALESCE(NULLIF(item->>'nombre_producto',''), NULL) AS nombre_producto,
+           COALESCE(NULLIF(item->>'talla',''), NULL) AS talla,
+           GREATEST(1, COALESCE((item->>'cantidad')::numeric,1))::integer AS cantidad
+         FROM target, jsonb_array_elements(COALESCE(target.items,'[]'::jsonb)) item
+         WHERE target.estado IS DISTINCT FROM 'anulada'
+       ), matched AS (
+         SELECT i.*, p.id AS matched_id
+         FROM item_data i
+         LEFT JOIN LATERAL (
+           SELECT id FROM shoe_products p
+           WHERE (i.producto_id IS NOT NULL AND p.id = i.producto_id)
+              OR (i.sku IS NOT NULL AND lower(p.sku) = lower(i.sku))
+              OR (i.nombre_producto IS NOT NULL AND i.talla IS NOT NULL
+                  AND lower(p.nombre) = lower(i.nombre_producto) AND p.talla = i.talla)
+           ORDER BY CASE WHEN i.producto_id IS NOT NULL AND p.id = i.producto_id THEN 1
+                         WHEN i.sku IS NOT NULL AND lower(p.sku) = lower(i.sku) THEN 2 ELSE 3 END
+           LIMIT 1
+         ) p ON TRUE
+       ), grouped AS (
+         SELECT matched_id, SUM(cantidad)::integer AS cantidad
+         FROM matched WHERE matched_id IS NOT NULL GROUP BY matched_id
+       ), restored AS (
+         UPDATE shoe_products p
+         SET stock = p.stock + g.cantidad, updated_at = NOW()
+         FROM grouped g
+         WHERE p.id = g.matched_id
+         RETURNING p.id, p.stock
+       ), marked AS (
+         UPDATE sales_transactions s
+         SET estado = 'anulada', motivo_anulacion = COALESCE($2,''), anulada_at = NOW()
+         WHERE s.id = $1 AND s.estado IS DISTINCT FROM 'anulada'
+         RETURNING s.id, s.items
+       )
+       SELECT
+         (SELECT COUNT(*) FROM target)::integer AS found,
+         (SELECT estado FROM target LIMIT 1) AS previous_state,
+         (SELECT items FROM target LIMIT 1) AS items,
+         (SELECT COUNT(*) FROM marked)::integer AS marked_count,
+         (SELECT COALESCE(json_agg(json_build_object('id', id, 'stock', stock)), '[]'::json) FROM restored) AS restored_products`,
+      [id, motivo || '']
+    );
+    const row = result?.[0];
+    if (!row || Number(row.found) === 0) return { ok: false };
+    if (row.previous_state === 'anulada') return { ok: true, alreadyVoided: true, items: row.items || [] };
+    if (Number(row.marked_count) !== 1) return { ok: false };
+    return { ok: true, items: row.items || [] };
+  } catch (err) {
+    console.error('Error anulando venta y restituyendo inventario:', err);
+    throw err;
   }
-  return { ok: true, items };
 }
 
 // ==========================================

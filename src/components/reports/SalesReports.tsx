@@ -51,7 +51,7 @@ import { GoogleSheetsSyncModal } from '../common/GoogleSheetsSyncModal';
 import { getTodayVenezuela, getYesterdayVenezuela, getSaleDateKey } from '../../utils/dateUtils';
 
 export const SalesReports: React.FC = () => {
-  const { sales, exchangeRate, products, bcvInfo, isBcvSyncing, syncBcvRate, updateSaleDate, voidSale } = useStore();
+  const { sales, exchangeRate, products, bcvInfo, isBcvSyncing, syncBcvRate, updateSaleDate, updateSaleDetails, voidSale } = useStore();
 
   const [period, setPeriod] = useState<ReportPeriod>('este_mes');
   const [customStartDate, setCustomStartDate] = useState('');
@@ -60,6 +60,8 @@ export const SalesReports: React.FC = () => {
   const [lastGeneratedTime, setLastGeneratedTime] = useState<string>(new Date().toLocaleTimeString());
   const [isSheetsModalOpen, setIsSheetsModalOpen] = useState(false);
   const [editingSaleDateId, setEditingSaleDateId] = useState<string | null>(null);
+  const [editingInvoiceId, setEditingInvoiceId] = useState<string | null>(null);
+  const [tempInvoiceNumber, setTempInvoiceNumber] = useState('');
   const [tempDateValue, setTempDateValue] = useState<string>('');
   const [saleToVoid, setSaleToVoid] = useState<Sale | null>(null);
   const [voidReason, setVoidReason] = useState('');
@@ -1558,11 +1560,41 @@ export const SalesReports: React.FC = () => {
                 displayedSales.map((sale) => (
                   <tr key={sale.id} className={`hover:bg-slate-50/80 transition-colors ${sale.estado === 'anulada' ? 'opacity-50' : ''}`}>
                     <td className="py-2.5 px-4 font-mono font-bold text-indigo-600">
-                      #{sale.numero_factura}
-                      {sale.estado === 'anulada' && (
-                        <span className="ml-1.5 inline-block px-1.5 py-0.5 rounded bg-rose-100 text-rose-700 text-[9px] font-bold align-middle">
-                          ANULADA
-                        </span>
+                      {editingInvoiceId === sale.id ? (
+                        <div className="flex items-center gap-1">
+                          <input
+                            value={tempInvoiceNumber}
+                            onChange={(e) => setTempInvoiceNumber(e.target.value.toUpperCase().replace(/\s+/g, ''))}
+                            className="w-28 px-1.5 py-1 border border-indigo-300 rounded bg-white text-slate-800 font-mono text-[11px]"
+                          />
+                          <button
+                            onClick={async () => {
+                              if (tempInvoiceNumber.trim()) {
+                                const ok = await updateSaleDetails(sale.id, { numero_factura: tempInvoiceNumber.trim() });
+                                if (ok) setEditingInvoiceId(null);
+                              }
+                            }}
+                            className="p-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded cursor-pointer"
+                            title="Guardar número de factura"
+                          >
+                            <Check className="w-3 h-3" />
+                          </button>
+                          <button onClick={() => setEditingInvoiceId(null)} className="p-1 text-slate-400 hover:text-slate-600 cursor-pointer"><X className="w-3 h-3" /></button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-1.5 group">
+                          <span>#{sale.numero_factura}</span>
+                          {sale.estado === 'anulada' && (
+                            <span className="inline-block px-1.5 py-0.5 rounded bg-rose-100 text-rose-700 text-[9px] font-bold align-middle">ANULADA</span>
+                          )}
+                          {sale.estado !== 'anulada' && (
+                            <button
+                              onClick={() => { setEditingInvoiceId(sale.id); setTempInvoiceNumber(sale.numero_factura || ''); }}
+                              className="opacity-0 group-hover:opacity-100 p-0.5 text-indigo-500 hover:text-indigo-700 hover:bg-indigo-50 rounded transition cursor-pointer"
+                              title="Editar número de factura"
+                            ><Edit2 className="w-2.5 h-2.5" /></button>
+                          )}
+                        </div>
                       )}
                     </td>
 

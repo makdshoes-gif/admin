@@ -52,6 +52,7 @@ export interface CartItem {
 export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ onNavigateToLayaways }) => {
   const {
     products,
+    sales,
     exchangeRate,
     accounts,
     recordSale,
@@ -78,6 +79,15 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
   // Invoice & Customer Data
   const todayIso = getTodayVenezuela();
   const [invoiceDate, setInvoiceDate] = useState<string>(() => getTodayVenezuela());
+  const getNextInvoiceNumber = React.useCallback(() => {
+    const max = sales.reduce((highest, sale) => {
+      const m = String(sale.numero_factura || '').match(/(?:MK[- ]?)?(\d+)$/i);
+      return m ? Math.max(highest, Number(m[1]) || 0) : highest;
+    }, 0);
+    return `MK-${String(max + 1).padStart(6, '0')}`;
+  }, [sales]);
+  const [invoiceNumber, setInvoiceNumber] = useState<string>(() => 'MK-000001');
+  const [reservedInvoiceNumber, setReservedInvoiceNumber] = useState<string>('');
   const [customSaleRate, setCustomSaleRate] = useState<string>('');
   const [isCustomSaleRate, setIsCustomSaleRate] = useState(false);
   const [customerName, setCustomerName] = useState('');
@@ -118,6 +128,21 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
 
   // Post-sale Receipt Modal
   const [lastSale, setLastSale] = useState<Sale | null>(null);
+  React.useEffect(() => {
+    let cancelled = false;
+    fetch('/api/invoices/next', { method: 'POST', headers: { 'Content-Type': 'application/json' } })
+      .then((r) => r.ok ? r.json() : null)
+      .then((j) => {
+        if (!cancelled && j?.numero_factura) {
+          setInvoiceNumber(j.numero_factura);
+          setReservedInvoiceNumber(j.numero_factura);
+        } else if (!cancelled) {
+          setInvoiceNumber(getNextInvoiceNumber());
+        }
+      })
+      .catch(() => { if (!cancelled) setInvoiceNumber(getNextInvoiceNumber()); });
+    return () => { cancelled = true; };
+  }, [getNextInvoiceNumber]);
 
   // Billing View Mode when cart has items: 'expanded' (wide principal workbench) | 'split' | 'fullscreen'
   const [billingViewMode, setBillingViewMode] = useState<'expanded' | 'split' | 'fullscreen'>('expanded');
@@ -381,7 +406,7 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
   };
 
   // Finalize Sale
-  const handleFinalizeSale = () => {
+  const handleFinalizeSale = async () => {
     if (cart.length === 0) return;
 
     // Check payments
@@ -425,12 +450,15 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
       };
     });
 
-    const invoiceNumber = `MK-${Math.floor(1000 + Math.random() * 9000)}`;
+    let finalInvoiceNumber = invoiceNumber.trim() || getNextInvoiceNumber();
+    // Si el número visible sigue siendo el reservado por Neon, es el correlativo
+    // oficial. Si la cajera lo cambió manualmente, respetamos su número.
+    if (!finalInvoiceNumber) finalInvoiceNumber = reservedInvoiceNumber || getNextInvoiceNumber();
 
     const finalSaleDate = createSaleTimestamp(invoiceDate);
 
     const newSale = recordSale({
-      numero_factura: invoiceNumber,
+      numero_factura: finalInvoiceNumber,
       cliente_nombre: customerName.trim() || 'Consumidor Final',
       cliente_apellido: customerLastName.trim() || '',
       cliente_rif: customerRif.trim() || undefined,
@@ -467,6 +495,7 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
     setInvoiceDate(getTodayVenezuela());
     setIsMixedPaymentOpen(false);
     setLastSale(newSale);
+    setInvoiceNumber(`MK-${String(Number((finalInvoiceNumber.match(/(\d+)$/) || [0, 0])[1]) + 1).padStart(6, '0')}`);
   };
 
   return (
@@ -1261,6 +1290,21 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
                           className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded-xl text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-600 focus:ring-2 focus:ring-indigo-500/20 font-mono font-bold shadow-2xs"
                         />
                       </div>
+                    </div>
+
+                    {/* Número de Factura */}
+                    <div className="pt-2.5 border-t border-slate-200 mb-3">
+                      <label className="text-xs font-black text-slate-700 uppercase tracking-wider block mb-1.5">
+                        <span className="flex items-center gap-1.5"><Receipt className="w-4 h-4 text-indigo-600" /> Número de Factura</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={invoiceNumber}
+                        onChange={(e) => setInvoiceNumber(e.target.value.toUpperCase().replace(/\s+/g, ''))}
+                        placeholder="MK-000001"
+                        className="w-full px-3 py-2 bg-white border border-indigo-200 rounded-xl text-slate-900 font-mono font-black focus:outline-none focus:border-indigo-600 focus:ring-2 focus:ring-indigo-500/20"
+                      />
+                      <p className="text-[10px] text-slate-400 mt-1">Numeración corrida automática. Puedes cambiarla antes de emitir la factura.</p>
                     </div>
 
                     {/* Fecha de Emisión Factura */}

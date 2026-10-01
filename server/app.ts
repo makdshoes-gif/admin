@@ -11,6 +11,8 @@ import {
   normalizeBankReconciliations,
   insertSale,
   deductStockForSaleItems,
+  saveSaleAndDeductStock,
+  getNextInvoiceNumber,
   updateSale,
   voidSale,
   getSalesClosures,
@@ -151,8 +153,8 @@ app.post('/api/products', async (req, res) => {
         imagen_url, ubicacion, descripcion, es_original
       ) VALUES (
         ${p.id}, ${p.nombre}, ${p.marca}, ${p.modelo || ''}, ${p.color || ''},
-        ${p.genero || 'Unisex'}, ${p.categoria || 'Casual'}, ${p.talla}, ${p.sku},
-        ${p.precio}, ${p.costo}, ${p.stock}, ${p.stock_minimo || 3}, ${p.stock_maximo || 30},
+        ${p.genero || 'Unisex'}, ${p.categoria || 'Casual'}, ${p.talla || 'Única'}, ${p.sku || `SKU-${p.id}`},
+        ${Number(p.precio) || 0}, ${Number(p.costo) || 0}, ${Number(p.stock) || 0}, ${p.stock_minimo || 3}, ${p.stock_maximo || 30},
         ${p.imagen_url || p.imagen || null}, ${p.ubicacion || 'Almacén'}, ${p.descripcion || ''},
         ${p.es_original !== false}
       )
@@ -173,7 +175,8 @@ app.post('/api/products', async (req, res) => {
         imagen_url = EXCLUDED.imagen_url,
         ubicacion = EXCLUDED.ubicacion,
         descripcion = EXCLUDED.descripcion,
-        es_original = EXCLUDED.es_original;
+        es_original = EXCLUDED.es_original,
+        updated_at = NOW();
     `;
     res.json({ saved: true, id: p.id, product: p });
   } catch (err) {
@@ -223,8 +226,8 @@ app.post('/api/products/bulk', async (req, res) => {
           imagen_url, ubicacion, descripcion
         ) VALUES (
           ${p.id}, ${p.nombre}, ${p.marca}, ${p.modelo || ''}, ${p.color || ''},
-          ${p.genero || 'Unisex'}, ${p.categoria || 'Casual'}, ${p.talla}, ${p.sku},
-          ${p.precio}, ${p.costo}, ${p.stock}, ${p.stock_minimo || 3}, ${p.stock_maximo || 30},
+          ${p.genero || 'Unisex'}, ${p.categoria || 'Casual'}, ${p.talla || 'Única'}, ${p.sku || `SKU-${p.id}`},
+          ${Number(p.precio) || 0}, ${Number(p.costo) || 0}, ${Number(p.stock) || 0}, ${p.stock_minimo || 3}, ${p.stock_maximo || 30},
           ${p.imagen_url || p.imagen || null}, ${p.ubicacion || 'Almacén'}, ${p.descripcion || ''}
         )
         ON CONFLICT (id) DO UPDATE SET
@@ -269,6 +272,18 @@ app.get('/api/sales', async (_req, res) => {
 });
 
 // Crear una nueva venta (se llama justo al completar la venta en el POS)
+app.post('/api/invoices/next', async (_req, res) => {
+  const sql = getNeonSql();
+  if (!sql) return res.status(503).json({ error: 'DATABASE_URL no configurada en Vercel.' });
+  try {
+    const numero = await getNextInvoiceNumber();
+    if (!numero) return res.status(500).json({ error: 'No se pudo generar el número de factura.' });
+    res.json({ numero_factura: numero });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
 app.post('/api/sales', async (req, res) => {
   const sale = req.body?.sale || req.body;
 
@@ -290,21 +305,17 @@ app.post('/api/sales', async (req, res) => {
   try {
     await initDatabaseSchema();
 
-    const saved = await insertSale(sale);
-    if (!saved) {
-      throw new Error('No se pudo guardar la venta en Neon.');
-    }
-
-    const stockResult = await deductStockForSaleItems(sale.items);
-    if (!stockResult.ok) {
-      throw new Error(stockResult.error || 'La venta se guardó, pero no se pudo actualizar el inventario.');
+    const saleResult = await saveSaleAndDeductStock(sale);
+    if (!saleResult.ok) {
+      throw new Error(saleResult.error || 'No se pudo registrar la venta y actualizar el inventario.');
     }
 
     return res.json({
       saved: true,
+      alreadySaved: !!saleResult.alreadySaved,
       id: sale.id,
-      stockUpdated: true,
-      updatedProducts: stockResult.updatedProducts,
+      stockUpdated: !saleResult.alreadySaved,
+      updatedProducts: saleResult.updatedProducts || [],
     });
   } catch (err) {
     console.error('Error guardando venta en Neon:', err);
@@ -414,6 +425,73 @@ app.get('/api/bank-reconciliations', async (_req, res) => {
     res.json({ source: 'neon_postgres', data: normalizeBankReconciliations(rows as any[]) });
   } catch (err) {
     res.json({ source: 'local_fallback', error: String(err), data: [] });
+  }
+});
+
+// Bank Reconciliations - persistencia real en Neon
+app.post('/api/bank-reconciliations', async (req, res) => {
+  const sql = getNeonSql();
+  const item = req.body || {};
+  if (!sql) return res.status(503).json({ saved: false, error: 'DATABASE_URL no configurada en Vercel.' });
+  if (!item.id || !item.fecha || !item.banco || !item.referencia || !item.descripcion) {
+    return res.status(400).json({ saved: false, error: 'Faltan datos obligatorios del movimiento bancario.' });
+  }
+  try {
+    await initDatabaseSchema();
+    await sql`
+      INSERT INTO bank_reconciliations (
+        id, fecha, banco, tipo, referencia, descripcion, monto_bs, monto_usd,
+        estado_conciliacion, vinculado_tipo, vinculado_id, notas
+      ) VALUES (
+        ${item.id}, ${item.fecha}, ${item.banco}, ${item.tipo || 'credito_ingreso'},
+        ${item.referencia}, ${item.descripcion}, ${Number(item.monto_bs) || 0},
+        ${item.monto_usd == null ? null : Number(item.monto_usd) || 0},
+        ${item.estado_conciliacion || 'pendiente'}, ${item.vinculado_tipo || null},
+        ${item.vinculado_id || null}, ${item.notas || ''}
+      )
+      ON CONFLICT (id) DO UPDATE SET
+        fecha = EXCLUDED.fecha, banco = EXCLUDED.banco, tipo = EXCLUDED.tipo,
+        referencia = EXCLUDED.referencia, descripcion = EXCLUDED.descripcion,
+        monto_bs = EXCLUDED.monto_bs, monto_usd = EXCLUDED.monto_usd,
+        estado_conciliacion = EXCLUDED.estado_conciliacion,
+        vinculado_tipo = EXCLUDED.vinculado_tipo, vinculado_id = EXCLUDED.vinculado_id,
+        notas = EXCLUDED.notas, updated_at = NOW()
+    `;
+    res.json({ saved: true, id: item.id });
+  } catch (err) {
+    console.error('Error guardando conciliación bancaria:', err);
+    res.status(500).json({ saved: false, error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+app.put('/api/bank-reconciliations/:id', async (req, res) => {
+  const sql = getNeonSql();
+  const { id } = req.params;
+  if (!sql) return res.status(503).json({ updated: false, error: 'DATABASE_URL no configurada en Vercel.' });
+  const { estado_conciliacion, notas, vinculado_tipo, vinculado_id, fecha, banco, tipo, referencia, descripcion, monto_bs, monto_usd } = req.body || {};
+  try {
+    await initDatabaseSchema();
+    const rows = await sql`
+      UPDATE bank_reconciliations SET
+        estado_conciliacion = COALESCE(${estado_conciliacion ?? null}, estado_conciliacion),
+        notas = COALESCE(${notas ?? null}, notas),
+        vinculado_tipo = COALESCE(${vinculado_tipo ?? null}, vinculado_tipo),
+        vinculado_id = COALESCE(${vinculado_id ?? null}, vinculado_id),
+        fecha = COALESCE(${fecha ?? null}, fecha),
+        banco = COALESCE(${banco ?? null}, banco),
+        tipo = COALESCE(${tipo ?? null}, tipo),
+        referencia = COALESCE(${referencia ?? null}, referencia),
+        descripcion = COALESCE(${descripcion ?? null}, descripcion),
+        monto_bs = COALESCE(${monto_bs == null ? null : Number(monto_bs)}, monto_bs),
+        monto_usd = COALESCE(${monto_usd == null ? null : Number(monto_usd)}, monto_usd),
+        updated_at = NOW()
+      WHERE id = ${id}
+      RETURNING id
+    `;
+    res.json({ updated: rows.length > 0, id });
+  } catch (err) {
+    console.error('Error actualizando conciliación bancaria:', err);
+    res.status(500).json({ updated: false, error: err instanceof Error ? err.message : String(err) });
   }
 });
 
