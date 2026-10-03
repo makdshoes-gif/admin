@@ -1227,7 +1227,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   // Record Sale (Instant real-time stock deduction, movement logging, financial balance update)
-  const recordSale = (
+  const recordSale = async (
     saleData: Omit<Sale, 'id' | 'created_at' | 'costo_total_usd' | 'ganancia_neta_usd'>
   ): Promise<Sale> => {
     const saleId = `sale-${Date.now()}`;
