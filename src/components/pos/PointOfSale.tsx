@@ -400,10 +400,7 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
       estado_liquidacion: 'pendiente_banco',
     };
 
-    // Con 0% de inicial no hay nada que cobrar hoy: no tiene sentido crear
-    // un pago de $0 "fantasma" en la cuenta de hoy, así que en ese caso
-    // solo queda el pago pendiente de Cashea.
-    setMixedPayments(downUsd > 0 ? [initialPay, casheaPay] : [casheaPay]);
+    setMixedPayments([initialPay, casheaPay]);
     setIsMixedPaymentOpen(true);
     setIsCasheaSplitOpen(false);
   };
@@ -1549,8 +1546,8 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
                             <label className="text-xs font-black text-slate-700 block mb-1">
                               Porcentaje de Inicial a cobrar hoy:
                             </label>
-                            <div className="grid grid-cols-5 gap-1.5">
-                              {[0, 40, 50, 60].map((pct) => (
+                            <div className="grid grid-cols-4 gap-1.5">
+                              {[40, 50, 60].map((pct) => (
                                 <button
                                   key={pct}
                                   type="button"
@@ -1567,10 +1564,10 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
                               <div className="relative">
                                 <input
                                   type="number"
-                                  min="0"
-                                  max="100"
+                                  min="1"
+                                  max="99"
                                   value={casheaDownPercent}
-                                  onChange={(e) => setCasheaDownPercent(Math.min(100, Math.max(0, Number(e.target.value) || 0)))}
+                                  onChange={(e) => setCasheaDownPercent(Math.min(99, Math.max(1, Number(e.target.value) || 0)))}
                                   className="w-full py-2 px-2 bg-white border border-slate-300 rounded-xl text-xs sm:text-sm font-black text-center text-slate-800"
                                   placeholder="%"
                                 />

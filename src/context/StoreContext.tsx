@@ -371,7 +371,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   // fotos) y el catálogo de productos ni se toca.
   const lastKnownVersionRef = useRef<{
     products: string; sales: string; expenses: string;
-    bankReconciliations: string; closures: string;
+    bankReconciliations: string; closures: string; layaways: string;
   } | null>(null);
 
   const applySalesData = (salesArr: any[]) => {
@@ -420,8 +420,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               const expensesChanged = nv.expenses !== ov.expenses;
               const bankChanged = nv.bankReconciliations !== ov.bankReconciliations;
               const closuresChanged = nv.closures !== ov.closures;
+              const layawaysChanged = nv.layaways !== ov.layaways;
 
-              if (!productsChanged && !salesChanged && !expensesChanged && !bankChanged && !closuresChanged) {
+              if (!productsChanged && !salesChanged && !expensesChanged && !bankChanged && !closuresChanged && !layawaysChanged) {
                 return; // nada cambió, no hace falta descargar nada
               }
 
@@ -448,6 +449,16 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                   tasks.push(
                     fetch('/api/closures').then((r) => (r.ok ? r.json() : null)).then((j) => {
                       if (Array.isArray(j?.data)) applyClosuresData(j.data);
+                    })
+                  );
+                }
+                if (layawaysChanged) {
+                  tasks.push(
+                    fetch('/api/layaways').then((r) => (r.ok ? r.json() : null)).then((j) => {
+                      if (Array.isArray(j?.data)) {
+                        setLayaways(j.data);
+                        try { localStorage.setItem(`${STORAGE_KEY}_layaways`, JSON.stringify(j.data)); } catch {}
+                      }
                     })
                   );
                 }
@@ -1382,40 +1393,39 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     // Persist sale and inventory change in Neon.
     // /api/sales acepta directamente la venta (también soporta el formato antiguo).
     void (async () => {
-      try {
-        const response = await fetch('/api/sales', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(completedSale),
-        });
-
-        const result = await response.json().catch(() => ({}));
-
-        if (!response.ok || result.saved !== true) {
-          console.error('Error guardando venta en servidor:', result);
-          addNotification(
-            'Error de sincronización',
-            result.error || 'La venta no pudo guardarse en el servidor.',
-            'critical'
-          );
-          return;
-        }
-
-        console.log('Venta guardada correctamente en Neon:', completedSale.id);
-
+      let lastError = '';
+      for (let attempt = 1; attempt <= 3; attempt++) {
         try {
-          await syncFromServer();
-        } catch (syncError) {
-          console.error('Error sincronizando inventario después de la venta:', syncError);
+          const response = await fetch('/api/sales', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(completedSale),
+          });
+          const result = await response.json().catch(() => ({}));
+
+          if (response.ok && result.saved === true) {
+            console.log('Venta guardada correctamente en Neon:', completedSale.id);
+            try { await syncFromServer(); } catch (syncError) {
+              console.error('Error sincronizando después de la venta:', syncError);
+            }
+            return;
+          }
+
+          lastError = result.error || `HTTP ${response.status}`;
+          console.error(`Error guardando venta en servidor (intento ${attempt}/3):`, result);
+          if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, 700 * attempt));
+        } catch (error) {
+          lastError = error instanceof Error ? error.message : String(error);
+          console.error(`Error de conexión guardando venta (intento ${attempt}/3):`, error);
+          if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, 700 * attempt));
         }
-      } catch (error) {
-        console.error('Error de conexión guardando venta:', error);
-        addNotification(
-          'Sin conexión con el servidor',
-          'La venta quedó pendiente de sincronización. Verifica la conexión antes de continuar.',
-          'critical'
-        );
       }
+
+      addNotification(
+        'VENTA NO SINCRONIZADA',
+        `La factura #${completedSale.numero_factura} quedó solo en esta pantalla. No continúes con otra operación hasta verificar Neon. ${lastError}`,
+        'critical'
+      );
     })();
 
 
@@ -1620,11 +1630,24 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setLayaways((prev) => [newLayaway, ...prev]);
 
     // Backend sync
-    fetch('/api/layaways', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(newLayaway),
-    }).catch(() => {});
+    void (async () => {
+      try {
+        const response = await fetch('/api/layaways', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(newLayaway),
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok || result.saved !== true) {
+          addNotification('Error de sincronización', result.error || 'El apartado no pudo guardarse en Neon.', 'critical');
+          return;
+        }
+        await syncFromServer(false);
+      } catch (error) {
+        console.error('Error guardando apartado en servidor:', error);
+        addNotification('Sin conexión con el servidor', 'El apartado quedó localmente pendiente. Verifica Neon/Vercel.', 'critical');
+      }
+    })();
 
 
 

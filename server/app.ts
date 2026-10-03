@@ -17,6 +17,9 @@ import {
   voidSale,
   getSalesClosures,
   addSalesClosure,
+  getLayawaysFromDb,
+  saveLayawayToDb,
+  reserveStockAndSaveLayaway,
 } from './db.js';
 import { analyzeShoeImage } from './shoeAi.js';
 import { analyzeReceiptImage } from './receiptAi.js';
@@ -77,12 +80,13 @@ app.get('/api/store/state', async (_req, res) => {
   if (sql) {
     try {
       await initDatabaseSchema();
-      const [products, sales, expenses, reconciliations, closures] = await Promise.all([
+      const [products, sales, expenses, reconciliations, closures, layaways] = await Promise.all([
         sql`SELECT * FROM shoe_products ORDER BY nombre ASC`,
         sql`SELECT * FROM sales_transactions ORDER BY fecha DESC`,
         sql`SELECT * FROM expenses ORDER BY fecha DESC, created_at DESC`,
         sql`SELECT * FROM bank_reconciliations ORDER BY fecha DESC, created_at DESC`,
         getSalesClosures(),
+        getLayawaysFromDb(),
       ]);
 
       return res.json({
@@ -96,6 +100,7 @@ app.get('/api/store/state', async (_req, res) => {
           expenses: normalizeExpenses(expenses as any[]),
           accounts: [],
           bankMovements: normalizeBankReconciliations(reconciliations as any[]),
+          layaways,
         },
       });
     } catch (err) {
@@ -113,6 +118,51 @@ app.get('/api/store/state', async (_req, res) => {
     source: 'no_database_configured',
     error: 'DATABASE_URL no configurada en Vercel.',
   });
+});
+
+// Apartados de calzado
+app.get('/api/layaways', async (_req, res) => {
+  const sql = getNeonSql();
+  if (!sql) return res.status(503).json({ source: 'no_database_configured', error: 'DATABASE_URL no configurada.', data: [] });
+  try {
+    const data = await getLayawaysFromDb();
+    return res.json({ source: 'neon_postgres', data });
+  } catch (err) {
+    console.error('Error leyendo apartados en Neon:', err);
+    return res.status(503).json({ source: 'neon_error', error: 'No se pudieron leer los apartados.', data: [] });
+  }
+});
+
+app.post('/api/layaways', async (req, res) => {
+  const sql = getNeonSql();
+  if (!sql) return res.status(503).json({ saved: false, error: 'DATABASE_URL no configurada.' });
+  try {
+    const layaway = req.body;
+    if (!layaway?.id || !Array.isArray(layaway.items)) {
+      return res.status(400).json({ saved: false, error: 'Apartado inválido.' });
+    }
+    await initDatabaseSchema();
+    const result = await reserveStockAndSaveLayaway(layaway);
+    if (!result.ok) return res.status(400).json({ saved: false, error: result.error || 'No se pudo guardar el apartado.' });
+    return res.json({ saved: true, alreadySaved: !!result.alreadySaved, id: layaway.id });
+  } catch (err) {
+    console.error('Error guardando apartado en Neon:', err);
+    return res.status(500).json({ saved: false, error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+app.put('/api/layaways/:id', async (req, res) => {
+  const sql = getNeonSql();
+  if (!sql) return res.status(503).json({ updated: false, error: 'DATABASE_URL no configurada.' });
+  try {
+    const id = req.params.id;
+    const layaway = { ...(req.body || {}), id };
+    const ok = await saveLayawayToDb(layaway);
+    return res.json({ updated: ok, id });
+  } catch (err) {
+    console.error('Error actualizando apartado en Neon:', err);
+    return res.status(500).json({ updated: false, error: err instanceof Error ? err.message : String(err) });
+  }
 });
 
 // Products

@@ -857,13 +857,14 @@ export interface StoreVersion {
   expenses: string;
   bankReconciliations: string;
   closures: string;
+  layaways: string;
 }
 
 export async function getStoreVersion(): Promise<StoreVersion> {
   const sql = getNeonSql();
   const empty: StoreVersion = {
     products: 'no-db', sales: 'no-db', expenses: 'no-db',
-    bankReconciliations: 'no-db', closures: 'no-db',
+    bankReconciliations: 'no-db', closures: 'no-db', layaways: 'no-db',
   };
   if (!sql) return empty;
   try {
@@ -878,7 +879,9 @@ export async function getStoreVersion(): Promise<StoreVersion> {
         (SELECT COUNT(*) FROM bank_reconciliations) AS b_count,
         (SELECT COALESCE(EXTRACT(EPOCH FROM MAX(updated_at)), 0) FROM bank_reconciliations) AS b_ts,
         (SELECT COUNT(*) FROM cash_closures) AS c_count,
-        (SELECT COALESCE(EXTRACT(EPOCH FROM MAX(updated_at)), 0) FROM cash_closures) AS c_ts
+        (SELECT COALESCE(EXTRACT(EPOCH FROM MAX(updated_at)), 0) FROM cash_closures) AS c_ts,
+        (SELECT COUNT(*) FROM layaways) AS l_count,
+        (SELECT COALESCE(EXTRACT(EPOCH FROM MAX(updated_at)), 0) FROM layaways) AS l_ts
     `;
     const r: any = rows[0] || {};
     return {
@@ -887,12 +890,13 @@ export async function getStoreVersion(): Promise<StoreVersion> {
       expenses: `${r.e_count}-${r.e_ts}`,
       bankReconciliations: `${r.b_count}-${r.b_ts}`,
       closures: `${r.c_count}-${r.c_ts}`,
+      layaways: `${r.l_count}-${r.l_ts}`,
     };
   } catch (err) {
     console.error('Error calculando versión de la tienda:', err);
     return {
       products: 'error', sales: 'error', expenses: 'error',
-      bankReconciliations: 'error', closures: 'error',
+      bankReconciliations: 'error', closures: 'error', layaways: 'error',
     };
   }
 }
@@ -975,6 +979,95 @@ export async function getLayawaysFromDb(): Promise<any[]> {
   } catch (err) {
     console.error('Error al obtener apartados desde Neon:', err);
     return [];
+  }
+}
+
+export async function reserveStockAndSaveLayaway(layaway: any): Promise<{ ok: boolean; alreadySaved?: boolean; error?: string }> {
+  const sql = getNeonSql();
+  if (!sql || !layaway?.id || !Array.isArray(layaway.items) || layaway.items.length === 0) {
+    return { ok: false, error: 'Apartado inválido o base de datos no configurada.' };
+  }
+  try {
+    await initDatabaseSchema();
+    const result = await (sql as any).query(
+      `WITH layaway_data AS (
+         SELECT $1::jsonb AS data
+       ), item_data AS (
+         SELECT
+           COALESCE(NULLIF(item->>'producto_id',''), NULL) AS producto_id,
+           COALESCE(NULLIF(item->>'sku',''), NULL) AS sku,
+           COALESCE(NULLIF(item->>'nombre_producto',''), NULL) AS nombre_producto,
+           COALESCE(NULLIF(item->>'talla',''), NULL) AS talla,
+           GREATEST(1, COALESCE((item->>'cantidad')::numeric,1))::integer AS cantidad
+         FROM layaway_data, jsonb_array_elements(data->'items') item
+       ), matched AS (
+         SELECT i.*, p.id AS matched_id, p.stock
+         FROM item_data i
+         LEFT JOIN LATERAL (
+           SELECT id, stock FROM shoe_products p
+           WHERE (i.producto_id IS NOT NULL AND p.id = i.producto_id)
+              OR (i.sku IS NOT NULL AND lower(p.sku) = lower(i.sku))
+              OR (i.nombre_producto IS NOT NULL AND i.talla IS NOT NULL
+                  AND lower(p.nombre) = lower(i.nombre_producto) AND p.talla = i.talla)
+           ORDER BY CASE WHEN i.producto_id IS NOT NULL AND p.id = i.producto_id THEN 1
+                         WHEN i.sku IS NOT NULL AND lower(p.sku) = lower(i.sku) THEN 2 ELSE 3 END
+           LIMIT 1
+         ) p ON TRUE
+       ), validation AS (
+         SELECT COUNT(*) AS total_items, COUNT(matched_id) AS matched_items,
+                COALESCE(BOOL_AND(stock >= cantidad), FALSE) AS enough_stock
+         FROM matched
+       ), inserted AS (
+         INSERT INTO layaways (
+           id, codigo_apartado, cliente_nombre, cliente_apellido, cliente_cedula, cliente_telefono,
+           items, total_usd, total_bs, tasa_cambio, total_abonado_usd, total_abonado_bs,
+           saldo_pendiente_usd, saldo_pendiente_bs, abonos, fecha_apartado, fecha_vencimiento,
+           estado, usuario, notas
+         )
+         SELECT
+           data->>'id', data->>'codigo_apartado', COALESCE(data->>'cliente_nombre',''),
+           COALESCE(data->>'cliente_apellido',''), COALESCE(data->>'cliente_cedula',''),
+           COALESCE(data->>'cliente_telefono',''), data->'items',
+           COALESCE((data->>'total_usd')::numeric,0), COALESCE((data->>'total_bs')::numeric,0),
+           COALESCE((data->>'tasa_cambio')::numeric,0), COALESCE((data->>'total_abonado_usd')::numeric,0),
+           COALESCE((data->>'total_abonado_bs')::numeric,0), COALESCE((data->>'saldo_pendiente_usd')::numeric,0),
+           COALESCE((data->>'saldo_pendiente_bs')::numeric,0), COALESCE(data->'abonos','[]'::jsonb),
+           COALESCE((data->>'fecha_apartado')::timestamptz,NOW()), COALESCE(data->>'fecha_vencimiento',''),
+           COALESCE(data->>'estado','activo'), COALESCE(data->>'usuario',''), COALESCE(data->>'notas','')
+         FROM layaway_data, validation
+         WHERE validation.total_items = validation.matched_items AND validation.enough_stock
+         ON CONFLICT (id) DO NOTHING
+         RETURNING id
+       ), grouped AS (
+         SELECT matched_id, SUM(cantidad)::integer AS cantidad
+         FROM matched WHERE matched_id IS NOT NULL GROUP BY matched_id
+       ), updated AS (
+         UPDATE shoe_products p
+         SET stock = p.stock - g.cantidad, updated_at = NOW()
+         FROM grouped g, inserted ins
+         WHERE p.id = g.matched_id
+         RETURNING p.id
+       )
+       SELECT
+         (SELECT COUNT(*) FROM inserted)::integer AS inserted_count,
+         (SELECT COUNT(*) FROM updated)::integer AS updated_count,
+         (SELECT COUNT(*) FROM matched)::integer AS total_items,
+         (SELECT COUNT(*) FROM matched WHERE matched_id IS NOT NULL)::integer AS matched_items,
+         (SELECT COALESCE(BOOL_AND(stock >= cantidad), FALSE) FROM matched) AS enough_stock`,
+      [JSON.stringify(layaway)]
+    );
+    const row=result?.[0]||{};
+    if (Number(row.inserted_count)===0) {
+      const existing=await (sql as any).query(`SELECT id FROM layaways WHERE id=$1`,[layaway.id]);
+      if(existing?.[0]) return {ok:true,alreadySaved:true};
+    }
+    if(Number(row.total_items)!==Number(row.matched_items)) return {ok:false,error:'Uno o más productos del apartado no existen en Neon.'};
+    if(!row.enough_stock) return {ok:false,error:'Stock insuficiente para reservar el apartado.'};
+    if(Number(row.inserted_count)!==1 || Number(row.updated_count)<1) return {ok:false,error:'No se pudo guardar el apartado y reservar el inventario.'};
+    return {ok:true};
+  } catch(err) {
+    console.error('Error reservando stock y guardando apartado:',err);
+    return {ok:false,error:err instanceof Error?err.message:String(err)};
   }
 }
 
