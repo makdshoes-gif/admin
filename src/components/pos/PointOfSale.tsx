@@ -1433,8 +1433,29 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
                           Cobro Multimoneda Combinado:
                         </div>
 
+                        {/* Resumen explícito de Cashea, incluyendo 0% de inicial */}
+                        {mixedPayments.some((pay) => (pay.cuenta || '').toLowerCase().includes('cashea')) && (
+                          <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 space-y-1.5 text-xs sm:text-sm">
+                            <div className="font-black text-amber-900">CASHEA — Resumen de facturación</div>
+                            <div className="flex justify-between font-bold text-slate-700">
+                              <span>Inicial:</span>
+                              <span>{casheaDownPercent}% — ${((totalUsd * casheaDownPercent) / 100).toFixed(2)} USD</span>
+                            </div>
+                            <div className="flex justify-between font-bold text-slate-700">
+                              <span>Financiamiento Cashea:</span>
+                              <span>{100 - casheaDownPercent}% — ${(totalUsd * (100 - casheaDownPercent) / 100).toFixed(2)} USD</span>
+                            </div>
+                            <div className="text-[11px] text-amber-800 font-semibold">
+                              {casheaDownPercent === 0
+                                ? 'Inicial hoy: $0.00. El 100% queda pendiente de liquidación por Cashea.'
+                                : 'La inicial entra como pago inmediato y el saldo queda pendiente de liquidación por Cashea.'}
+                            </div>
+                          </div>
+                        )}
+
                         {/* List of current mixed payments */}
-                        {mixedPayments.map((pay, idx) => (
+                        {mixedPayments.map((pay, idx) => (}
+
                           <div
                             key={pay.id ? `mixed-pay-${pay.id}-${idx}` : `mixed-pay-${idx}`}
                             className="flex items-center justify-between p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-xs sm:text-sm"
@@ -1547,7 +1568,7 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
                               Porcentaje de Inicial a cobrar hoy:
                             </label>
                             <div className="grid grid-cols-4 gap-1.5">
-                              {[40, 50, 60].map((pct) => (
+                              {[0, 40, 50, 60].map((pct) => (
                                 <button
                                   key={pct}
                                   type="button"
@@ -1564,10 +1585,10 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
                               <div className="relative">
                                 <input
                                   type="number"
-                                  min="1"
+                                  min="0"
                                   max="99"
                                   value={casheaDownPercent}
-                                  onChange={(e) => setCasheaDownPercent(Math.min(99, Math.max(1, Number(e.target.value) || 0)))}
+                                  onChange={(e) => setCasheaDownPercent(Math.min(99, Math.max(0, Number(e.target.value) || 0)))}
                                   className="w-full py-2 px-2 bg-white border border-slate-300 rounded-xl text-xs sm:text-sm font-black text-center text-slate-800"
                                   placeholder="%"
                                 />
