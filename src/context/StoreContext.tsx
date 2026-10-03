@@ -85,7 +85,7 @@ interface StoreContextType {
   deleteProduct: (id: string) => void;
   recordSale: (
     saleData: Omit<Sale, 'id' | 'created_at' | 'costo_total_usd' | 'ganancia_neta_usd'>
-  ) => Sale;
+  ) => Promise<Sale>;
   updateSaleDate: (saleId: string, newDateIso: string) => boolean;
   updateSaleDetails: (saleId: string, updates: Partial<Pick<Sale, 'numero_factura' | 'cliente_nombre' | 'cliente_apellido' | 'cliente_rif' | 'cliente_telefono' | 'cliente_correo' | 'notas'>>) => Promise<boolean>;
   voidSale: (saleId: string, motivo: string) => Promise<boolean>;
@@ -1229,7 +1229,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   // Record Sale (Instant real-time stock deduction, movement logging, financial balance update)
   const recordSale = (
     saleData: Omit<Sale, 'id' | 'created_at' | 'costo_total_usd' | 'ganancia_neta_usd'>
-  ): Sale => {
+  ): Promise<Sale> => {
     const saleId = `sale-${Date.now()}`;
     const timestamp = saleData.fecha || createSaleTimestamp();
 
@@ -1314,16 +1314,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       }
     });
 
-    // 2. Commit stock deduction immediately to state & localStorage
-    setProducts(updatedProducts);
-    safeLocalStorageSet(`${STORAGE_KEY}_products`, JSON.stringify(updatedProducts));
-
-    // 3. Append all sale movements
-    if (saleMovements.length > 0) {
-      setMovements((prev) => [...saleMovements, ...prev]);
-    }
-
-    // 4. Classify payments: Cashea stays pending reconciliation, while positive liquid payments enter balances immediately
+    // 2. Classify payments: Cashea stays pending reconciliation, while positive liquid payments enter balances immediately.
+    // Nothing is committed locally until Neon confirms the sale + stock deduction.
     let totalPositivoInmediatoUsd = 0;
     let totalCasheaPendienteUsd = 0;
 
@@ -1344,23 +1336,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       }
     });
 
-    // Update accounts balances ONLY for positive liquid payments
-    setAccounts((prevAccounts) => {
-      const nextAccounts = [...prevAccounts];
-      enrichedPagos.forEach((pago) => {
-        if (pago.estado_liquidacion === 'pendiente_banco') return;
-
-        const accIndex = nextAccounts.findIndex((acc) => acc.nombre === pago.cuenta);
-        if (accIndex !== -1) {
-          nextAccounts[accIndex] = {
-            ...nextAccounts[accIndex],
-            saldo: nextAccounts[accIndex].saldo + pago.monto,
-          };
-        }
-      });
-      return nextAccounts;
-    });
-
     // 5. Finalize Sale Record
     const gananciaNeta = saleData.total_usd - totalCosto;
     const estadoCashea = totalCasheaPendienteUsd > 0 ? ('pendiente_banco' as const) : ('sin_cashea' as const);
@@ -1378,57 +1353,80 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       created_at: timestamp,
     };
 
-    setSales((prev) => {
-      const updated = [completedSale, ...prev];
-      safeLocalStorageSet(`${STORAGE_KEY}_sales`, JSON.stringify(updated));
-      return updated;
-    });
-
     // Track historical rate for this date
     if (completedSale.tasa_cambio > 0) {
       const saleDateKey = getSaleDateKey(completedSale.fecha);
       setExchangeRateForDate(saleDateKey, completedSale.tasa_cambio);
     }
 
-    // Persist sale and inventory change in Neon.
-    // /api/sales acepta directamente la venta (también soporta el formato antiguo).
-    void (async () => {
-      let lastError = '';
-      for (let attempt = 1; attempt <= 3; attempt++) {
-        try {
-          const response = await fetch('/api/sales', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(completedSale),
-          });
-          const result = await response.json().catch(() => ({}));
-
-          if (response.ok && result.saved === true) {
-            console.log('Venta guardada correctamente en Neon:', completedSale.id);
-            try { await syncFromServer(); } catch (syncError) {
-              console.error('Error sincronizando después de la venta:', syncError);
-            }
-            return;
-          }
-
-          lastError = result.error || `HTTP ${response.status}`;
-          console.error(`Error guardando venta en servidor (intento ${attempt}/3):`, result);
-          if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, 700 * attempt));
-        } catch (error) {
-          lastError = error instanceof Error ? error.message : String(error);
-          console.error(`Error de conexión guardando venta (intento ${attempt}/3):`, error);
-          if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, 700 * attempt));
+    // Persist sale + stock atomically in Neon BEFORE treating the sale as completed locally.
+    // This prevents a Cashea sale from looking successful while Neon rejected the inventory update.
+    let lastError = '';
+    let serverSaved = false;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        const response = await fetch('/api/sales', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(completedSale),
+        });
+        const result = await response.json().catch(() => ({}));
+        if (response.ok && result.saved === true) {
+          serverSaved = true;
+          console.log('Venta guardada correctamente en Neon:', completedSale.id, result);
+          break;
         }
+        lastError = result.error || `HTTP ${response.status}`;
+        console.error(`Error guardando venta en servidor (intento ${attempt}/3):`, result);
+        if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, 700 * attempt));
+      } catch (error) {
+        lastError = error instanceof Error ? error.message : String(error);
+        console.error(`Error de conexión guardando venta (intento ${attempt}/3):`, error);
+        if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, 700 * attempt));
       }
+    }
 
+    if (!serverSaved) {
       addNotification(
-        'VENTA NO SINCRONIZADA',
-        `La factura #${completedSale.numero_factura} quedó solo en esta pantalla. No continúes con otra operación hasta verificar Neon. ${lastError}`,
+        'VENTA NO REGISTRADA',
+        `La venta NO fue confirmada por Neon y no se descontó el inventario. ${lastError}`,
         'critical'
       );
-    })();
+      throw new Error(`No se pudo registrar la venta en Neon: ${lastError}`);
+    }
 
+    // Neon confirmed the atomic transaction: now commit the same state locally.
+    setProducts(updatedProducts);
+    safeLocalStorageSet(`${STORAGE_KEY}_products`, JSON.stringify(updatedProducts));
 
+    if (saleMovements.length > 0) {
+      setMovements((prev) => [...saleMovements, ...prev]);
+    }
+
+    setAccounts((prevAccounts) => {
+      const nextAccounts = [...prevAccounts];
+      enrichedPagos.forEach((pago) => {
+        if (pago.estado_liquidacion === 'pendiente_banco') return;
+        const accIndex = nextAccounts.findIndex((acc) => acc.nombre === pago.cuenta);
+        if (accIndex !== -1) {
+          nextAccounts[accIndex] = {
+            ...nextAccounts[accIndex],
+            saldo: nextAccounts[accIndex].saldo + pago.monto,
+          };
+        }
+      });
+      return nextAccounts;
+    });
+
+    setSales((prev) => {
+      const updated = [completedSale, ...prev];
+      safeLocalStorageSet(`${STORAGE_KEY}_sales`, JSON.stringify(updated));
+      return updated;
+    });
+
+    try { await syncFromServer(false); } catch (syncError) {
+      console.error('Error sincronizando después de venta confirmada:', syncError);
+    }
 
     addNotification(
       'Venta Exitosa',

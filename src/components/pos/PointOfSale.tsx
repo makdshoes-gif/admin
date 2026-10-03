@@ -457,7 +457,9 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
 
     const finalSaleDate = createSaleTimestamp(invoiceDate);
 
-    const newSale = recordSale({
+    let newSale: Sale;
+    try {
+      newSale = await recordSale({
       numero_factura: finalInvoiceNumber,
       cliente_nombre: customerName.trim() || 'Consumidor Final',
       cliente_apellido: customerLastName.trim() || '',
@@ -475,7 +477,12 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
       pagos: finalPayments,
       fecha: finalSaleDate,
       usuario: userRole === 'admin' ? 'Admin' : 'Cajera',
-    });
+      });
+    } catch (error) {
+      console.error('Venta rechazada por el servidor:', error);
+      alert(error instanceof Error ? error.message : 'No se pudo registrar la venta. Verifica Neon e intenta nuevamente.');
+      return;
+    }
 
     setExchangeRateForDate(invoiceDate, effectiveExchangeRate);
 
@@ -1450,6 +1457,29 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
                                 ? 'Inicial hoy: $0.00. El 100% queda pendiente de liquidación por Cashea.'
                                 : 'La inicial entra como pago inmediato y el saldo queda pendiente de liquidación por Cashea.'}
                             </div>
+                          </div>
+                        )}
+
+                        {/* Resumen Cashea explícito, incluido cuando la inicial es 0% */}
+                        {mixedPayments.some((pay) => (pay.cuenta || '').toLowerCase().includes('cashea')) && (
+                          <div className="p-3 bg-amber-50 border border-amber-300 rounded-xl space-y-1.5 text-xs sm:text-sm">
+                            <div className="flex items-center justify-between font-black text-amber-900">
+                              <span>CASHEA</span>
+                              <span>{casheaDownPercent}% inicial</span>
+                            </div>
+                            <div className="flex justify-between text-amber-800">
+                              <span>Inicial:</span>
+                              <strong>${((totalUsd * casheaDownPercent) / 100).toFixed(2)}</strong>
+                            </div>
+                            <div className="flex justify-between text-amber-800">
+                              <span>Financiamiento Cashea:</span>
+                              <strong>${(totalUsd - (totalUsd * casheaDownPercent) / 100).toFixed(2)}</strong>
+                            </div>
+                            {casheaDownPercent === 0 && (
+                              <div className="pt-1 border-t border-amber-200 font-black text-amber-900">
+                                Inicial 0% — $0,00 · 100% pendiente por liquidar
+                              </div>
+                            )}
                           </div>
                         )}
 
