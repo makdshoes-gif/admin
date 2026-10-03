@@ -527,7 +527,7 @@ export async function saveSaleAndDeductStock(sale: any): Promise<{
            COALESCE((sale->>'iva_monto_usd')::numeric,0), COALESCE((sale->>'total_usd')::numeric,0),
            COALESCE((sale->>'total_bs')::numeric,0), COALESCE((sale->>'costo_total_usd')::numeric,0),
            COALESCE((sale->>'ganancia_neta_usd')::numeric,0), COALESCE((sale->>'tasa_cambio')::numeric,0),
-           sale->'items', sale->'pagos', COALESCE(sale->>'fecha',NOW()::text), COALESCE(sale->>'usuario',''),
+           sale->'items', sale->'pagos', COALESCE(NULLIF(sale->>'fecha','')::timestamptz, NOW()), COALESCE(sale->>'usuario',''),
            COALESCE(sale->>'notas',''), COALESCE(sale->>'estado','completada'),
            COALESCE((sale->>'total_positivo_inmediato_usd')::numeric,0),
            COALESCE((sale->>'total_cashea_pendiente_usd')::numeric,0), COALESCE(sale->>'estado_cashea','sin_cashea')
@@ -590,7 +590,7 @@ export async function insertSale(sale: any): Promise<boolean> {
       ${sale.porcentaje_iva || 0}, ${sale.iva_monto_usd || 0}, ${sale.total_usd || 0},
       ${sale.total_bs || 0}, ${sale.costo_total_usd || 0}, ${sale.ganancia_neta_usd || 0},
       ${sale.tasa_cambio || 0}, ${JSON.stringify(sale.items || [])}, ${JSON.stringify(sale.pagos || [])},
-      ${sale.fecha || new Date().toISOString()}, ${sale.usuario || ''}, ${sale.notas || ''},
+      ${sale.fecha ? new Date(sale.fecha).toISOString() : new Date().toISOString()}, ${sale.usuario || ''}, ${sale.notas || ''},
       ${sale.estado || 'completada'},
       ${sale.total_positivo_inmediato_usd || 0}, ${sale.total_cashea_pendiente_usd || 0},
       ${sale.estado_cashea || 'sin_cashea'}
