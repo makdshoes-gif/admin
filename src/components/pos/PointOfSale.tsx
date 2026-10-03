@@ -1454,7 +1454,7 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
                         )}
 
                         {/* List of current mixed payments */}
-                        {mixedPayments.map((pay, idx) => (}
+                        {mixedPayments.map((pay, idx) => (
 
                           <div
                             key={pay.id ? `mixed-pay-${pay.id}-${idx}` : `mixed-pay-${idx}`}
