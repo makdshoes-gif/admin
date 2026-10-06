@@ -1010,7 +1010,7 @@ export async function getNeonTableData(tableName: string, limit = 50): Promise<{
 export async function getAccountingManualEntries(start?: string, end?: string) {
   const sql = getNeonSql(); if (!sql) return [];
   await initDatabaseSchema();
-  if (start && end) return await sql`SELECT * FROM accounting_entries WHERE fecha >= ${start}::date AND fecha < (${end}::date + INTERVAL '1 day') ORDER BY fecha DESC, created_at DESC`;
+  if (start && end) return await sql`SELECT * FROM accounting_entries WHERE fecha::text::timestamptz >= ${start}::date AND fecha::text::timestamptz < (${end}::date + INTERVAL '1 day') ORDER BY fecha DESC, created_at DESC`;
   return await sql`SELECT * FROM accounting_entries ORDER BY fecha DESC, created_at DESC`;
 }
 
@@ -1034,8 +1034,8 @@ export async function getAccountingLedger(start?:string,end?:string) {
   const sql=getNeonSql(); if(!sql) return {entries:[], ledger:[]};
   await initDatabaseSchema();
   const manual = await getAccountingManualEntries(start,end);
-  const sales = start&&end ? await sql`SELECT * FROM sales_transactions WHERE fecha >= ${start}::date AND fecha < (${end}::date + INTERVAL '1 day') AND COALESCE(estado,'completada') <> 'anulada' ORDER BY fecha` : await sql`SELECT * FROM sales_transactions WHERE COALESCE(estado,'completada') <> 'anulada' ORDER BY fecha`;
-  const expenses = start&&end ? await sql`SELECT * FROM expenses WHERE fecha >= ${start}::date AND fecha < (${end}::date + INTERVAL '1 day') ORDER BY fecha` : await sql`SELECT * FROM expenses ORDER BY fecha`;
+  const sales = start&&end ? await sql`SELECT * FROM sales_transactions WHERE fecha::text::timestamptz >= ${start}::date AND fecha::text::timestamptz < (${end}::date + INTERVAL '1 day') AND COALESCE(estado,'completada') <> 'anulada' ORDER BY fecha` : await sql`SELECT * FROM sales_transactions WHERE COALESCE(estado,'completada') <> 'anulada' ORDER BY fecha`;
+  const expenses = start&&end ? await sql`SELECT * FROM expenses WHERE fecha::text::timestamptz >= ${start}::date AND fecha::text::timestamptz < (${end}::date + INTERVAL '1 day') ORDER BY fecha` : await sql`SELECT * FROM expenses ORDER BY fecha`;
   const entries:any[] = [];
   for(const s of sales as any[]){
     const total=Number(s.total_usd||0), iva=Number(s.iva_monto_usd||0), net=Math.max(0,total-iva), cost=Number(s.costo_total_usd||0);
