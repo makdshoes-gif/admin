@@ -257,6 +257,15 @@ export interface BankMovement {
   vinculado_tipo?: 'venta' | 'gasto' | 'transferencia' | 'otro';
   vinculado_id?: string;
   notas?: string;
+  cashea?: {
+    habilitado: boolean;
+    porcentaje_inicial: number;
+    numero_cuotas: number;
+    porcentajes_cuotas: number[];
+    cuenta_inicial?: string;
+    cuenta_financiamiento?: string;
+    referencia?: string;
+  };
   created_at: string;
 }
 
@@ -287,6 +296,15 @@ export interface CurrencyPurchase {
   referencia?: string;      // N° de orden Binance, ID de Zelle, etc.
   usuario: string;
   notas?: string;
+  cashea?: {
+    habilitado: boolean;
+    porcentaje_inicial: number;
+    numero_cuotas: number;
+    porcentajes_cuotas: number[];
+    cuenta_inicial?: string;
+    cuenta_financiamiento?: string;
+    referencia?: string;
+  };
   created_at: string;
 }
 
@@ -351,6 +369,15 @@ export interface Layaway {
   estado: LayawayStatus;
   usuario: string;
   notas?: string;
+  cashea?: {
+    habilitado: boolean;
+    porcentaje_inicial: number;
+    numero_cuotas: number;
+    porcentajes_cuotas: number[];
+    cuenta_inicial?: string;
+    cuenta_financiamiento?: string;
+    referencia?: string;
+  };
   created_at: string;
   updated_at: string;
 }

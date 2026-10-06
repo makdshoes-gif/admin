@@ -20,6 +20,9 @@ import {
   getLayawaysFromDb,
   saveLayawayToDb,
   reserveStockAndSaveLayaway,
+  getAccountingLedger,
+  saveAccountingEntry,
+  deleteAccountingEntry,
 } from './db.js';
 import { analyzeShoeImage } from './shoeAi.js';
 import { analyzeReceiptImage } from './receiptAi.js';
@@ -574,6 +577,12 @@ app.get('/api/catalog/products', async (_req, res) => {
 });
 
 // Endpoint para sincronizar / hacer commit directamente al repositorio de GitHub
+
+// API: Contabilidad - Libro Diario / Mayor
+app.get('/api/accounting', async (req,res)=>{ try { const data=await getAccountingLedger(String(req.query.start||'')||undefined,String(req.query.end||'')||undefined); res.json({source:'neon_postgres',data}); } catch(e:any){ res.status(500).json({error:e?.message||'No se pudo consultar contabilidad'}); } });
+app.post('/api/accounting/journal', async (req,res)=>{ try { const result=await saveAccountingEntry(req.body||{}); res.json({source:'neon_postgres',data:result}); } catch(e:any){ res.status(400).json({error:e?.message||'No se pudo guardar el asiento'}); } });
+app.delete('/api/accounting/journal/:id', async (req,res)=>{ try { await deleteAccountingEntry(req.params.id); res.json({ok:true}); } catch(e:any){ res.status(500).json({error:e?.message||'No se pudo eliminar el asiento'}); } });
+
 app.post('/api/catalog/sync-github', async (req, res) => {
   try {
     const {

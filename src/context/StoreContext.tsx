@@ -1082,54 +1082,45 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   // Update Product
   const updateProduct = (id: string, updates: Partial<ShoeProduct>) => {
-    let updatedItem: ShoeProduct | undefined;
-    let nextProductsList: ShoeProduct[] = [];
-    setProducts((prev) => {
-      const updated = prev.map((p) => {
-        if (p.id === id) {
-          updatedItem = { ...p, ...updates };
-          return updatedItem;
-        }
-        return p;
-      });
-      nextProductsList = updated;
-      try {
-        localStorage.setItem(`${STORAGE_KEY}_products`, JSON.stringify(updated));
-      } catch (e) {}
-      return updated;
-    });
+    const current = products.find((p) => p.id === id);
+    if (!current) return;
 
-    if (updatedItem) {
-      fetch('/api/products', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updatedItem),
-      })
-        .then(async (res) => {
-          if (!res.ok) {
-            const errJson = await res.json().catch(() => ({}));
-            addNotification(
-              'No se guardó en el servidor',
-              `El cambio quedó solo en esta pantalla. ${errJson.error || 'Verifica tu conexión e inténtalo de nuevo.'}`,
-              'critical'
-            );
-          }
-        })
-        .catch(() => {
+    const updatedItem: ShoeProduct = { ...current, ...updates };
+    const nextProductsList = products.map((p) => (p.id === id ? updatedItem : p));
+
+    setProducts(nextProductsList);
+    safeLocalStorageSet(`${STORAGE_KEY}_products`, JSON.stringify(nextProductsList));
+
+    // Persist the exact edited object. Do not rely on a setState updater callback,
+    // because React may execute that callback later and Neon sync could otherwise
+    // reload the old value (notably the shoe type).
+    fetch('/api/products', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updatedItem),
+    })
+      .then(async (res) => {
+        if (!res.ok) {
+          const errJson = await res.json().catch(() => ({}));
           addNotification(
-            'Sin conexión con el servidor',
-            'El cambio quedó solo en esta pantalla y no se sincronizó. Verifica tu conexión e inténtalo de nuevo.',
+            'No se guardó en el servidor',
+            `El cambio quedó solo en esta pantalla. ${errJson.error || 'Verifica tu conexión e inténtalo de nuevo.'}`,
             'critical'
           );
-        });
+          return;
+        }
+        // Keep the catalog authoritative after a successful edit.
+        try { await syncFromServer(false); } catch {}
+      })
+      .catch(() => {
+        addNotification(
+          'Sin conexión con el servidor',
+          'El cambio quedó localmente. Verifica Vercel/Neon y vuelve a guardar.',
+          'critical'
+        );
+      });
 
-
-    }
-
-    addNotification('Producto Actualizado', 'Información guardada con éxito.', 'info');
-    if (nextProductsList.length > 0) {
-      dispatchAutoWebhook(nextProductsList);
-    }
+    dispatchAutoWebhook(nextProductsList);
   };
 
   // Adjust stock in real time (Manual Batch entry, Scrap adjustment, Return)

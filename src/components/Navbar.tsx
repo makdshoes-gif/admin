@@ -26,14 +26,15 @@ import {
   Sparkles,
   LogOut,
   ShieldCheck,
-  Lock
+  Lock,
+  BookOpen
 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { CloudIntegrationModal } from './common/CloudIntegrationModal';
 import { MakdLogo } from './common/MakdLogo';
 import { UserWindowModal } from './common/UserWindowModal';
 
-export type NavigationTab = 'pos' | 'inventory' | 'layaways' | 'catalogo' | 'reports' | 'cash' | 'expenses' | 'conciliacion';
+export type NavigationTab = 'pos' | 'inventory' | 'layaways' | 'catalogo' | 'reports' | 'cash' | 'expenses' | 'conciliacion' | 'contabilidad';
 
 interface NavbarProps {
   activeTab: NavigationTab;
@@ -60,6 +61,7 @@ export const Sidebar: React.FC<{
     { id: 'cash' as const, label: 'Caja & Arqueo', icon: Wallet, count: null },
     { id: 'expenses' as const, label: 'Gastos & Fin de Mes', icon: TrendingDown, count: null },
     { id: 'conciliacion' as const, label: 'Conciliación Bancaria', icon: Landmark, count: null },
+    { id: 'contabilidad' as const, label: 'Contabilidad • Diario / Mayor', icon: BookOpen, count: null },
   ];
 
   return (

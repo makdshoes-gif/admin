@@ -429,10 +429,48 @@ export async function initDatabaseSchema() {
         estado VARCHAR(30) DEFAULT 'activo',
         usuario VARCHAR(100),
         notas TEXT,
+        cashea_config JSONB DEFAULT '{}'::jsonb,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
         updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
       );
     `;
+
+    await sql`ALTER TABLE layaways ADD COLUMN IF NOT EXISTS cashea_config JSONB DEFAULT '{}'::jsonb`;
+
+
+    // 8. Contabilidad: libro diario / mayor y asientos manuales
+    await sql`
+      CREATE TABLE IF NOT EXISTS accounting_entries (
+        id VARCHAR(64) PRIMARY KEY,
+        fecha TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+        numero_asiento VARCHAR(50),
+        tipo VARCHAR(30) DEFAULT 'manual',
+        origen VARCHAR(50),
+        origen_id VARCHAR(100),
+        sujeto VARCHAR(150),
+        rif VARCHAR(50),
+        documento VARCHAR(80),
+        tipo_documento VARCHAR(50),
+        metodo_pago VARCHAR(100),
+        tasa_dolar NUMERIC(12, 4) DEFAULT 0,
+        total_debe NUMERIC(14, 2) DEFAULT 0,
+        total_haber NUMERIC(14, 2) DEFAULT 0,
+        lineas JSONB NOT NULL,
+        libro_compra_venta BOOLEAN DEFAULT FALSE,
+        total_compras NUMERIC(14, 2) DEFAULT 0,
+        compras_no_gravadas NUMERIC(14, 2) DEFAULT 0,
+        compras_gravadas NUMERIC(14, 2) DEFAULT 0,
+        porcentaje_impuesto NUMERIC(6, 2) DEFAULT 0,
+        ingresos_brutos NUMERIC(14, 2) DEFAULT 0,
+        retencion_iva NUMERIC(14, 2) DEFAULT 0,
+        retencion_islr NUMERIC(14, 2) DEFAULT 0,
+        retencion_municipal NUMERIC(14, 2) DEFAULT 0,
+        observaciones TEXT,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      );
+    `;
+    await sql`ALTER TABLE accounting_entries ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()`;
 
     isInitialized = true;
     console.log('✅ Esquema Neon PostgreSQL verificado e inicializado correctamente.');
@@ -966,6 +1004,53 @@ export async function getNeonTableData(tableName: string, limit = 50): Promise<{
 }
 
 // ==========================================
+// Contabilidad: Diario / Mayor
+// ==========================================
+
+export async function getAccountingManualEntries(start?: string, end?: string) {
+  const sql = getNeonSql(); if (!sql) return [];
+  await initDatabaseSchema();
+  if (start && end) return await sql`SELECT * FROM accounting_entries WHERE fecha >= ${start}::date AND fecha < (${end}::date + INTERVAL '1 day') ORDER BY fecha DESC, created_at DESC`;
+  return await sql`SELECT * FROM accounting_entries ORDER BY fecha DESC, created_at DESC`;
+}
+
+export async function saveAccountingEntry(entry: any) {
+  const sql = getNeonSql(); if (!sql) throw new Error('Neon no configurado');
+  await initDatabaseSchema();
+  const lineas = Array.isArray(entry.lineas) ? entry.lineas : [];
+  const totalDebe = lineas.reduce((s:any,l:any)=>s+Number(l.debe||0),0);
+  const totalHaber = lineas.reduce((s:any,l:any)=>s+Number(l.haber||0),0);
+  if (!lineas.length || Math.abs(totalDebe-totalHaber)>0.01) throw new Error('El asiento debe estar cuadrado: Debe = Haber.');
+  const id = String(entry.id || `asi-${Date.now()}`);
+  await sql`INSERT INTO accounting_entries (id,fecha,numero_asiento,tipo,origen,origen_id,sujeto,rif,documento,tipo_documento,metodo_pago,tasa_dolar,total_debe,total_haber,lineas,libro_compra_venta,total_compras,compras_no_gravadas,compras_gravadas,porcentaje_impuesto,ingresos_brutos,retencion_iva,retencion_islr,retencion_municipal,observaciones,updated_at)
+    VALUES (${id}, COALESCE(${entry.fecha}::timestamptz,NOW()),${entry.numero_asiento||null},${entry.tipo||'manual'},${entry.origen||'manual'},${entry.origen_id||null},${entry.sujeto||null},${entry.rif||null},${entry.documento||null},${entry.tipo_documento||null},${entry.metodo_pago||null},${Number(entry.tasa_dolar||0)},${totalDebe},${totalHaber},${JSON.stringify(lineas)},${!!entry.libro_compra_venta},${Number(entry.total_compras||0)},${Number(entry.compras_no_gravadas||0)},${Number(entry.compras_gravadas||0)},${Number(entry.porcentaje_impuesto||0)},${Number(entry.ingresos_brutos||0)},${Number(entry.retencion_iva||0)},${Number(entry.retencion_islr||0)},${Number(entry.retencion_municipal||0)},${entry.observaciones||null},NOW())
+    ON CONFLICT (id) DO UPDATE SET fecha=EXCLUDED.fecha, numero_asiento=EXCLUDED.numero_asiento, tipo=EXCLUDED.tipo, sujeto=EXCLUDED.sujeto, rif=EXCLUDED.rif, documento=EXCLUDED.documento, tipo_documento=EXCLUDED.tipo_documento, metodo_pago=EXCLUDED.metodo_pago, tasa_dolar=EXCLUDED.tasa_dolar,total_debe=EXCLUDED.total_debe,total_haber=EXCLUDED.total_haber,lineas=EXCLUDED.lineas,libro_compra_venta=EXCLUDED.libro_compra_venta,total_compras=EXCLUDED.total_compras,compras_no_gravadas=EXCLUDED.compras_no_gravadas,compras_gravadas=EXCLUDED.compras_gravadas,porcentaje_impuesto=EXCLUDED.porcentaje_impuesto,ingresos_brutos=EXCLUDED.ingresos_brutos,retencion_iva=EXCLUDED.retencion_iva,retencion_islr=EXCLUDED.retencion_islr,retencion_municipal=EXCLUDED.retencion_municipal,observaciones=EXCLUDED.observaciones,updated_at=NOW()`;
+  return {id,totalDebe,totalHaber};
+}
+
+export async function deleteAccountingEntry(id:string) { const sql=getNeonSql(); if(!sql) throw new Error('Neon no configurado'); await sql`DELETE FROM accounting_entries WHERE id=${id}`; }
+
+export async function getAccountingLedger(start?:string,end?:string) {
+  const sql=getNeonSql(); if(!sql) return {entries:[], ledger:[]};
+  await initDatabaseSchema();
+  const manual = await getAccountingManualEntries(start,end);
+  const sales = start&&end ? await sql`SELECT * FROM sales_transactions WHERE fecha >= ${start}::date AND fecha < (${end}::date + INTERVAL '1 day') AND COALESCE(estado,'completada') <> 'anulada' ORDER BY fecha` : await sql`SELECT * FROM sales_transactions WHERE COALESCE(estado,'completada') <> 'anulada' ORDER BY fecha`;
+  const expenses = start&&end ? await sql`SELECT * FROM expenses WHERE fecha >= ${start}::date AND fecha < (${end}::date + INTERVAL '1 day') ORDER BY fecha` : await sql`SELECT * FROM expenses ORDER BY fecha`;
+  const entries:any[] = [];
+  for(const s of sales as any[]){
+    const total=Number(s.total_usd||0), iva=Number(s.iva_monto_usd||0), net=Math.max(0,total-iva), cost=Number(s.costo_total_usd||0);
+    const pays=Array.isArray(s.pagos)?s.pagos:[]; const lines:any[]=[];
+    for(const pay of pays){ const a=String(pay.cuenta||'Caja / Banco'); const amt=Number(pay.monto_equivalente_usd||0); if(amt<=0) continue; lines.push({cuenta: pay.estado_liquidacion==='pendiente_banco' || a==='Cashea' ? 'Cuentas por Cobrar - Cashea' : a, debe:amt, haber:0, clasificacion:'Activo'}); }
+    lines.push({cuenta:'Ventas de Mercancía',debe:0,haber:net,clasificacion:'Ingreso'}); if(iva>0) lines.push({cuenta:'IVA Débito Fiscal',debe:0,haber:iva,clasificacion:'Pasivo'}); if(cost>0){lines.push({cuenta:'Costo de Mercancía Vendida',debe:cost,haber:0,clasificacion:'Costo'});lines.push({cuenta:'Inventario de Mercancía',debe:0,haber:cost,clasificacion:'Activo'});}
+    entries.push({id:`venta-${s.id}`,fecha:s.fecha,numero_asiento:`V-${s.numero_factura||s.id}`,tipo:'venta',origen:'venta',origen_id:s.id,documento:s.numero_factura,tipo_documento:'Factura',sujeto:`${s.cliente_nombre||''} ${s.cliente_apellido||''}`.trim(),rif:s.cliente_rif||'',tasa_dolar:Number(s.tasa_cambio||0),lineas});
+  }
+  for(const e of expenses as any[]){ const amt=Number(e.monto_usd||0); if(amt<=0) continue; entries.push({id:`gasto-${e.id}`,fecha:e.fecha,numero_asiento:`G-${e.id}`,tipo:'gasto',origen:'gasto',origen_id:e.id,documento:e.comprobante_ref||e.id,tipo_documento:'Comprobante de Gasto',sujeto:e.beneficiario||'',metodo_pago:e.cuenta_origen,tasa_dolar:Number(e.tasa_cambio||0),lineas:[{cuenta:e.categoria,debe:amt,haber:0,clasificacion:'Gasto'},{cuenta:e.cuenta_origen||'Caja / Banco',debe:0,haber:amt,clasificacion:'Activo'}]}); }
+  for(const m of manual as any[]) entries.push({...m,lineas: typeof m.lineas==='string'?JSON.parse(m.lineas):m.lineas});
+  const ledgerMap:any={}; for(const en of entries){ for(const l of en.lineas||[]){const k=l.cuenta||'Sin cuenta'; if(!ledgerMap[k]) ledgerMap[k]={cuenta:k,debe:0,haber:0,movimientos:[]}; ledgerMap[k].debe+=Number(l.debe||0); ledgerMap[k].haber+=Number(l.haber||0); ledgerMap[k].movimientos.push({...l,fecha:en.fecha,documento:en.documento,numero_asiento:en.numero_asiento,origen:en.origen});}}
+  return {entries:entries.sort((a,b)=>new Date(b.fecha).getTime()-new Date(a.fecha).getTime()),ledger:Object.values(ledgerMap).map((x:any)=>({...x,saldo:x.debe-x.haber})).sort((a:any,b:any)=>a.cuenta.localeCompare(b.cuenta))};
+}
+
+// ==========================================
 // Apartados de Calzado (layaways)
 // ==========================================
 
@@ -1022,7 +1107,7 @@ export async function reserveStockAndSaveLayaway(layaway: any): Promise<{ ok: bo
            id, codigo_apartado, cliente_nombre, cliente_apellido, cliente_cedula, cliente_telefono,
            items, total_usd, total_bs, tasa_cambio, total_abonado_usd, total_abonado_bs,
            saldo_pendiente_usd, saldo_pendiente_bs, abonos, fecha_apartado, fecha_vencimiento,
-           estado, usuario, notas
+           estado, usuario, notas, cashea_config
          )
          SELECT
            data->>'id', data->>'codigo_apartado', COALESCE(data->>'cliente_nombre',''),
@@ -1033,7 +1118,7 @@ export async function reserveStockAndSaveLayaway(layaway: any): Promise<{ ok: bo
            COALESCE((data->>'total_abonado_bs')::numeric,0), COALESCE((data->>'saldo_pendiente_usd')::numeric,0),
            COALESCE((data->>'saldo_pendiente_bs')::numeric,0), COALESCE(data->'abonos','[]'::jsonb),
            COALESCE((data->>'fecha_apartado')::timestamptz,NOW()), COALESCE(data->>'fecha_vencimiento',''),
-           COALESCE(data->>'estado','activo'), COALESCE(data->>'usuario',''), COALESCE(data->>'notas','')
+           COALESCE(data->>'estado','activo'), COALESCE(data->>'usuario',''), COALESCE(data->>'notas',''), COALESCE(data->'cashea','{}'::jsonb)
          FROM layaway_data, validation
          WHERE validation.total_items = validation.matched_items AND validation.enough_stock
          ON CONFLICT (id) DO NOTHING
@@ -1081,7 +1166,7 @@ export async function saveLayawayToDb(layaway: any): Promise<boolean> {
         id, codigo_apartado, cliente_nombre, cliente_apellido, cliente_cedula,
         cliente_telefono, items, total_usd, total_bs, tasa_cambio,
         total_abonado_usd, total_abonado_bs, saldo_pendiente_usd, saldo_pendiente_bs,
-        abonos, fecha_apartado, fecha_vencimiento, estado, usuario, notas
+        abonos, fecha_apartado, fecha_vencimiento, estado, usuario, notas, cashea_config
       ) VALUES (
         ${layaway.id}, ${layaway.codigo_apartado || ''}, ${layaway.cliente_nombre || ''},
         ${layaway.cliente_apellido || ''}, ${layaway.cliente_cedula || ''},
@@ -1092,7 +1177,7 @@ export async function saveLayawayToDb(layaway: any): Promise<boolean> {
         ${JSON.stringify(layaway.abonos || [])},
         ${layaway.fecha_apartado || new Date().toISOString()},
         ${layaway.fecha_vencimiento || ''}, ${layaway.estado || 'activo'},
-        ${layaway.usuario || ''}, ${layaway.notas || ''}
+        ${layaway.usuario || ''}, ${layaway.notas || ''}, ${JSON.stringify(layaway.cashea || {})}
       )
       ON CONFLICT (id) DO UPDATE SET
         total_abonado_usd = EXCLUDED.total_abonado_usd,
@@ -1102,6 +1187,7 @@ export async function saveLayawayToDb(layaway: any): Promise<boolean> {
         abonos = EXCLUDED.abonos,
         estado = EXCLUDED.estado,
         notas = EXCLUDED.notas,
+        cashea_config = EXCLUDED.cashea_config,
         updated_at = NOW();
     `;
     return true;

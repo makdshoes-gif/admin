@@ -111,6 +111,30 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
   const [bulkQtyToApply, setBulkQtyToApply] = useState<number>(4);
   const [customTallaInput, setCustomTallaInput] = useState<string>('');
 
+  // Rehydrate every field when the modal switches to a different existing product.
+  // Without this, React keeps the previous modal state and a Neon sync can make the
+  // edited shoe type appear to revert to its old value.
+  useEffect(() => {
+    if (!isOpen || !editingProduct) return;
+    setEntryMode('single');
+    setCategoria((editingProduct.categoria as ProductCategory) || 'Calzado');
+    setNombre(editingProduct.nombre || '');
+    setSku(editingProduct.sku || '');
+    setMarca(editingProduct.marca || 'Nike');
+    setTipo(editingProduct.tipo || 'Botines Fútbol Campo');
+    setColor(editingProduct.color || 'Blanco');
+    setCosto(editingProduct.costo?.toString() || '40.00');
+    setPrecio(editingProduct.precio?.toString() || '80.00');
+    setStockMinimo(editingProduct.stock_minimo?.toString() || '2');
+    setImagen(editingProduct.imagen || '');
+    setDescripcion(editingProduct.descripcion || '');
+    setGenero(editingProduct.genero || 'Unisex');
+    setEsOriginal(editingProduct.es_original !== false);
+    setSingleTalla(editingProduct.talla || '38');
+    setSingleStock(editingProduct.stock?.toString() || '0');
+    setAiAnalysisSuccess(null);
+  }, [editingProduct?.id, isOpen]);
+
   // Auto-fill from initialAiData
   useEffect(() => {
     if (initialAiData) {

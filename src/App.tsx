@@ -16,6 +16,7 @@ const CashClosure = lazy(() => import('./components/cash/CashClosure').then((m) 
 const ExpensesManager = lazy(() => import('./components/expenses/ExpensesManager').then((m) => ({ default: m.ExpensesManager })));
 const BankReconciliationView = lazy(() => import('./components/banking/BankReconciliationView').then((m) => ({ default: m.BankReconciliationView })));
 import { LayawaysManager } from './components/layaways/LayawaysManager';
+const AccountingManager = lazy(() => import('./components/accounting/AccountingManager').then((m) => ({ default: m.AccountingManager })));
 const AdidasCatalogView = lazy(() => import('./components/catalog/AdidasCatalogView').then((m) => ({ default: m.AdidasCatalogView })));
 
 function ViewFallback() {
@@ -68,6 +69,7 @@ function AppContent() {
             {activeTab === 'cash' && <CashClosure />}
             {activeTab === 'expenses' && <ExpensesManager />}
             {activeTab === 'conciliacion' && <BankReconciliationView />}
+            {activeTab === 'contabilidad' && <AccountingManager />}
           </Suspense>
         </main>
 

@@ -16,7 +16,9 @@ import {
   Trash2,
   CreditCard,
   User,
-  ShoppingBag
+  ShoppingBag,
+  Percent,
+  Settings2
 } from 'lucide-react';
 import { useStore } from '../../context/StoreContext';
 import { Layaway, ShoeProduct, LayawayItem, LayawayPayment } from '../../types';
@@ -110,6 +112,15 @@ export const LayawaysManager: React.FC = () => {
   const [abonoMetodo, setAbonoMetodo] = useState('Efectivo $');
   const [abonoReferencia, setAbonoReferencia] = useState('');
 
+  // Cashea plan for layaways
+  const [casheaEnabled, setCasheaEnabled] = useState(false);
+  const [casheaInitialPercent, setCasheaInitialPercent] = useState(40);
+  const [casheaInstallments, setCasheaInstallments] = useState(3);
+  const [casheaInstallmentPercent, setCasheaInstallmentPercent] = useState<number[]>([20, 20, 20]);
+  const [casheaInitialAccount, setCasheaInitialAccount] = useState('Punto de Venta');
+  const [casheaFinanceAccount, setCasheaFinanceAccount] = useState('Cashea');
+
+
   // Payment Modal State
   const [nuevoAbonoMonto, setNuevoAbonoMonto] = useState<number>(0);
   const [nuevoAbonoMoneda, setNuevoAbonoMoneda] = useState<'USD' | 'Bs'>('USD');
@@ -129,6 +140,21 @@ export const LayawaysManager: React.FC = () => {
   }, [abonoInicialMonto, abonoMoneda, exchangeRate]);
 
   const saldoRestanteNuevo = Math.max(0, subtotalNuevoApartado - abonoInicialUsd);
+
+  const casheaPendingPercent = Math.max(0, 100 - casheaInitialPercent);
+  const casheaInstallmentAmounts = useMemo(() => {
+    const saldo = subtotalNuevoApartado * casheaPendingPercent / 100;
+    const perc = casheaInstallmentPercent.slice(0, casheaInstallments);
+    const totalPct = perc.reduce((a,b) => a+b, 0);
+    return perc.map((pct) => saldo * (totalPct > 0 ? pct / totalPct : 0));
+  }, [subtotalNuevoApartado, casheaPendingPercent, casheaInstallmentPercent, casheaInstallments]);
+
+  const normalizeCasheaPercentages = (count: number, initial: number) => {
+    const remaining = Math.max(0, 100 - initial);
+    const base = Math.floor((remaining / count) * 100) / 100;
+    const arr = Array.from({ length: count }, (_, i) => i === count - 1 ? Number((remaining - base * (count - 1)).toFixed(2)) : Number(base.toFixed(2)));
+    setCasheaInstallmentPercent(arr);
+  };
 
   // Selected Product helper
   const activeProduct = useMemo(() => {
@@ -235,6 +261,15 @@ export const LayawaysManager: React.FC = () => {
       estado: 'activo',
       usuario: userRole === 'admin' ? 'Administrador' : 'Cajera',
       notas: notas.trim(),
+      cashea: {
+        habilitado: casheaEnabled,
+        porcentaje_inicial: casheaEnabled ? casheaInitialPercent : 0,
+        numero_cuotas: casheaEnabled ? casheaInstallments : 0,
+        porcentajes_cuotas: casheaEnabled ? casheaInstallmentPercent.slice(0, casheaInstallments) : [],
+        cuenta_inicial: casheaEnabled ? casheaInitialAccount : undefined,
+        cuenta_financiamiento: casheaEnabled ? casheaFinanceAccount : undefined,
+        referencia: abonoReferencia.trim() || undefined,
+      },
     });
 
     // Reset Form
@@ -247,6 +282,10 @@ export const LayawaysManager: React.FC = () => {
     setAbonoInicialMonto(0);
     setAbonoReferencia('');
     setNotas('');
+    setCasheaEnabled(false);
+    setCasheaInitialPercent(40);
+    setCasheaInstallments(3);
+    normalizeCasheaPercentages(3, 40);
   };
 
   // Submit Additional Payment
@@ -367,7 +406,7 @@ export const LayawaysManager: React.FC = () => {
 
         <button
           id="new-layaway-btn"
-          onClick={() => setIsNewModalOpen(true)}
+          onClick={() => { setIsNewModalOpen(true); setCasheaEnabled(false); setCasheaInitialPercent(40); setCasheaInstallments(3); normalizeCasheaPercentages(3, 40); }}
           className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold shadow-xs cursor-pointer transition-colors shrink-0"
         >
           <Plus className="w-4 h-4" />
@@ -1017,6 +1056,55 @@ export const LayawaysManager: React.FC = () => {
                 </div>
               </div>
 
+              {/* Cashea Plan for Layaway */}
+              <div className="bg-amber-50/70 p-3 rounded-lg border border-amber-200 space-y-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5 font-bold text-amber-900">
+                    <Settings2 className="w-3.5 h-3.5" /> Plan Cashea para Apartado
+                  </div>
+                  <button type="button" onClick={() => setCasheaEnabled(!casheaEnabled)} className={`px-3 py-1 rounded-full text-[11px] font-black ${casheaEnabled ? 'bg-amber-500 text-white' : 'bg-white text-slate-600 border border-slate-200'}`}>
+                    {casheaEnabled ? 'ACTIVO' : 'ACTIVAR'}
+                  </button>
+                </div>
+                {casheaEnabled && (
+                  <div className="space-y-2">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      <div>
+                        <label className="text-[11px] font-bold text-slate-600 block mb-1">Inicial (%)</label>
+                        <input type="number" min="0" max="100" step="1" value={casheaInitialPercent} onChange={(e) => { const v=Math.min(100,Math.max(0,Number(e.target.value)||0)); setCasheaInitialPercent(v); normalizeCasheaPercentages(casheaInstallments,v); }} className="w-full px-2.5 py-1.5 bg-white border border-amber-200 rounded-lg font-mono font-bold" />
+                      </div>
+                      <div>
+                        <label className="text-[11px] font-bold text-slate-600 block mb-1">Número de cuotas</label>
+                        <select value={casheaInstallments} onChange={(e) => { const v=Math.min(12,Math.max(1,Number(e.target.value)||1)); setCasheaInstallments(v); normalizeCasheaPercentages(v,casheaInitialPercent); }} className="w-full px-2.5 py-1.5 bg-white border border-amber-200 rounded-lg font-bold">
+                          {Array.from({length:12},(_,i)=>i+1).map(n=><option key={n} value={n}>{n} cuota{n>1?'s':''}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-[11px] font-bold text-slate-600 block mb-1">Cuenta inicial</label>
+                        <select value={casheaInitialAccount} onChange={(e)=>setCasheaInitialAccount(e.target.value)} className="w-full px-2.5 py-1.5 bg-white border border-amber-200 rounded-lg">
+                          {availableAccounts.map(a=><option key={a.id} value={a.nombre}>{a.nombre} ({a.moneda})</option>)}
+                        </select>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {casheaInstallmentPercent.slice(0, casheaInstallments).map((pct, idx) => (
+                        <div key={idx} className="flex items-center gap-2 bg-white rounded-lg border border-amber-100 p-2">
+                          <span className="text-[11px] font-bold text-slate-600 flex-1">Cuota {idx+1}</span>
+                          <input type="number" min="0" max="100" step="0.01" value={pct} onChange={(e)=>{ const arr=[...casheaInstallmentPercent]; arr[idx]=Math.max(0,Number(e.target.value)||0); setCasheaInstallmentPercent(arr); }} className="w-20 px-2 py-1 text-right font-mono font-bold border border-slate-200 rounded" />
+                          <span className="text-[10px] text-slate-500">%</span>
+                          <span className="text-[10px] font-mono text-amber-700">${(casheaInstallmentAmounts[idx]||0).toFixed(2)}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2 text-[10px] font-bold">
+                      <span className="bg-white px-2 py-1 rounded border border-amber-100">Inicial: {casheaInitialPercent}%</span>
+                      <span className="bg-white px-2 py-1 rounded border border-amber-100">Financiado: {casheaPendingPercent}%</span>
+                      <span className="text-amber-800">Las cuotas se calculan sobre el saldo financiado.</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+
               {/* Notes */}
               <div>
                 <label className="text-slate-600 font-medium block mb-1">Notas / Observaciones</label>
@@ -1097,6 +1185,19 @@ export const LayawaysManager: React.FC = () => {
                   <span>{selectedLayawayForPayment.saldo_pendiente_bs.toFixed(0)} Bs</span>
                 </div>
               </div>
+
+              {selectedLayawayForPayment?.cashea?.habilitado && (
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl space-y-2">
+                  <div className="flex items-center gap-1.5 text-amber-900 font-black text-xs"><Percent className="w-3.5 h-3.5" /> Plan Cashea programado</div>
+                  <div className="text-[10px] text-slate-600">Inicial: {selectedLayawayForPayment.cashea.porcentaje_inicial}% • {selectedLayawayForPayment.cashea.numero_cuotas} cuotas • saldo financiado: {Math.max(0,100-selectedLayawayForPayment.cashea.porcentaje_inicial)}%</div>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {(selectedLayawayForPayment.cashea.porcentajes_cuotas || []).map((pct, idx) => {
+                      const amount = selectedLayawayForPayment.saldo_pendiente_usd * pct / Math.max(0.01, (selectedLayawayForPayment.cashea?.porcentajes_cuotas || []).reduce((a,b)=>a+b,0));
+                      return <button type="button" key={idx} onClick={()=>{ setNuevoAbonoMoneda('USD'); setNuevoAbonoMonto(Number(amount.toFixed(2))); setNuevoAbonoMetodo(selectedLayawayForPayment.cashea?.cuenta_financiamiento || 'Cashea'); }} className="px-2 py-1.5 bg-white border border-amber-200 rounded-lg text-[10px] font-black text-amber-800 hover:bg-amber-100">Cuota {idx+1}: ${(amount).toFixed(2)}</button>;
+                    })}
+                  </div>
+                </div>
+              )}
 
               {/* Payment Input */}
               <div>
