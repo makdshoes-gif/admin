@@ -494,7 +494,7 @@ export const SalesReports: React.FC = () => {
   };
 
   return (
-    <div className="max-w-7xl mx-auto space-y-5">
+    <div className="w-full max-w-none mx-0 space-y-4 px-2 sm:px-4 lg:px-5">
       
       {/* Top Banner with Automatic Refresh & Period Selector */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-white p-4 rounded-xl border border-slate-200 shadow-xs">

@@ -22,9 +22,7 @@ import {
   Printer,
   FileSpreadsheet,
   Sparkles,
-  Globe,
   UploadCloud,
-  Webhook
 } from 'lucide-react';
 import { useStore } from '../../context/StoreContext';
 import { ShoeProduct, ShoeType, MovementType, ProductCategory } from '../../types';
@@ -33,9 +31,7 @@ import { StockMovementModal } from './StockMovementModal';
 import { ShoeLabelModal } from './ShoeLabelModal';
 import { ExcelImportModal } from './ExcelImportModal';
 import { ShoeAiScannerModal } from './ShoeAiScannerModal';
-import { GitHubSyncModal } from '../catalog/GitHubSyncModal';
 import { BatchWhiteBackgroundModal } from './BatchWhiteBackgroundModal';
-import { InventoryWebhookModal } from './InventoryWebhookModal';
 import { ShoeAiResult } from '../../services/aiShoeService';
 
 export const InventoryManager: React.FC = () => {
@@ -76,12 +72,6 @@ export const InventoryManager: React.FC = () => {
   // Shoe Label Printing Modal state
   const [isLabelModalOpen, setIsLabelModalOpen] = useState(false);
   const [labelProduct, setLabelProduct] = useState<ShoeProduct | null>(null);
-
-  // GitHub Catalog Sync Modal state
-  const [isGitHubSyncOpen, setIsGitHubSyncOpen] = useState(false);
-
-  // External Inventory Webhook Sync Modal state
-  const [isWebhookModalOpen, setIsWebhookModalOpen] = useState(false);
 
   // Batch White Studio Background Modal state
   const [isBatchWhiteBgOpen, setIsBatchWhiteBgOpen] = useState(false);
@@ -261,29 +251,6 @@ export const InventoryManager: React.FC = () => {
           </button>
 
           <button
-            id="sync-github-catalog-btn"
-            type="button"
-            onClick={() => setIsGitHubSyncOpen(true)}
-            className="px-3 py-2 bg-white hover:bg-slate-50 text-slate-700 font-semibold rounded-xl text-xs flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer border border-slate-200 shrink-0 whitespace-nowrap"
-            title="Sincronizar inventario con el catálogo web en GitHub"
-          >
-            <Globe className="w-4 h-4 text-indigo-600" />
-            <span>Catálogo Web</span>
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-          </button>
-
-          <button
-            id="sync-webhook-catalog-btn"
-            type="button"
-            onClick={() => setIsWebhookModalOpen(true)}
-            className="px-3 py-2 bg-white hover:bg-slate-50 text-slate-700 font-semibold rounded-xl text-xs flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer border border-slate-200 shrink-0 whitespace-nowrap"
-            title="Sincronizar webhook automático"
-          >
-            <Webhook className="w-4 h-4 text-indigo-600" />
-            <span>Webhook</span>
-          </button>
-
-          <button
             id="batch-white-bg-btn"
             type="button"
             onClick={() => setIsBatchWhiteBgOpen(true)}
@@ -321,15 +288,6 @@ export const InventoryManager: React.FC = () => {
             >
               <RotateCcw className="w-3.5 h-3.5" />
               <span>Restaurar Copia Local</span>
-            </button>
-            <button
-              id="quick-sync-catalog-btn"
-              type="button"
-              onClick={() => setIsGitHubSyncOpen(true)}
-              className="px-3.5 py-2 bg-slate-900 hover:bg-black text-white font-bold text-xs rounded-lg flex items-center gap-1.5 transition cursor-pointer shadow-xs"
-            >
-              <Globe className="w-3.5 h-3.5 text-indigo-400" />
-              <span>Sincronizar Catálogo Web</span>
             </button>
           </div>
         </div>
@@ -597,14 +555,6 @@ export const InventoryManager: React.FC = () => {
                               >
                                 <RotateCcw className="w-3.5 h-3.5" />
                                 <span>Restaurar Copia Local</span>
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setIsGitHubSyncOpen(true)}
-                                className="px-3 py-1.5 bg-slate-900 hover:bg-black text-white font-bold text-xs rounded-lg flex items-center gap-1.5 transition cursor-pointer"
-                              >
-                                <Globe className="w-3.5 h-3.5 text-indigo-400" />
-                                <span>Sincronizar Catálogo Web</span>
                               </button>
                             </div>
                           )}
@@ -1098,23 +1048,10 @@ export const InventoryManager: React.FC = () => {
         allProducts={products}
       />
 
-      {/* Modal: GitHub Catalog Synchronization (makdshoes-gif/makd) */}
-      <GitHubSyncModal
-        isOpen={isGitHubSyncOpen}
-        onClose={() => setIsGitHubSyncOpen(false)}
-      />
-
       {/* Modal: Batch White Studio Background Processing */}
       <BatchWhiteBackgroundModal
         isOpen={isBatchWhiteBgOpen}
         onClose={() => setIsBatchWhiteBgOpen(false)}
-      />
-
-      {/* Modal: External Inventory Webhook Sync */}
-      <InventoryWebhookModal
-        isOpen={isWebhookModalOpen}
-        onClose={() => setIsWebhookModalOpen(false)}
-        products={products}
       />
 
     </div>

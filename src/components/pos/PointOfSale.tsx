@@ -506,7 +506,7 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
   };
 
   return (
-    <div className="max-w-7xl mx-auto space-y-5">
+    <div className="w-full max-w-none mx-0 space-y-4 px-2 sm:px-4 lg:px-5">
       
       {/* Top Banner / Stats */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-3.5 sm:p-4 rounded-2xl border border-slate-200 shadow-xs">
@@ -1775,7 +1775,7 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
                         </span>
                       </div>
                       <div className="text-left sm:text-right mt-1 sm:mt-0 min-w-0">
-                        <div className="text-2xl sm:text-3xl lg:text-4xl font-black text-indigo-700 font-mono tracking-tight truncate">
+                        <div className="text-xl sm:text-2xl lg:text-3xl font-black text-indigo-700 font-mono tracking-tight truncate">
                           ${totalUsd.toFixed(2)}
                         </div>
                         <div className="text-sm sm:text-lg font-bold text-slate-900 font-mono mt-0.5 truncate">

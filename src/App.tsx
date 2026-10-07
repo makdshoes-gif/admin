@@ -17,7 +17,6 @@ const ExpensesManager = lazy(() => import('./components/expenses/ExpensesManager
 const BankReconciliationView = lazy(() => import('./components/banking/BankReconciliationView').then((m) => ({ default: m.BankReconciliationView })));
 import { LayawaysManager } from './components/layaways/LayawaysManager';
 const AccountingManager = lazy(() => import('./components/accounting/AccountingManager').then((m) => ({ default: m.AccountingManager })));
-const AdidasCatalogView = lazy(() => import('./components/catalog/AdidasCatalogView').then((m) => ({ default: m.AdidasCatalogView })));
 
 function ViewFallback() {
   return (
@@ -59,13 +58,12 @@ function AppContent() {
         />
 
         {/* Dynamic Page Views with Suspense */}
-        <main className="flex-1 p-3 sm:p-6 overflow-y-auto pb-24 lg:pb-6">
+        <main className={`flex-1 overflow-y-auto pb-24 lg:pb-6 ${activeTab === 'pos' || activeTab === 'reports' ? 'p-0' : 'p-3 sm:p-6'}`}>
           <Suspense fallback={<ViewFallback />}>
             {activeTab === 'pos' && <PointOfSale onNavigateToLayaways={() => setActiveTab('layaways')} />}
             {activeTab === 'inventory' && <InventoryManager />}
             {activeTab === 'layaways' && <LayawaysManager />}
-            {activeTab === 'catalogo' && <AdidasCatalogView />}
-            {activeTab === 'reports' && <SalesReports />}
+                    {activeTab === 'reports' && <SalesReports />}
             {activeTab === 'cash' && <CashClosure />}
             {activeTab === 'expenses' && <ExpensesManager />}
             {activeTab === 'conciliacion' && <BankReconciliationView />}

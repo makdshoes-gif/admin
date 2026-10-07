@@ -471,6 +471,9 @@ export async function initDatabaseSchema() {
       );
     `;
     await sql`ALTER TABLE accounting_entries ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()`;
+    await sql`CREATE TABLE IF NOT EXISTS accounting_sequences (id INTEGER PRIMARY KEY, last_number INTEGER NOT NULL DEFAULT 0)`;
+    await sql`INSERT INTO accounting_sequences (id,last_number) VALUES (1,0) ON CONFLICT (id) DO NOTHING`;
+
 
     isInitialized = true;
     console.log('✅ Esquema Neon PostgreSQL verificado e inicializado correctamente.');
@@ -1014,6 +1017,11 @@ export async function getAccountingManualEntries(start?: string, end?: string) {
   return await sql`SELECT * FROM accounting_entries ORDER BY fecha DESC, created_at DESC`;
 }
 
+async function getNextAccountingEntryNumber(sql:any): Promise<string> {
+  const r = await sql`UPDATE accounting_sequences SET last_number=last_number+1 WHERE id=1 RETURNING last_number`;
+  return `AS-${String(Number(r[0]?.last_number || 1)).padStart(6,'0')}`;
+}
+
 export async function saveAccountingEntry(entry: any) {
   const sql = getNeonSql(); if (!sql) throw new Error('Neon no configurado');
   await initDatabaseSchema();
@@ -1022,8 +1030,9 @@ export async function saveAccountingEntry(entry: any) {
   const totalHaber = lineas.reduce((s:any,l:any)=>s+Number(l.haber||0),0);
   if (!lineas.length || Math.abs(totalDebe-totalHaber)>0.01) throw new Error('El asiento debe estar cuadrado: Debe = Haber.');
   const id = String(entry.id || `asi-${Date.now()}`);
+  const numeroAsiento = String(entry.numero_asiento || await getNextAccountingEntryNumber(sql));
   await sql`INSERT INTO accounting_entries (id,fecha,numero_asiento,tipo,origen,origen_id,sujeto,rif,documento,tipo_documento,metodo_pago,tasa_dolar,total_debe,total_haber,lineas,libro_compra_venta,total_compras,compras_no_gravadas,compras_gravadas,porcentaje_impuesto,ingresos_brutos,retencion_iva,retencion_islr,retencion_municipal,observaciones,updated_at)
-    VALUES (${id}, COALESCE(${entry.fecha}::timestamptz,NOW()),${entry.numero_asiento||null},${entry.tipo||'manual'},${entry.origen||'manual'},${entry.origen_id||null},${entry.sujeto||null},${entry.rif||null},${entry.documento||null},${entry.tipo_documento||null},${entry.metodo_pago||null},${Number(entry.tasa_dolar||0)},${totalDebe},${totalHaber},${JSON.stringify(lineas)},${!!entry.libro_compra_venta},${Number(entry.total_compras||0)},${Number(entry.compras_no_gravadas||0)},${Number(entry.compras_gravadas||0)},${Number(entry.porcentaje_impuesto||0)},${Number(entry.ingresos_brutos||0)},${Number(entry.retencion_iva||0)},${Number(entry.retencion_islr||0)},${Number(entry.retencion_municipal||0)},${entry.observaciones||null},NOW())
+    VALUES (${id}, COALESCE(${entry.fecha}::timestamptz,NOW()),${numeroAsiento},${entry.tipo||'manual'},${entry.origen||'manual'},${entry.origen_id||null},${entry.sujeto||null},${entry.rif||null},${entry.documento||null},${entry.tipo_documento||null},${entry.metodo_pago||null},${Number(entry.tasa_dolar||0)},${totalDebe},${totalHaber},${JSON.stringify(lineas)},${!!entry.libro_compra_venta},${Number(entry.total_compras||0)},${Number(entry.compras_no_gravadas||0)},${Number(entry.compras_gravadas||0)},${Number(entry.porcentaje_impuesto||0)},${Number(entry.ingresos_brutos||0)},${Number(entry.retencion_iva||0)},${Number(entry.retencion_islr||0)},${Number(entry.retencion_municipal||0)},${entry.observaciones||null},NOW())
     ON CONFLICT (id) DO UPDATE SET fecha=EXCLUDED.fecha, numero_asiento=EXCLUDED.numero_asiento, tipo=EXCLUDED.tipo, sujeto=EXCLUDED.sujeto, rif=EXCLUDED.rif, documento=EXCLUDED.documento, tipo_documento=EXCLUDED.tipo_documento, metodo_pago=EXCLUDED.metodo_pago, tasa_dolar=EXCLUDED.tasa_dolar,total_debe=EXCLUDED.total_debe,total_haber=EXCLUDED.total_haber,lineas=EXCLUDED.lineas,libro_compra_venta=EXCLUDED.libro_compra_venta,total_compras=EXCLUDED.total_compras,compras_no_gravadas=EXCLUDED.compras_no_gravadas,compras_gravadas=EXCLUDED.compras_gravadas,porcentaje_impuesto=EXCLUDED.porcentaje_impuesto,ingresos_brutos=EXCLUDED.ingresos_brutos,retencion_iva=EXCLUDED.retencion_iva,retencion_islr=EXCLUDED.retencion_islr,retencion_municipal=EXCLUDED.retencion_municipal,observaciones=EXCLUDED.observaciones,updated_at=NOW()`;
   return {id,totalDebe,totalHaber};
 }
@@ -1037,14 +1046,17 @@ export async function getAccountingLedger(start?:string,end?:string) {
   const sales = start&&end ? await sql`SELECT * FROM sales_transactions WHERE fecha::text::timestamptz >= ${start}::date AND fecha::text::timestamptz < (${end}::date + INTERVAL '1 day') AND COALESCE(estado,'completada') <> 'anulada' ORDER BY fecha` : await sql`SELECT * FROM sales_transactions WHERE COALESCE(estado,'completada') <> 'anulada' ORDER BY fecha`;
   const expenses = start&&end ? await sql`SELECT * FROM expenses WHERE fecha::text::timestamptz >= ${start}::date AND fecha::text::timestamptz < (${end}::date + INTERVAL '1 day') ORDER BY fecha` : await sql`SELECT * FROM expenses ORDER BY fecha`;
   const entries:any[] = [];
+  const enrichLine=(l:any, partida='01', ventaCompra='Venta')=>({partida,subcuenta:l.subcuenta||'',subclasificacion:l.subclasificacion||'',moneda:l.moneda||'USD',venta_compra:l.venta_compra||ventaCompra,...l});
   for(const s of sales as any[]){
     const total=Number(s.total_usd||0), iva=Number(s.iva_monto_usd||0), net=Math.max(0,total-iva), cost=Number(s.costo_total_usd||0);
     const pays=Array.isArray(s.pagos)?s.pagos:[]; const lineas:any[]=[];
     for(const pay of pays){ const a=String(pay.cuenta||'Caja / Banco'); const amt=Number(pay.monto_equivalente_usd||0); if(amt<=0) continue; lineas.push({cuenta: pay.estado_liquidacion==='pendiente_banco' || a==='Cashea' ? 'Cuentas por Cobrar - Cashea' : a, debe:amt, haber:0, clasificacion:'Activo'}); }
     lineas.push({cuenta:'Ventas de Mercancía',debe:0,haber:net,clasificacion:'Ingreso'}); if(iva>0) lineas.push({cuenta:'IVA Débito Fiscal',debe:0,haber:iva,clasificacion:'Pasivo'}); if(cost>0){lineas.push({cuenta:'Costo de Mercancía Vendida',debe:cost,haber:0,clasificacion:'Costo'});lineas.push({cuenta:'Inventario de Mercancía',debe:0,haber:cost,clasificacion:'Activo'});}
-    entries.push({id:`venta-${s.id}`,fecha:s.fecha,numero_asiento:`V-${s.numero_factura||s.id}`,tipo:'venta',origen:'venta',origen_id:s.id,documento:s.numero_factura,tipo_documento:'Factura',sujeto:`${s.cliente_nombre||''} ${s.cliente_apellido||''}`.trim(),rif:s.cliente_rif||'',tasa_dolar:Number(s.tasa_cambio||0),lineas});
+    lineas.forEach((l:any)=>{ if(!l.clasificacion) l.clasificacion=/Ventas/.test(l.cuenta)?'Ingreso':/IVA/.test(l.cuenta)?'Pasivo':/Costo/.test(l.cuenta)?'Costo':/Inventario|Caja|Banco|Cobrar/.test(l.cuenta)?'Activo':'General'; });
+    const enrichedLineas=lineas.map((l:any)=>enrichLine(l,'01','Venta'));
+    entries.push({id:`venta-${s.id}`,fecha:s.fecha,numero_asiento:`V-${s.numero_factura||s.id}`,tipo:'venta',origen:'venta',origen_id:s.id,documento:s.numero_factura,tipo_documento:'Factura',sujeto:`${s.cliente_nombre||''} ${s.cliente_apellido||''}`.trim(),rif:s.cliente_rif||'',tasa_dolar:Number(s.tasa_cambio||0),lineas:enrichedLineas});
   }
-  for(const e of expenses as any[]){ const amt=Number(e.monto_usd||0); if(amt<=0) continue; entries.push({id:`gasto-${e.id}`,fecha:e.fecha,numero_asiento:`G-${e.id}`,tipo:'gasto',origen:'gasto',origen_id:e.id,documento:e.comprobante_ref||e.id,tipo_documento:'Comprobante de Gasto',sujeto:e.beneficiario||'',metodo_pago:e.cuenta_origen,tasa_dolar:Number(e.tasa_cambio||0),lineas:[{cuenta:e.categoria,debe:amt,haber:0,clasificacion:'Gasto'},{cuenta:e.cuenta_origen||'Caja / Banco',debe:0,haber:amt,clasificacion:'Activo'}]}); }
+  for(const e of expenses as any[]){ const amt=Number(e.monto_usd||0); if(amt<=0) continue; entries.push({id:`gasto-${e.id}`,fecha:e.fecha,numero_asiento:`G-${e.id}`,tipo:'gasto',origen:'gasto',origen_id:e.id,documento:e.comprobante_ref||e.id,tipo_documento:'Comprobante de Gasto',sujeto:e.beneficiario||'',metodo_pago:e.cuenta_origen,tasa_dolar:Number(e.tasa_cambio||0),lineas:[enrichLine({cuenta:e.categoria,debe:amt,haber:0,clasificacion:'Gasto'},'01','Gasto'),enrichLine({cuenta:e.cuenta_origen||'Caja / Banco',debe:0,haber:amt,clasificacion:'Activo'},'01','Gasto')]}); }
   for(const m of manual as any[]) entries.push({...m,lineas: typeof m.lineas==='string'?JSON.parse(m.lineas):m.lineas});
   const ledgerMap:any={}; for(const en of entries){ for(const l of en.lineas||[]){const k=l.cuenta||'Sin cuenta'; if(!ledgerMap[k]) ledgerMap[k]={cuenta:k,debe:0,haber:0,movimientos:[]}; ledgerMap[k].debe+=Number(l.debe||0); ledgerMap[k].haber+=Number(l.haber||0); ledgerMap[k].movimientos.push({...l,fecha:en.fecha,documento:en.documento,numero_asiento:en.numero_asiento,origen:en.origen});}}
   return {entries:entries.sort((a,b)=>new Date(b.fecha).getTime()-new Date(a.fecha).getTime()),ledger:Object.values(ledgerMap).map((x:any)=>({...x,saldo:x.debe-x.haber})).sort((a:any,b:any)=>a.cuenta.localeCompare(b.cuenta))};
