@@ -11,12 +11,11 @@ import { LoginPage } from './components/auth/LoginPage';
 // Lazy load view components for maximum initial load performance and lightweight bundle
 const PointOfSale = lazy(() => import('./components/pos/PointOfSale').then((m) => ({ default: m.PointOfSale })));
 const InventoryManager = lazy(() => import('./components/inventory/InventoryManager').then((m) => ({ default: m.InventoryManager })));
-const SalesReports = lazy(() => import('./components/reports/SalesReports').then((m) => ({ default: m.SalesReports })));
+import { SalesReports } from './components/reports/SalesReports';
 const CashClosure = lazy(() => import('./components/cash/CashClosure').then((m) => ({ default: m.CashClosure })));
 const ExpensesManager = lazy(() => import('./components/expenses/ExpensesManager').then((m) => ({ default: m.ExpensesManager })));
 const BankReconciliationView = lazy(() => import('./components/banking/BankReconciliationView').then((m) => ({ default: m.BankReconciliationView })));
-const LayawaysManager = lazy(() => import('./components/layaways/LayawaysManager').then((m) => ({ default: m.LayawaysManager })));
-const AdidasCatalogView = lazy(() => import('./components/catalog/AdidasCatalogView').then((m) => ({ default: m.AdidasCatalogView })));
+import { LayawaysManager } from './components/layaways/LayawaysManager';
 const AccountingManager = lazy(() => import('./components/accounting/AccountingManager').then((m) => ({ default: m.AccountingManager })));
 
 function ViewFallback() {
@@ -59,17 +58,16 @@ function AppContent() {
         />
 
         {/* Dynamic Page Views with Suspense */}
-        <main className="flex-1 p-3 sm:p-6 overflow-y-auto pb-24 lg:pb-6">
+        <main className={`flex-1 overflow-y-auto pb-24 lg:pb-6 ${activeTab === 'pos' || activeTab === 'reports' ? 'p-0' : 'p-3 sm:p-6'}`}>
           <Suspense fallback={<ViewFallback />}>
             {activeTab === 'pos' && <PointOfSale onNavigateToLayaways={() => setActiveTab('layaways')} />}
             {activeTab === 'inventory' && <InventoryManager />}
             {activeTab === 'layaways' && <LayawaysManager />}
-            {activeTab === 'catalogo' && <AdidasCatalogView />}
-            {activeTab === 'reports' && <SalesReports />}
+                    {activeTab === 'reports' && <SalesReports />}
             {activeTab === 'cash' && <CashClosure />}
             {activeTab === 'expenses' && <ExpensesManager />}
             {activeTab === 'conciliacion' && <BankReconciliationView />}
-            {activeTab === 'accounting' && <AccountingManager />}
+            {activeTab === 'contabilidad' && <AccountingManager />}
           </Suspense>
         </main>
 

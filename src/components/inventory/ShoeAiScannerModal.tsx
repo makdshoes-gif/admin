@@ -157,8 +157,10 @@ export const ShoeAiScannerModal: React.FC<ShoeAiScannerModalProps> = ({
         stream = await navigator.mediaDevices.getUserMedia({
           video: {
             facingMode: { ideal: facing },
-            width: { ideal: 1280 },
-            height: { ideal: 720 },
+            width: { ideal: 1920, min: 1280 },
+            height: { ideal: 1440, min: 720 },
+            aspectRatio: { ideal: 4 / 3 },
+            frameRate: { ideal: 30, max: 30 },
           },
           audio: false,
         });
@@ -171,6 +173,14 @@ export const ShoeAiScannerModal: React.FC<ShoeAiScannerModalProps> = ({
       }
 
       streamRef.current = stream;
+      try {
+        const track = stream.getVideoTracks()[0];
+        const caps = track?.getCapabilities?.() as any;
+        const advanced: any[] = [];
+        if (caps?.focusMode?.includes?.('continuous')) advanced.push({ focusMode: 'continuous' });
+        if (caps?.exposureMode?.includes?.('continuous')) advanced.push({ exposureMode: 'continuous' });
+        if (advanced.length) await track.applyConstraints({ advanced });
+      } catch {}
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         videoRef.current.play().catch((err) => console.warn('Video play warning:', err));
@@ -213,15 +223,15 @@ export const ShoeAiScannerModal: React.FC<ShoeAiScannerModalProps> = ({
         ctx.scale(-1, 1);
       }
       ctx.drawImage(video, 0, 0, width, height);
-      const rawDataUrl = canvas.toDataURL('image/jpeg', 0.88);
+      const rawDataUrl = canvas.toDataURL('image/jpeg', 0.94);
       stopCamera();
 
       // Compress to optimal web weight (< 500 KB)
       setIsCompressing(true);
       try {
         const compressed = await compressImageDataUrl(rawDataUrl, {
-          maxDimension: 1280,
-          quality: 0.82,
+          maxDimension: 1600,
+          quality: 0.88,
           maxSizeBytes: 500 * 1024,
         });
         setOriginalImage(compressed.dataUrl);
@@ -431,18 +441,18 @@ export const ShoeAiScannerModal: React.FC<ShoeAiScannerModalProps> = ({
                       playsInline
                       muted
                       autoPlay
-                      className="w-full h-full object-cover"
+                      className="w-full h-full object-contain bg-slate-950"
                     />
 
                     {/* Sneaker Viewfinder Reticle Overlay */}
                     <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center p-6">
-                      <div className="w-full h-full max-w-[280px] max-h-[220px] border-2 border-dashed border-indigo-400/60 rounded-2xl relative flex items-center justify-center">
+                      <div className="w-[86%] h-[76%] max-w-[560px] max-h-[360px] border-2 border-dashed border-indigo-400/60 rounded-2xl relative flex items-center justify-center">
                         <div className="absolute top-0 left-0 w-4 h-4 border-t-2 border-l-2 border-indigo-400 -mt-1 -ml-1" />
                         <div className="absolute top-0 right-0 w-4 h-4 border-t-2 border-r-2 border-indigo-400 -mt-1 -mr-1" />
                         <div className="absolute bottom-0 left-0 w-4 h-4 border-b-2 border-l-2 border-indigo-400 -mb-1 -ml-1" />
                         <div className="absolute bottom-0 right-0 w-4 h-4 border-b-2 border-r-2 border-indigo-400 -mb-1 -mr-1" />
                         <span className="text-[10px] font-mono text-indigo-300/80 bg-slate-950/80 px-2 py-0.5 rounded-full uppercase tracking-wider">
-                          Encuadre de Zapato
+                          Mantén el calzado completo dentro del marco
                         </span>
                       </div>
                     </div>

@@ -14,14 +14,12 @@ import {
   DollarSign,
   ShieldCheck,
   Clock,
-  Sparkles,
-  FileText
+  Sparkles
 } from 'lucide-react';
 import { Sale } from '../../types';
 import { useStore } from '../../context/StoreContext';
 import { BarcodeSvg } from './BarcodeSvg';
 import { MakdLogo } from './MakdLogo';
-import { generateIndividualReceiptPdf } from '../../utils/salesPdfGenerator';
 
 interface ReceiptModalProps {
   sale: Sale | null;
@@ -362,7 +360,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ sale, onClose }) => 
                   MÉTODOS DE PAGO RECIBIDOS
                 </div>
                 {sale.pagos.map((p, idx) => {
-                  const isCashea = p.cuenta.toLowerCase().includes('cashea');
+                  const isCashea = (p.cuenta || '').toLowerCase().includes('cashea');
                   return (
                     <div key={idx} className="flex justify-between items-baseline">
                       <div className="min-w-0 pr-2">
@@ -591,16 +589,6 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ sale, onClose }) => 
           >
             <Printer className="w-4 h-4 shrink-0" />
             <span>Imprimir Ticket</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => generateIndividualReceiptPdf(sale, sale.tasa_cambio)}
-            className="py-2.5 sm:py-3 px-3 sm:px-4 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-bold text-xs sm:text-sm flex items-center justify-center gap-1.5 cursor-pointer transition shadow-xs whitespace-nowrap shrink-0"
-            title="Descargar Comprobante en PDF"
-          >
-            <FileText className="w-4 h-4 shrink-0" />
-            <span>PDF</span>
           </button>
 
           <button

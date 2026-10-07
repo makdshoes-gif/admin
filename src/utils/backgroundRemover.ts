@@ -243,6 +243,15 @@ export async function removeBackgroundClientCanvas(imageSrc: string): Promise<st
     maxY = Math.round(height * 0.88);
   }
 
+  // Keep generous safety margins around the detected shoe. The previous exact bounding-box
+  // crop could clip the toe, heel, sole or laces when segmentation touched the edge.
+  const padX = Math.max(24, Math.round((maxX - minX + 1) * 0.10));
+  const padY = Math.max(24, Math.round((maxY - minY + 1) * 0.10));
+  minX = Math.max(0, minX - padX);
+  maxX = Math.min(width - 1, maxX + padX);
+  minY = Math.max(0, minY - padY);
+  maxY = Math.min(height - 1, maxY + padY);
+
   const rawShoeWidth = Math.max(10, maxX - minX + 1);
   const rawShoeHeight = Math.max(10, maxY - minY + 1);
 

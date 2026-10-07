@@ -47,7 +47,6 @@ export interface ServerStoreState {
   expenses: any[];
   bankMovements: any[];
   currencyPurchases: any[];
-  accountingRecords?: any[];
   exchangeRate: number;
   historicalRates?: Record<string, number>;
   adminPin: string;
@@ -78,7 +77,6 @@ function readServerStore(): ServerStoreState {
         expenses: Array.isArray(data.expenses) ? data.expenses : [],
         bankMovements: Array.isArray(data.bankMovements) ? data.bankMovements : [],
         currencyPurchases: Array.isArray(data.currencyPurchases) ? data.currencyPurchases : [],
-        accountingRecords: Array.isArray(data.accountingRecords) ? data.accountingRecords : [],
         exchangeRate: typeof data.exchangeRate === 'number' ? data.exchangeRate : 68.50,
         historicalRates: (data.historicalRates && typeof data.historicalRates === 'object') ? data.historicalRates : {},
         adminPin: data.adminPin || '1234',
@@ -111,7 +109,6 @@ function readServerStore(): ServerStoreState {
     expenses: [],
     bankMovements: [],
     currencyPurchases: [],
-    accountingRecords: [],
     exchangeRate: 68.50,
     historicalRates: {},
     adminPin: '1234',
@@ -837,52 +834,6 @@ async function startServer() {
       writeServerStore(store);
     }
     res.json({ success: true });
-  });
-
-  // Centralized Accounting API (Libro Diario / Patentado V10)
-  app.get('/api/accounting', (req, res) => {
-    const store = readServerStore();
-    res.json({ success: true, data: store.accountingRecords || [] });
-  });
-
-  app.post('/api/accounting', (req, res) => {
-    const record = req.body;
-    if (!record || !record.id) {
-      return res.status(400).json({ success: false, error: 'Registro inválido' });
-    }
-    const store = readServerStore();
-    if (!Array.isArray(store.accountingRecords)) {
-      store.accountingRecords = [];
-    }
-    const existingIdx = store.accountingRecords.findIndex((r: any) => r.id === record.id);
-    if (existingIdx >= 0) {
-      store.accountingRecords[existingIdx] = { ...store.accountingRecords[existingIdx], ...record };
-    } else {
-      store.accountingRecords.unshift(record);
-    }
-    writeServerStore(store);
-    res.json({ success: true, saved: true, id: record.id });
-  });
-
-  app.delete('/api/accounting/:id', (req, res) => {
-    const { id } = req.params;
-    const store = readServerStore();
-    if (Array.isArray(store.accountingRecords)) {
-      store.accountingRecords = store.accountingRecords.filter((r: any) => r.id !== id);
-      writeServerStore(store);
-    }
-    res.json({ success: true, id });
-  });
-
-  app.post('/api/accounting/sync-all', (req, res) => {
-    const { records } = req.body;
-    if (Array.isArray(records)) {
-      const store = readServerStore();
-      store.accountingRecords = records;
-      writeServerStore(store);
-      return res.json({ success: true, count: records.length });
-    }
-    res.status(400).json({ success: false, error: 'records array requerido' });
   });
 
   // Cash Closures API

@@ -10,10 +10,19 @@ import {
   normalizeExpenses,
   normalizeBankReconciliations,
   insertSale,
+  deductStockForSaleItems,
+  saveSaleAndDeductStock,
+  getNextInvoiceNumber,
   updateSale,
   voidSale,
   getSalesClosures,
   addSalesClosure,
+  getLayawaysFromDb,
+  saveLayawayToDb,
+  reserveStockAndSaveLayaway,
+  getAccountingLedger,
+  saveAccountingEntry,
+  deleteAccountingEntry,
 } from './db.js';
 import { analyzeShoeImage } from './shoeAi.js';
 import { analyzeReceiptImage } from './receiptAi.js';
@@ -74,12 +83,13 @@ app.get('/api/store/state', async (_req, res) => {
   if (sql) {
     try {
       await initDatabaseSchema();
-      const [products, sales, expenses, reconciliations, closures] = await Promise.all([
+      const [products, sales, expenses, reconciliations, closures, layaways] = await Promise.all([
         sql`SELECT * FROM shoe_products ORDER BY nombre ASC`,
         sql`SELECT * FROM sales_transactions ORDER BY fecha DESC`,
         sql`SELECT * FROM expenses ORDER BY fecha DESC, created_at DESC`,
         sql`SELECT * FROM bank_reconciliations ORDER BY fecha DESC, created_at DESC`,
         getSalesClosures(),
+        getLayawaysFromDb(),
       ]);
 
       return res.json({
@@ -93,25 +103,69 @@ app.get('/api/store/state', async (_req, res) => {
           expenses: normalizeExpenses(expenses as any[]),
           accounts: [],
           bankMovements: normalizeBankReconciliations(reconciliations as any[]),
+          layaways,
         },
       });
     } catch (err) {
       console.error('Error al sincronizar estado de Neon:', err);
+      return res.status(503).json({
+        success: false,
+        source: 'neon_error',
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
   }
 
-  res.json({
-    success: true,
-    source: 'local_fallback',
-    data: {
-      products: [],
-      sales: [],
-      movements: [],
-      cashClosures: [],
-      expenses: [],
-      accounts: [],
-    },
+  return res.status(503).json({
+    success: false,
+    source: 'no_database_configured',
+    error: 'DATABASE_URL no configurada en Vercel.',
   });
+});
+
+// Apartados de calzado
+app.get('/api/layaways', async (_req, res) => {
+  const sql = getNeonSql();
+  if (!sql) return res.status(503).json({ source: 'no_database_configured', error: 'DATABASE_URL no configurada.', data: [] });
+  try {
+    const data = await getLayawaysFromDb();
+    return res.json({ source: 'neon_postgres', data });
+  } catch (err) {
+    console.error('Error leyendo apartados en Neon:', err);
+    return res.status(503).json({ source: 'neon_error', error: 'No se pudieron leer los apartados.', data: [] });
+  }
+});
+
+app.post('/api/layaways', async (req, res) => {
+  const sql = getNeonSql();
+  if (!sql) return res.status(503).json({ saved: false, error: 'DATABASE_URL no configurada.' });
+  try {
+    const layaway = req.body;
+    if (!layaway?.id || !Array.isArray(layaway.items)) {
+      return res.status(400).json({ saved: false, error: 'Apartado inválido.' });
+    }
+    await initDatabaseSchema();
+    const result = await reserveStockAndSaveLayaway(layaway);
+    if (!result.ok) return res.status(400).json({ saved: false, error: result.error || 'No se pudo guardar el apartado.' });
+    return res.json({ saved: true, alreadySaved: !!result.alreadySaved, id: layaway.id });
+  } catch (err) {
+    console.error('Error guardando apartado en Neon:', err);
+    return res.status(500).json({ saved: false, error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+app.put('/api/layaways/:id', async (req, res) => {
+  const sql = getNeonSql();
+  if (!sql) return res.status(503).json({ updated: false, error: 'DATABASE_URL no configurada.' });
+  try {
+    const id = req.params.id;
+    const layaway = { ...(req.body || {}), id };
+    const ok = await saveLayawayToDb(layaway);
+    return res.json({ updated: ok, id });
+  } catch (err) {
+    console.error('Error actualizando apartado en Neon:', err);
+    return res.status(500).json({ updated: false, error: err instanceof Error ? err.message : String(err) });
+  }
 });
 
 // Products
@@ -152,8 +206,8 @@ app.post('/api/products', async (req, res) => {
         imagen_url, ubicacion, descripcion, es_original
       ) VALUES (
         ${p.id}, ${p.nombre}, ${p.marca}, ${p.modelo || ''}, ${p.color || ''},
-        ${p.genero || 'Unisex'}, ${p.categoria || 'Casual'}, ${p.talla}, ${p.sku},
-        ${p.precio}, ${p.costo}, ${p.stock}, ${p.stock_minimo || 3}, ${p.stock_maximo || 30},
+        ${p.genero || 'Unisex'}, ${p.categoria || 'Casual'}, ${p.talla || 'Única'}, ${p.sku || `SKU-${p.id}`},
+        ${Number(p.precio) || 0}, ${Number(p.costo) || 0}, ${Number(p.stock) || 0}, ${p.stock_minimo || 3}, ${p.stock_maximo || 30},
         ${p.imagen_url || p.imagen || null}, ${p.ubicacion || 'Almacén'}, ${p.descripcion || ''},
         ${p.es_original !== false}
       )
@@ -174,7 +228,8 @@ app.post('/api/products', async (req, res) => {
         imagen_url = EXCLUDED.imagen_url,
         ubicacion = EXCLUDED.ubicacion,
         descripcion = EXCLUDED.descripcion,
-        es_original = EXCLUDED.es_original;
+        es_original = EXCLUDED.es_original,
+        updated_at = NOW();
     `;
     res.json({ saved: true, id: p.id, product: p });
   } catch (err) {
@@ -224,8 +279,8 @@ app.post('/api/products/bulk', async (req, res) => {
           imagen_url, ubicacion, descripcion
         ) VALUES (
           ${p.id}, ${p.nombre}, ${p.marca}, ${p.modelo || ''}, ${p.color || ''},
-          ${p.genero || 'Unisex'}, ${p.categoria || 'Casual'}, ${p.talla}, ${p.sku},
-          ${p.precio}, ${p.costo}, ${p.stock}, ${p.stock_minimo || 3}, ${p.stock_maximo || 30},
+          ${p.genero || 'Unisex'}, ${p.categoria || 'Casual'}, ${p.talla || 'Única'}, ${p.sku || `SKU-${p.id}`},
+          ${Number(p.precio) || 0}, ${Number(p.costo) || 0}, ${Number(p.stock) || 0}, ${p.stock_minimo || 3}, ${p.stock_maximo || 30},
           ${p.imagen_url || p.imagen || null}, ${p.ubicacion || 'Almacén'}, ${p.descripcion || ''}
         )
         ON CONFLICT (id) DO UPDATE SET
@@ -270,22 +325,57 @@ app.get('/api/sales', async (_req, res) => {
 });
 
 // Crear una nueva venta (se llama justo al completar la venta en el POS)
-app.post('/api/sales', async (req, res) => {
-  const sale = req.body;
-  if (!sale || !sale.id) {
-    return res.status(400).json({ saved: false, error: 'Datos de venta inválidos' });
+app.post('/api/invoices/next', async (_req, res) => {
+  const sql = getNeonSql();
+  if (!sql) return res.status(503).json({ error: 'DATABASE_URL no configurada en Vercel.' });
+  try {
+    const numero = await getNextInvoiceNumber();
+    if (!numero) return res.status(500).json({ error: 'No se pudo generar el número de factura.' });
+    res.json({ numero_factura: numero });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
   }
+});
+
+app.post('/api/sales', async (req, res) => {
+  const sale = req.body?.sale || req.body;
+
+  if (!sale || !sale.id || !Array.isArray(sale.items)) {
+    return res.status(400).json({
+      saved: false,
+      error: 'Datos de venta inválidos: faltan id o items.',
+    });
+  }
+
   const sql = getNeonSql();
   if (!sql) {
-    return res.status(503).json({ saved: false, error: 'DATABASE_URL no configurada en Vercel: la venta no se guardó en el servidor.' });
+    return res.status(503).json({
+      saved: false,
+      error: 'DATABASE_URL no configurada en Vercel: la venta no se guardó en el servidor.',
+    });
   }
+
   try {
     await initDatabaseSchema();
-    await insertSale(sale);
-    res.json({ saved: true, id: sale.id });
+
+    const saleResult = await saveSaleAndDeductStock(sale);
+    if (!saleResult.ok) {
+      throw new Error(saleResult.error || 'No se pudo registrar la venta y actualizar el inventario.');
+    }
+
+    return res.json({
+      saved: true,
+      alreadySaved: !!saleResult.alreadySaved,
+      id: sale.id,
+      stockUpdated: !saleResult.alreadySaved,
+      updatedProducts: saleResult.updatedProducts || [],
+    });
   } catch (err) {
     console.error('Error guardando venta en Neon:', err);
-    res.status(500).json({ saved: false, error: err instanceof Error ? err.message : String(err) });
+    return res.status(500).json({
+      saved: false,
+      error: err instanceof Error ? err.message : String(err),
+    });
   }
 });
 
@@ -391,6 +481,73 @@ app.get('/api/bank-reconciliations', async (_req, res) => {
   }
 });
 
+// Bank Reconciliations - persistencia real en Neon
+app.post('/api/bank-reconciliations', async (req, res) => {
+  const sql = getNeonSql();
+  const item = req.body || {};
+  if (!sql) return res.status(503).json({ saved: false, error: 'DATABASE_URL no configurada en Vercel.' });
+  if (!item.id || !item.fecha || !item.banco || !item.referencia || !item.descripcion) {
+    return res.status(400).json({ saved: false, error: 'Faltan datos obligatorios del movimiento bancario.' });
+  }
+  try {
+    await initDatabaseSchema();
+    await sql`
+      INSERT INTO bank_reconciliations (
+        id, fecha, banco, tipo, referencia, descripcion, monto_bs, monto_usd,
+        estado_conciliacion, vinculado_tipo, vinculado_id, notas
+      ) VALUES (
+        ${item.id}, ${item.fecha}, ${item.banco}, ${item.tipo || 'credito_ingreso'},
+        ${item.referencia}, ${item.descripcion}, ${Number(item.monto_bs) || 0},
+        ${item.monto_usd == null ? null : Number(item.monto_usd) || 0},
+        ${item.estado_conciliacion || 'pendiente'}, ${item.vinculado_tipo || null},
+        ${item.vinculado_id || null}, ${item.notas || ''}
+      )
+      ON CONFLICT (id) DO UPDATE SET
+        fecha = EXCLUDED.fecha, banco = EXCLUDED.banco, tipo = EXCLUDED.tipo,
+        referencia = EXCLUDED.referencia, descripcion = EXCLUDED.descripcion,
+        monto_bs = EXCLUDED.monto_bs, monto_usd = EXCLUDED.monto_usd,
+        estado_conciliacion = EXCLUDED.estado_conciliacion,
+        vinculado_tipo = EXCLUDED.vinculado_tipo, vinculado_id = EXCLUDED.vinculado_id,
+        notas = EXCLUDED.notas, updated_at = NOW()
+    `;
+    res.json({ saved: true, id: item.id });
+  } catch (err) {
+    console.error('Error guardando conciliación bancaria:', err);
+    res.status(500).json({ saved: false, error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+app.put('/api/bank-reconciliations/:id', async (req, res) => {
+  const sql = getNeonSql();
+  const { id } = req.params;
+  if (!sql) return res.status(503).json({ updated: false, error: 'DATABASE_URL no configurada en Vercel.' });
+  const { estado_conciliacion, notas, vinculado_tipo, vinculado_id, fecha, banco, tipo, referencia, descripcion, monto_bs, monto_usd } = req.body || {};
+  try {
+    await initDatabaseSchema();
+    const rows = await sql`
+      UPDATE bank_reconciliations SET
+        estado_conciliacion = COALESCE(${estado_conciliacion ?? null}, estado_conciliacion),
+        notas = COALESCE(${notas ?? null}, notas),
+        vinculado_tipo = COALESCE(${vinculado_tipo ?? null}, vinculado_tipo),
+        vinculado_id = COALESCE(${vinculado_id ?? null}, vinculado_id),
+        fecha = COALESCE(${fecha ?? null}, fecha),
+        banco = COALESCE(${banco ?? null}, banco),
+        tipo = COALESCE(${tipo ?? null}, tipo),
+        referencia = COALESCE(${referencia ?? null}, referencia),
+        descripcion = COALESCE(${descripcion ?? null}, descripcion),
+        monto_bs = COALESCE(${monto_bs == null ? null : Number(monto_bs)}, monto_bs),
+        monto_usd = COALESCE(${monto_usd == null ? null : Number(monto_usd)}, monto_usd),
+        updated_at = NOW()
+      WHERE id = ${id}
+      RETURNING id
+    `;
+    res.json({ updated: rows.length > 0, id });
+  } catch (err) {
+    console.error('Error actualizando conciliación bancaria:', err);
+    res.status(500).json({ updated: false, error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
 // ==========================================
 // CATÁLOGO PÚBLICO & SINCRONIZACIÓN CON GITHUB
 // ==========================================
@@ -420,6 +577,12 @@ app.get('/api/catalog/products', async (_req, res) => {
 });
 
 // Endpoint para sincronizar / hacer commit directamente al repositorio de GitHub
+
+// API: Contabilidad - Libro Diario / Mayor
+app.get('/api/accounting', async (req,res)=>{ try { const data=await getAccountingLedger(String(req.query.start||'')||undefined,String(req.query.end||'')||undefined); res.json({source:'neon_postgres',data}); } catch(e:any){ res.status(500).json({error:e?.message||'No se pudo consultar contabilidad'}); } });
+app.post('/api/accounting/journal', async (req,res)=>{ try { const result=await saveAccountingEntry(req.body||{}); res.json({source:'neon_postgres',data:result}); } catch(e:any){ res.status(400).json({error:e?.message||'No se pudo guardar el asiento'}); } });
+app.delete('/api/accounting/journal/:id', async (req,res)=>{ try { await deleteAccountingEntry(req.params.id); res.json({ok:true}); } catch(e:any){ res.status(500).json({error:e?.message||'No se pudo eliminar el asiento'}); } });
+
 app.post('/api/catalog/sync-github', async (req, res) => {
   try {
     const {

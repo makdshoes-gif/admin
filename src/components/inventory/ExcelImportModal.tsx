@@ -147,7 +147,7 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
         let tipo: ShoeType = 'Botines Fútbol Campo';
         const rawTipo = String(normalizedMap['tipo'] || normalizedMap['type'] || '').trim();
         const lowerTipo = rawTipo.toLowerCase();
-        const lowerNombre = nombre.toLowerCase();
+        const lowerNombre = String(nombre || '').toLowerCase();
 
         if (lowerTipo.includes('botin') && (lowerTipo.includes('futbol') || lowerTipo.includes('campo'))) {
           tipo = 'Botines Fútbol Campo';
@@ -488,11 +488,11 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
     if (!searchTerm) return true;
     const term = searchTerm.toLowerCase();
     return (
-      it.nombre.toLowerCase().includes(term) ||
-      it.sku.toLowerCase().includes(term) ||
-      it.marca.toLowerCase().includes(term) ||
-      it.categoria.toLowerCase().includes(term) ||
-      it.talla.toLowerCase().includes(term)
+      (it.nombre || '').toLowerCase().includes(term) ||
+      (it.sku || '').toLowerCase().includes(term) ||
+      (it.marca || '').toLowerCase().includes(term) ||
+      (it.categoria || '').toLowerCase().includes(term) ||
+      (String(it.talla || '')).toLowerCase().includes(term)
     );
   });
 

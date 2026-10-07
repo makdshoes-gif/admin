@@ -56,8 +56,6 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
   initialAiData,
   initialAiImage,
 }) => {
-  if (!isOpen) return null;
-
   // Entry Mode: Multi-size model vs single item
   const [entryMode, setEntryMode] = useState<'multi' | 'single'>(
     editingProduct ? 'single' : 'multi'
@@ -110,6 +108,30 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
   const [activeSizes, setActiveSizes] = useState<SizeStockItem[]>(defaultSizesForCalzado);
   const [bulkQtyToApply, setBulkQtyToApply] = useState<number>(4);
   const [customTallaInput, setCustomTallaInput] = useState<string>('');
+
+  // Rehydrate every field when the modal switches to a different existing product.
+  // Without this, React keeps the previous modal state and a Neon sync can make the
+  // edited shoe type appear to revert to its old value.
+  useEffect(() => {
+    if (!isOpen || !editingProduct) return;
+    setEntryMode('single');
+    setCategoria((editingProduct.categoria as ProductCategory) || 'Calzado');
+    setNombre(editingProduct.nombre || '');
+    setSku(editingProduct.sku || '');
+    setMarca(editingProduct.marca || 'Nike');
+    setTipo(editingProduct.tipo || 'Botines Fútbol Campo');
+    setColor(editingProduct.color || 'Blanco');
+    setCosto(editingProduct.costo?.toString() || '40.00');
+    setPrecio(editingProduct.precio?.toString() || '80.00');
+    setStockMinimo(editingProduct.stock_minimo?.toString() || '2');
+    setImagen(editingProduct.imagen || '');
+    setDescripcion(editingProduct.descripcion || '');
+    setGenero(editingProduct.genero || 'Unisex');
+    setEsOriginal(editingProduct.es_original !== false);
+    setSingleTalla(editingProduct.talla || '38');
+    setSingleStock(editingProduct.stock?.toString() || '0');
+    setAiAnalysisSuccess(null);
+  }, [editingProduct?.id, isOpen]);
 
   // Auto-fill from initialAiData
   useEffect(() => {
@@ -254,7 +276,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
   const handleAddCustomTalla = () => {
     const trimmed = customTallaInput.trim();
     if (!trimmed) return;
-    if (!activeSizes.some((s) => s.talla.toLowerCase() === trimmed.toLowerCase())) {
+    if (!activeSizes.some((s) => String(s.talla || '').toLowerCase() === trimmed.toLowerCase())) {
       setActiveSizes((prev) => [...prev, { talla: trimmed, stock: bulkQtyToApply || 4 }]);
     }
     setCustomTallaInput('');
@@ -305,20 +327,30 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
         stream = await navigator.mediaDevices.getUserMedia({
           video: {
             facingMode: { ideal: facing },
-            width: { ideal: 1280 },
-            height: { ideal: 720 },
+            width: { ideal: 1920, min: 1280 },
+            height: { ideal: 1440, min: 720 },
+            aspectRatio: { ideal: 4 / 3 },
+            frameRate: { ideal: 30, max: 30 },
           },
           audio: false,
         });
       } catch (err) {
         // Fallback to any camera available
         stream = await navigator.mediaDevices.getUserMedia({
-          video: true,
+          video: { width: { ideal: 1920 }, height: { ideal: 1440 }, facingMode: { ideal: facing } },
           audio: false,
         });
       }
 
       mediaStreamRef.current = stream;
+      const track = stream.getVideoTracks()[0];
+      try {
+        const capabilities = track?.getCapabilities?.() as any;
+        const advanced: any[] = [];
+        if (capabilities?.focusMode?.includes?.('continuous')) advanced.push({ focusMode: 'continuous' });
+        if (capabilities?.exposureMode?.includes?.('continuous')) advanced.push({ exposureMode: 'continuous' });
+        if (advanced.length) await track.applyConstraints({ advanced });
+      } catch {}
       setIsCameraActive(true);
     } catch (err: any) {
       console.error('Error al acceder a la cámara:', err);
@@ -384,15 +416,15 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
         console.warn('Canvas pixel check info:', err);
       }
 
-      const photoDataUrl = canvas.toDataURL('image/jpeg', 0.88);
+      const photoDataUrl = canvas.toDataURL('image/jpeg', 0.94);
       stopCamera();
       setCameraError(null);
 
       // Immediately compress image to optimize storage (< 500 KB)
       setIsCompressingImage(true);
       compressImageDataUrl(photoDataUrl, {
-        maxDimension: 1280,
-        quality: 0.82,
+        maxDimension: 1600,
+        quality: 0.88,
         maxSizeBytes: 500 * 1024,
       })
         .then((res) => {
@@ -489,7 +521,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
         ctx.scale(-1, 1);
       }
       ctx.drawImage(video, 0, 0, width, height);
-      const photoDataUrl = canvas.toDataURL('image/jpeg', 0.88);
+      const photoDataUrl = canvas.toDataURL('image/jpeg', 0.94);
       stopCamera();
       setCameraError(null);
 
@@ -531,8 +563,8 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
     try {
       // Compress image file to lightweight size (< 500 KB, guaranteed < 10MB)
       const res = await compressImageFile(file, {
-        maxDimension: 1280,
-        quality: 0.82,
+        maxDimension: 1600,
+        quality: 0.88,
         maxSizeBytes: 500 * 1024,
       });
       setImagen(res.dataUrl);
@@ -701,6 +733,8 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
     { key: 'Ropa', label: '👕 Ropa', icon: 'Shirt' },
     { key: 'Otros', label: '📦 Otros', icon: 'Box' },
   ];
+
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 bg-slate-950/60 flex items-center justify-center p-3 sm:p-4 z-50 overflow-y-auto backdrop-blur-xs">

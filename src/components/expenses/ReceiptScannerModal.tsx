@@ -310,7 +310,7 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
       let bestAccount = accounts[0]?.nombre || 'Efectivo USD';
       const suggestedAcc = (data.cuenta_sugerida || '').toLowerCase();
       const match = accounts.find((a) =>
-        a.nombre.toLowerCase().includes(suggestedAcc) ||
+        (a.nombre || '').toLowerCase().includes(suggestedAcc) ||
         (detectedMoneda === 'Bs' && a.moneda === 'Bs') ||
         (detectedMoneda === 'USD' && a.moneda === 'USD')
       );

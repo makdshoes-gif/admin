@@ -71,9 +71,9 @@ export const BankReconciliationView: React.FC = () => {
       const matchStatus = statusFilter === 'todos' || m.estado_conciliacion === statusFilter;
       const term = movSearch.toLowerCase();
       const matchSearch =
-        m.referencia.toLowerCase().includes(term) ||
-        m.descripcion.toLowerCase().includes(term) ||
-        m.banco.toLowerCase().includes(term);
+        (m.referencia || '').toLowerCase().includes(term) ||
+        (m.descripcion || '').toLowerCase().includes(term) ||
+        (m.banco || '').toLowerCase().includes(term);
       return matchBank && matchStatus && matchSearch;
     });
   }, [bankMovements, bankFilter, statusFilter, movSearch]);
@@ -134,7 +134,7 @@ export const BankReconciliationView: React.FC = () => {
 
     sales.forEach((s) => {
       s.pagos.forEach((p) => {
-        if (p.cuenta.toLowerCase().includes('cashea')) {
+        if ((p.cuenta || '').toLowerCase().includes('cashea')) {
           const item = {
             saleId: s.id,
             factura: s.numero_factura,

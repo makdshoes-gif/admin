@@ -1,17 +1,8 @@
-import { 
-  ShoeProduct, 
-  StockMovement, 
-  Sale, 
-  AccountBalance, 
-  Expense, 
-  BankMovement, 
-  CurrencyPurchase,
-  Layaway 
-} from '../types';
+import { ShoeProduct, StockMovement, Sale, AccountBalance, Expense, BankMovement, CurrencyPurchase } from '../types';
 
 export const INITIAL_EXCHANGE_RATE = 68.50; // Tasa oficial BCV Bs/USD referencial
 
-// Catálogo inicial con calzados deportivos y urbanos de referencia MAKD SHOP
+// Catálogo inicial con el calzado de referencia de estudio Adidas Adizero PureHustle
 export const INITIAL_PRODUCTS: ShoeProduct[] = [
   {
     id: 'prod-adizero-purehustle-39',
@@ -29,9 +20,9 @@ export const INITIAL_PRODUCTS: ShoeProduct[] = [
     stock_minimo: 2,
     activo: true,
     imagen: '/adizero-purehustle-studio.jpg',
-    descripcion: 'Calzado deportivo de alto rendimiento Adidas Adizero PureHustle con placa de tracción de tacos metálicos, capellada ultraligera y amortiguación receptiva para campo.',
+    descripcion: 'Calzado deportivo de alto rendimiento Adidas Adizero PureHustle con placa de tracción de tacos metálicos, acabado en plata reflectante, capellada ultraligera transpirable y amortiguación receptiva para campo y entrenamiento.',
     genero: 'Unisex',
-    created_at: '2026-10-01T10:00:00.000Z',
+    created_at: new Date().toISOString(),
   },
   {
     id: 'prod-adizero-purehustle-40',
@@ -49,9 +40,9 @@ export const INITIAL_PRODUCTS: ShoeProduct[] = [
     stock_minimo: 2,
     activo: true,
     imagen: '/adizero-purehustle-studio.jpg',
-    descripcion: 'Calzado deportivo de alto rendimiento Adidas Adizero PureHustle con placa de tracción de tacos metálicos, capellada ultraligera y amortiguación receptiva para campo.',
+    descripcion: 'Calzado deportivo de alto rendimiento Adidas Adizero PureHustle con placa de tracción de tacos metálicos, acabado en plata reflectante, capellada ultraligera transpirable y amortiguación receptiva para campo y entrenamiento.',
     genero: 'Unisex',
-    created_at: '2026-10-01T10:00:00.000Z',
+    created_at: new Date().toISOString(),
   },
   {
     id: 'prod-adizero-purehustle-41',
@@ -69,9 +60,9 @@ export const INITIAL_PRODUCTS: ShoeProduct[] = [
     stock_minimo: 2,
     activo: true,
     imagen: '/adizero-purehustle-studio.jpg',
-    descripcion: 'Calzado deportivo de alto rendimiento Adidas Adizero PureHustle con placa de tracción de tacos metálicos, capellada ultraligera y amortiguación receptiva para campo.',
+    descripcion: 'Calzado deportivo de alto rendimiento Adidas Adizero PureHustle con placa de tracción de tacos metálicos, acabado en plata reflectante, capellada ultraligera transpirable y amortiguación receptiva para campo y entrenamiento.',
     genero: 'Unisex',
-    created_at: '2026-10-01T10:00:00.000Z',
+    created_at: new Date().toISOString(),
   },
   {
     id: 'prod-adizero-purehustle-42',
@@ -89,350 +80,34 @@ export const INITIAL_PRODUCTS: ShoeProduct[] = [
     stock_minimo: 2,
     activo: true,
     imagen: '/adizero-purehustle-studio.jpg',
-    descripcion: 'Calzado deportivo de alto rendimiento Adidas Adizero PureHustle con placa de tracción de tacos metálicos, capellada ultraligera y amortiguación receptiva para campo.',
+    descripcion: 'Calzado deportivo de alto rendimiento Adidas Adizero PureHustle con placa de tracción de tacos metálicos, acabado en plata reflectante, capellada ultraligera transpirable y amortiguación receptiva para campo y entrenamiento.',
     genero: 'Unisex',
-    created_at: '2026-10-01T10:00:00.000Z',
+    created_at: new Date().toISOString(),
   },
 ];
 
-// Movimientos iniciales de entrada de inventario
-export const INITIAL_MOVEMENTS: StockMovement[] = [
-  {
-    id: 'mov-init-01',
-    producto_id: 'prod-adizero-purehustle-40',
-    producto_nombre: 'Adidas Adizero PureHustle Cleats White & Silver',
-    sku: 'ADI-ADZ-WHTSLV-40',
-    talla: '40',
-    marca: 'Adidas',
-    tipo: 'entrada',
-    cantidad: 23,
-    stock_anterior: 0,
-    stock_nuevo: 23,
-    motivo: 'Compra inicial de lote de calzado para almacén central (Factura Proveedor #COM-8910)',
-    fecha: '2026-10-01T09:00:00.000Z',
-    usuario: 'Administrador',
-  },
-];
+// Historial de movimientos de inventario limpio
+export const INITIAL_MOVEMENTS: StockMovement[] = [];
 
-// Cuentas del negocio listas para operar
+// Cuentas del negocio listas para operar con saldo inicial en cero
 export const INITIAL_ACCOUNTS: AccountBalance[] = [
-  { id: 'acc-1', nombre: 'Efectivo USD', moneda: 'USD', saldo: 180.00, icono: 'Banknote' },
-  { id: 'acc-2', nombre: 'Efectivo Bs', moneda: 'Bs', saldo: 1370.00, icono: 'Banknote' },
-  { id: 'acc-3', nombre: 'Pago Móvil (BDV)', moneda: 'Bs', saldo: 5137.50, icono: 'Smartphone' },
-  { id: 'acc-pos', nombre: 'Punto de Venta', moneda: 'Bs', saldo: 5137.50, icono: 'CreditCard' },
+  { id: 'acc-1', nombre: 'Efectivo USD', moneda: 'USD', saldo: 0.00, icono: 'Banknote' },
+  { id: 'acc-2', nombre: 'Efectivo Bs', moneda: 'Bs', saldo: 0.00, icono: 'Banknote' },
+  { id: 'acc-3', nombre: 'Pago Móvil (BDV)', moneda: 'Bs', saldo: 0.00, icono: 'Smartphone' },
+  { id: 'acc-pos', nombre: 'Punto de Venta', moneda: 'Bs', saldo: 0.00, icono: 'CreditCard' },
   { id: 'acc-4', nombre: 'Zelle', moneda: 'USD', saldo: 0.00, icono: 'CreditCard' },
   { id: 'acc-5', nombre: 'Binance USDT', moneda: 'USD', saldo: 0.00, icono: 'Coins' },
-  { id: 'acc-6', nombre: 'Cashea', moneda: 'USD', saldo: 45.00, icono: 'CircleDollarSign' },
+  { id: 'acc-6', nombre: 'Cashea', moneda: 'USD', saldo: 0.00, icono: 'CircleDollarSign' },
 ];
 
-// Ventas registradas de muestra en el sistema MAKD SHOP (Octubre 2026)
-export const INITIAL_SALES: Sale[] = [
-  {
-    id: 'sale-init-01',
-    numero_factura: 'FAC-000125',
-    cliente_nombre: 'Carlos',
-    cliente_apellido: 'Mendoza',
-    cliente_rif: 'V-18492019',
-    cliente_telefono: '04148920192',
-    items: [
-      {
-        producto_id: 'prod-adizero-purehustle-40',
-        nombre_producto: 'Adidas Adizero PureHustle Cleats White & Silver',
-        sku: 'ADI-ADZ-WHTSLV-40',
-        talla: '40',
-        marca: 'Adidas',
-        cantidad: 1,
-        precio_unitario: 75.0,
-        costo_unitario: 42.0,
-        subtotal: 75.0,
-      },
-    ],
-    subtotal_usd: 75.0,
-    descuento_usd: 0,
-    aplica_iva: false,
-    porcentaje_iva: 0,
-    iva_monto_usd: 0,
-    total_usd: 75.0,
-    total_bs: 5137.50,
-    costo_total_usd: 42.0,
-    ganancia_neta_usd: 33.0,
-    tasa_cambio: 68.50,
-    pagos: [
-      {
-        id: 'pay-cashea-1',
-        cuenta: 'Cashea',
-        moneda: 'USD',
-        monto: 45.0,
-        tasa: 68.50,
-        monto_equivalente_usd: 45.0,
-        estado_liquidacion: 'pendiente_banco',
-      },
-      {
-        id: 'pay-cash-1',
-        cuenta: 'Efectivo USD',
-        moneda: 'USD',
-        monto: 30.0,
-        tasa: 68.50,
-        monto_equivalente_usd: 30.0,
-        estado_liquidacion: 'liquidado_inmediato',
-      },
-    ],
-    fecha: '2026-10-06T11:30:00.000Z',
-    usuario: 'Cajera Turno',
-    notas: 'Venta combinada Cashea + Cuota inicial en efectivo',
-    total_positivo_inmediato_usd: 30.0,
-    total_cashea_pendiente_usd: 45.0,
-    estado_cashea: 'pendiente_banco',
-    created_at: '2026-10-06T11:30:00.000Z',
-  },
-  {
-    id: 'sale-init-02',
-    numero_factura: 'FAC-000126',
-    cliente_nombre: 'María',
-    cliente_apellido: 'Pérez',
-    cliente_rif: 'V-22194850',
-    cliente_telefono: '04249182341',
-    items: [
-      {
-        producto_id: 'prod-adizero-purehustle-39',
-        nombre_producto: 'Adidas Adizero PureHustle Cleats White & Silver',
-        sku: 'ADI-ADZ-WHTSLV-39',
-        talla: '39',
-        marca: 'Adidas',
-        cantidad: 1,
-        precio_unitario: 75.0,
-        costo_unitario: 42.0,
-        subtotal: 75.0,
-      },
-    ],
-    subtotal_usd: 75.0,
-    descuento_usd: 0,
-    aplica_iva: false,
-    porcentaje_iva: 0,
-    iva_monto_usd: 0,
-    total_usd: 75.0,
-    total_bs: 5137.50,
-    costo_total_usd: 42.0,
-    ganancia_neta_usd: 33.0,
-    tasa_cambio: 68.50,
-    pagos: [
-      {
-        id: 'pay-pos-1',
-        cuenta: 'Punto de Venta',
-        moneda: 'Bs',
-        monto: 5137.50,
-        tasa: 68.50,
-        monto_equivalente_usd: 75.0,
-        referencia: 'POS-891024',
-        estado_liquidacion: 'liquidado_inmediato',
-      },
-    ],
-    fecha: '2026-10-06T10:15:00.000Z',
-    usuario: 'Cajera Turno',
-    total_positivo_inmediato_usd: 75.0,
-    total_cashea_pendiente_usd: 0,
-    created_at: '2026-10-06T10:15:00.000Z',
-  },
-  {
-    id: 'sale-init-03',
-    numero_factura: 'FAC-000127',
-    cliente_nombre: 'Andrés',
-    cliente_apellido: 'Gómez',
-    cliente_rif: 'V-15493021',
-    cliente_telefono: '04128945612',
-    items: [
-      {
-        producto_id: 'prod-adizero-purehustle-41',
-        nombre_producto: 'Adidas Adizero PureHustle Cleats White & Silver',
-        sku: 'ADI-ADZ-WHTSLV-41',
-        talla: '41',
-        marca: 'Adidas',
-        cantidad: 2,
-        precio_unitario: 75.0,
-        costo_unitario: 42.0,
-        subtotal: 150.0,
-      },
-    ],
-    subtotal_usd: 150.0,
-    descuento_usd: 0,
-    aplica_iva: false,
-    porcentaje_iva: 0,
-    iva_monto_usd: 0,
-    total_usd: 150.0,
-    total_bs: 10275.00,
-    costo_total_usd: 84.0,
-    ganancia_neta_usd: 66.0,
-    tasa_cambio: 68.50,
-    pagos: [
-      {
-        id: 'pay-cash-2',
-        cuenta: 'Efectivo USD',
-        moneda: 'USD',
-        monto: 150.0,
-        tasa: 68.50,
-        monto_equivalente_usd: 150.0,
-        estado_liquidacion: 'liquidado_inmediato',
-      },
-    ],
-    fecha: '2026-10-05T16:20:00.000Z',
-    usuario: 'Administrador',
-    total_positivo_inmediato_usd: 150.0,
-    total_cashea_pendiente_usd: 0,
-    created_at: '2026-10-05T16:20:00.000Z',
-  },
-  {
-    id: 'sale-init-04',
-    numero_factura: 'FAC-000128',
-    cliente_nombre: 'José',
-    cliente_apellido: 'Rodríguez',
-    cliente_rif: 'V-24901832',
-    cliente_telefono: '04167894523',
-    items: [
-      {
-        producto_id: 'prod-adizero-purehustle-42',
-        nombre_producto: 'Adidas Adizero PureHustle Cleats White & Silver',
-        sku: 'ADI-ADZ-WHTSLV-42',
-        talla: '42',
-        marca: 'Adidas',
-        cantidad: 1,
-        precio_unitario: 75.0,
-        costo_unitario: 42.0,
-        subtotal: 75.0,
-      },
-    ],
-    subtotal_usd: 75.0,
-    descuento_usd: 0,
-    aplica_iva: false,
-    porcentaje_iva: 0,
-    iva_monto_usd: 0,
-    total_usd: 75.0,
-    total_bs: 5137.50,
-    costo_total_usd: 42.0,
-    ganancia_neta_usd: 33.0,
-    tasa_cambio: 68.50,
-    pagos: [
-      {
-        id: 'pay-pm-1',
-        cuenta: 'Pago Móvil (BDV)',
-        moneda: 'Bs',
-        monto: 5137.50,
-        tasa: 68.50,
-        monto_equivalente_usd: 75.0,
-        referencia: '00948123',
-        estado_liquidacion: 'liquidado_inmediato',
-      },
-    ],
-    fecha: '2026-10-04T14:40:00.000Z',
-    usuario: 'Cajera Turno',
-    total_positivo_inmediato_usd: 75.0,
-    total_cashea_pendiente_usd: 0,
-    created_at: '2026-10-04T14:40:00.000Z',
-  },
-];
+// Ventas registradas limpias
+export const INITIAL_SALES: Sale[] = [];
 
-// Gastos operativos registrados de muestra
-export const INITIAL_EXPENSES: Expense[] = [
-  {
-    id: 'exp-init-01',
-    fecha: '2026-10-02',
-    categoria: 'Alquiler de Local',
-    descripcion: 'Canon de arrendamiento local 163 PB CC Ciudad Alta Vista II',
-    monto: 450.0,
-    monto_usd: 450.0,
-    monto_bs: 30825.0,
-    moneda: 'USD',
-    cuenta_origen: 'Efectivo USD',
-    beneficiario: 'Inmobiliaria Alta Vista II, C.A.',
-    comprobante_ref: 'GAST-000101',
-    tasa_cambio: 68.50,
-    registrado_por: 'Administración',
-    created_at: '2026-10-02T10:00:00.000Z',
-  },
-  {
-    id: 'exp-init-02',
-    fecha: '2026-10-05',
-    categoria: 'Empaques, Bolsas y Cajas',
-    descripcion: 'Lote de bolsas ecológicas boutique con logo MAKD SHOP',
-    monto: 65.0,
-    monto_usd: 65.0,
-    monto_bs: 4452.5,
-    moneda: 'USD',
-    cuenta_origen: 'Pago Móvil (BDV)',
-    beneficiario: 'Empaques Bolívar C.A.',
-    comprobante_ref: 'GAST-000102',
-    tasa_cambio: 68.50,
-    registrado_por: 'Administración',
-    created_at: '2026-10-05T11:30:00.000Z',
-  },
-  {
-    id: 'exp-init-03',
-    fecha: '2026-10-06',
-    categoria: 'Servicios Públicos (Luz/Agua/Internet)',
-    descripcion: 'Pago de electricidad comercial e Internet Fibra Óptica tienda',
-    monto: 40.0,
-    monto_usd: 40.0,
-    monto_bs: 2740.0,
-    moneda: 'USD',
-    cuenta_origen: 'Pago Móvil (BDV)',
-    beneficiario: 'Servicios Puerto Ordaz',
-    comprobante_ref: 'GAST-000103',
-    tasa_cambio: 68.50,
-    registrado_por: 'Administración',
-    created_at: '2026-10-06T09:15:00.000Z',
-  },
-];
+// Gastos operativos limpios
+export const INITIAL_EXPENSES: Expense[] = [];
 
-// Apartados registrados de muestra (Layaways)
-export const INITIAL_LAYAWAYS: Layaway[] = [
-  {
-    id: 'layaway-init-01',
-    codigo_apartado: 'AP-1024',
-    cliente_nombre: 'Mariana',
-    cliente_apellido: 'Silva',
-    cliente_cedula: 'V-25890123',
-    cliente_telefono: '04149876543',
-    items: [
-      {
-        producto_id: 'prod-adizero-purehustle-39',
-        nombre_producto: 'Adidas Adizero PureHustle Cleats White & Silver',
-        sku: 'ADI-ADZ-WHTSLV-39',
-        talla: '39',
-        marca: 'Adidas',
-        cantidad: 1,
-        precio_unitario: 75.0,
-        subtotal: 75.0,
-      },
-    ],
-    total_usd: 75.0,
-    total_bs: 5137.50,
-    total_abonado_usd: 35.0,
-    total_abonado_bs: 2397.50,
-    saldo_pendiente_usd: 40.0,
-    saldo_pendiente_bs: 2740.00,
-    tasa_cambio: 68.50,
-    abonos: [
-      {
-        id: 'abono-init-01',
-        fecha: '2026-10-03T15:00:00.000Z',
-        monto: 35.0,
-        moneda: 'USD',
-        cuenta: 'Efectivo USD',
-        monto_equivalente_usd: 35.0,
-        tasa_cambio: 68.50,
-      },
-    ],
-    fecha_apartado: '2026-10-03',
-    fecha_vencimiento: '2026-11-03',
-    estado: 'activo',
-    usuario: 'Cajera Turno',
-    notas: 'Apartado de calzado con 50% inicial aproximado',
-    created_at: '2026-10-03T15:00:00.000Z',
-    updated_at: '2026-10-03T15:00:00.000Z',
-  },
-];
-
-// Movimientos bancarios para conciliación
+// Movimientos bancarios para conciliación limpios
 export const INITIAL_BANK_MOVEMENTS: BankMovement[] = [];
 
-// Compras de divisas (Binance, Zelle, Efectivo)
+// Compras de divisas (Binance, Zelle, Efectivo) limpias
 export const INITIAL_CURRENCY_PURCHASES: CurrencyPurchase[] = [];

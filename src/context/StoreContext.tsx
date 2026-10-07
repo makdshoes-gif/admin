@@ -11,7 +11,6 @@ import {
   CurrencyPurchase,
   Layaway,
   LayawayPayment,
-  AccountingRecord,
 } from '../types';
 import {
   INITIAL_PRODUCTS,
@@ -22,7 +21,6 @@ import {
   INITIAL_EXPENSES,
   INITIAL_BANK_MOVEMENTS,
   INITIAL_CURRENCY_PURCHASES,
-  INITIAL_LAYAWAYS,
 } from '../data/initialData';
 import { fetchLiveBcvRate, BcvRateInfo } from '../services/bcvService';
 import {
@@ -38,17 +36,12 @@ import {
   fetchBankReconciliationsApi,
   saveBankReconciliationApi,
   updateBankReconciliationApi,
-  syncDataToNeon,
-  fetchAccountingApi,
-  saveAccountingRecordApi,
-  deleteAccountingRecordApi,
-  syncAllAccountingApi
+  syncDataToNeon
 } from '../services/api';
 import {
   sendInventoryWebhook,
   WebhookSyncResult,
 } from '../services/inventoryWebhookService';
-import { buildCentralizedLedger } from '../utils/accountingUtils';
 
 export interface ToastNotification {
   id: string;
@@ -92,8 +85,9 @@ interface StoreContextType {
   deleteProduct: (id: string) => void;
   recordSale: (
     saleData: Omit<Sale, 'id' | 'created_at' | 'costo_total_usd' | 'ganancia_neta_usd'>
-  ) => Sale;
+  ) => Promise<Sale>;
   updateSaleDate: (saleId: string, newDateIso: string) => boolean;
+  updateSaleDetails: (saleId: string, updates: Partial<Pick<Sale, 'numero_factura' | 'cliente_nombre' | 'cliente_apellido' | 'cliente_rif' | 'cliente_telefono' | 'cliente_correo' | 'notas'>>) => Promise<boolean>;
   voidSale: (saleId: string, motivo: string) => Promise<boolean>;
   layaways: Layaway[];
   createLayaway: (
@@ -154,11 +148,6 @@ interface StoreContextType {
   exportStoreBackup: () => void;
   importStoreBackup: (file: File) => Promise<void>;
   triggerInventoryWebhook: (customProducts?: ShoeProduct[]) => Promise<WebhookSyncResult>;
-  accountingRecords: AccountingRecord[];
-  addAccountingRecord: (record: Omit<AccountingRecord, 'id' | 'created_at'> & { id?: string }) => AccountingRecord;
-  updateAccountingRecord: (id: string, updates: Partial<AccountingRecord>) => void;
-  deleteAccountingRecord: (id: string) => Promise<boolean>;
-  syncAllAccountingRecords: () => Promise<void>;
 }
 
 let autoWebhookTimeout: any = null;
@@ -232,7 +221,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (saved) {
       try {
         const parsed: AccountBalance[] = JSON.parse(saved);
-        const hasPos = parsed.some((a) => a.nombre.toLowerCase().includes('punto de venta') || a.id === 'acc-pos');
+        const hasPos = parsed.some((a) => (a.nombre || '').toLowerCase().includes('punto de venta') || a.id === 'acc-pos');
         if (!hasPos) {
           parsed.splice(3, 0, { id: 'acc-pos', nombre: 'Punto de Venta', moneda: 'Bs', saldo: 0.00, icono: 'CreditCard' });
         }
@@ -258,19 +247,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const saved = localStorage.getItem(`${STORAGE_KEY}_currency_purchases`);
     return saved ? JSON.parse(saved) : INITIAL_CURRENCY_PURCHASES;
   });
-
-  const [manualAccountingRecords, setManualAccountingRecords] = useState<AccountingRecord[]>(() => {
-    try {
-      const saved = localStorage.getItem(`${STORAGE_KEY}_accounting`);
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
-  });
-
-  const accountingRecords = useMemo(() => {
-    return buildCentralizedLedger(sales, expenses, layaways, movements, manualAccountingRecords);
-  }, [sales, expenses, layaways, movements, manualAccountingRecords]);
 
   const [exchangeRate, setExchangeRateState] = useState<number>(() => {
     const saved = localStorage.getItem(`${STORAGE_KEY}_rate`);
@@ -395,7 +371,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   // fotos) y el catálogo de productos ni se toca.
   const lastKnownVersionRef = useRef<{
     products: string; sales: string; expenses: string;
-    bankReconciliations: string; closures: string;
+    bankReconciliations: string; closures: string; layaways: string;
   } | null>(null);
 
   const applySalesData = (salesArr: any[]) => {
@@ -444,8 +420,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               const expensesChanged = nv.expenses !== ov.expenses;
               const bankChanged = nv.bankReconciliations !== ov.bankReconciliations;
               const closuresChanged = nv.closures !== ov.closures;
+              const layawaysChanged = nv.layaways !== ov.layaways;
 
-              if (!productsChanged && !salesChanged && !expensesChanged && !bankChanged && !closuresChanged) {
+              if (!productsChanged && !salesChanged && !expensesChanged && !bankChanged && !closuresChanged && !layawaysChanged) {
                 return; // nada cambió, no hace falta descargar nada
               }
 
@@ -472,6 +449,16 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                   tasks.push(
                     fetch('/api/closures').then((r) => (r.ok ? r.json() : null)).then((j) => {
                       if (Array.isArray(j?.data)) applyClosuresData(j.data);
+                    })
+                  );
+                }
+                if (layawaysChanged) {
+                  tasks.push(
+                    fetch('/api/layaways').then((r) => (r.ok ? r.json() : null)).then((j) => {
+                      if (Array.isArray(j?.data)) {
+                        setLayaways(j.data);
+                        try { localStorage.setItem(`${STORAGE_KEY}_layaways`, JSON.stringify(j.data)); } catch {}
+                      }
                     })
                   );
                 }
@@ -620,16 +607,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         setBankMovements((prev) => {
           const existingIds = new Set(prev.map((m) => m.id));
           const toAdd = neonMovements.filter((m) => !existingIds.has(m.id));
-          return [...toAdd, ...prev];
-        });
-      }
-    }).catch(() => {});
-
-    fetchAccountingApi().then((serverAccounting) => {
-      if (serverAccounting && serverAccounting.length > 0) {
-        setManualAccountingRecords((prev) => {
-          const existingIds = new Set(prev.map((r) => r.id));
-          const toAdd = serverAccounting.filter((r) => !existingIds.has(r.id));
           return [...toAdd, ...prev];
         });
       }
@@ -953,6 +930,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const newId = `prod-${Date.now()}`;
     const newProduct: ShoeProduct = {
       ...productData,
+      talla: String(productData.talla || 'Única'),
+      sku: String(productData.sku || `SKU-${newId}`),
+      precio: Number(productData.precio) || 0,
+      costo: Number(productData.costo) || 0,
+      stock: Number(productData.stock) || 0,
       id: newId,
       created_at: new Date().toISOString(),
     };
@@ -1100,54 +1082,45 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   // Update Product
   const updateProduct = (id: string, updates: Partial<ShoeProduct>) => {
-    let updatedItem: ShoeProduct | undefined;
-    let nextProductsList: ShoeProduct[] = [];
-    setProducts((prev) => {
-      const updated = prev.map((p) => {
-        if (p.id === id) {
-          updatedItem = { ...p, ...updates };
-          return updatedItem;
-        }
-        return p;
-      });
-      nextProductsList = updated;
-      try {
-        localStorage.setItem(`${STORAGE_KEY}_products`, JSON.stringify(updated));
-      } catch (e) {}
-      return updated;
-    });
+    const current = products.find((p) => p.id === id);
+    if (!current) return;
 
-    if (updatedItem) {
-      fetch('/api/products', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updatedItem),
-      })
-        .then(async (res) => {
-          if (!res.ok) {
-            const errJson = await res.json().catch(() => ({}));
-            addNotification(
-              'No se guardó en el servidor',
-              `El cambio quedó solo en esta pantalla. ${errJson.error || 'Verifica tu conexión e inténtalo de nuevo.'}`,
-              'critical'
-            );
-          }
-        })
-        .catch(() => {
+    const updatedItem: ShoeProduct = { ...current, ...updates };
+    const nextProductsList = products.map((p) => (p.id === id ? updatedItem : p));
+
+    setProducts(nextProductsList);
+    safeLocalStorageSet(`${STORAGE_KEY}_products`, JSON.stringify(nextProductsList));
+
+    // Persist the exact edited object. Do not rely on a setState updater callback,
+    // because React may execute that callback later and Neon sync could otherwise
+    // reload the old value (notably the shoe type).
+    fetch('/api/products', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updatedItem),
+    })
+      .then(async (res) => {
+        if (!res.ok) {
+          const errJson = await res.json().catch(() => ({}));
           addNotification(
-            'Sin conexión con el servidor',
-            'El cambio quedó solo en esta pantalla y no se sincronizó. Verifica tu conexión e inténtalo de nuevo.',
+            'No se guardó en el servidor',
+            `El cambio quedó solo en esta pantalla. ${errJson.error || 'Verifica tu conexión e inténtalo de nuevo.'}`,
             'critical'
           );
-        });
+          return;
+        }
+        // Keep the catalog authoritative after a successful edit.
+        try { await syncFromServer(false); } catch {}
+      })
+      .catch(() => {
+        addNotification(
+          'Sin conexión con el servidor',
+          'El cambio quedó localmente. Verifica Vercel/Neon y vuelve a guardar.',
+          'critical'
+        );
+      });
 
-
-    }
-
-    addNotification('Producto Actualizado', 'Información guardada con éxito.', 'info');
-    if (nextProductsList.length > 0) {
-      dispatchAutoWebhook(nextProductsList);
-    }
+    dispatchAutoWebhook(nextProductsList);
   };
 
   // Adjust stock in real time (Manual Batch entry, Scrap adjustment, Return)
@@ -1245,9 +1218,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   // Record Sale (Instant real-time stock deduction, movement logging, financial balance update)
-  const recordSale = (
+  const recordSale = async (
     saleData: Omit<Sale, 'id' | 'created_at' | 'costo_total_usd' | 'ganancia_neta_usd'>
-  ): Sale => {
+  ): Promise<Sale> => {
     const saleId = `sale-${Date.now()}`;
     const timestamp = saleData.fecha || createSaleTimestamp();
 
@@ -1261,12 +1234,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         if (item.producto_id && prod.id && String(item.producto_id).trim() === String(prod.id).trim()) {
           return true;
         }
-        if (item.sku && prod.sku && item.sku.trim().toLowerCase() === prod.sku.trim().toLowerCase()) {
+        if (item.sku && prod.sku && String(item.sku || '').trim().toLowerCase() === String(prod.sku || '').trim().toLowerCase()) {
           return true;
         }
         if (
           item.nombre_producto && prod.nombre &&
-          item.nombre_producto.trim().toLowerCase() === prod.nombre.trim().toLowerCase() &&
+          String(item.nombre_producto || '').trim().toLowerCase() === String(prod.nombre || '').trim().toLowerCase() &&
           item.talla && prod.talla &&
           String(item.talla).trim() === String(prod.talla).trim()
         ) {
@@ -1325,28 +1298,20 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const exists = updatedProducts.some(
         (p) =>
           p.id === item.producto_id ||
-          (p.sku && item.sku && p.sku.trim().toLowerCase() === item.sku.trim().toLowerCase())
+          (p.sku && item.sku && String(p.sku || '').trim().toLowerCase() === String(item.sku || '').trim().toLowerCase())
       );
       if (!exists) {
         totalCosto += (item.costo_unitario || 0) * item.cantidad;
       }
     });
 
-    // 2. Commit stock deduction immediately to state & localStorage
-    setProducts(updatedProducts);
-    safeLocalStorageSet(`${STORAGE_KEY}_products`, JSON.stringify(updatedProducts));
-
-    // 3. Append all sale movements
-    if (saleMovements.length > 0) {
-      setMovements((prev) => [...saleMovements, ...prev]);
-    }
-
-    // 4. Classify payments: Cashea stays pending reconciliation, while positive liquid payments enter balances immediately
+    // 2. Classify payments: Cashea stays pending reconciliation, while positive liquid payments enter balances immediately.
+    // Nothing is committed locally until Neon confirms the sale + stock deduction.
     let totalPositivoInmediatoUsd = 0;
     let totalCasheaPendienteUsd = 0;
 
     const enrichedPagos = saleData.pagos.map((pago) => {
-      const isCashea = pago.cuenta.toLowerCase().includes('cashea');
+      const isCashea = (pago.cuenta || '').toLowerCase().includes('cashea');
       if (isCashea) {
         totalCasheaPendienteUsd += pago.monto_equivalente_usd;
         return {
@@ -1360,23 +1325,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           estado_liquidacion: 'liquidado_inmediato' as const,
         };
       }
-    });
-
-    // Update accounts balances ONLY for positive liquid payments
-    setAccounts((prevAccounts) => {
-      const nextAccounts = [...prevAccounts];
-      enrichedPagos.forEach((pago) => {
-        if (pago.estado_liquidacion === 'pendiente_banco') return;
-
-        const accIndex = nextAccounts.findIndex((acc) => acc.nombre === pago.cuenta);
-        if (accIndex !== -1) {
-          nextAccounts[accIndex] = {
-            ...nextAccounts[accIndex],
-            saldo: nextAccounts[accIndex].saldo + pago.monto,
-          };
-        }
-      });
-      return nextAccounts;
     });
 
     // 5. Finalize Sale Record
@@ -1396,26 +1344,80 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       created_at: timestamp,
     };
 
-    setSales((prev) => {
-      const updated = [completedSale, ...prev];
-      safeLocalStorageSet(`${STORAGE_KEY}_sales`, JSON.stringify(updated));
-      return updated;
-    });
-
     // Track historical rate for this date
     if (completedSale.tasa_cambio > 0) {
       const saleDateKey = getSaleDateKey(completedSale.fecha);
       setExchangeRateForDate(saleDateKey, completedSale.tasa_cambio);
     }
 
-    // Persist sale AND updated inventory atomically to server
-    fetch('/api/sales', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sale: completedSale, updatedProducts }),
-    }).catch((e) => console.log('Backend sale sync info:', e));
+    // Persist sale + stock atomically in Neon BEFORE treating the sale as completed locally.
+    // This prevents a Cashea sale from looking successful while Neon rejected the inventory update.
+    let lastError = '';
+    let serverSaved = false;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        const response = await fetch('/api/sales', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(completedSale),
+        });
+        const result = await response.json().catch(() => ({}));
+        if (response.ok && result.saved === true) {
+          serverSaved = true;
+          console.log('Venta guardada correctamente en Neon:', completedSale.id, result);
+          break;
+        }
+        lastError = result.error || `HTTP ${response.status}`;
+        console.error(`Error guardando venta en servidor (intento ${attempt}/3):`, result);
+        if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, 700 * attempt));
+      } catch (error) {
+        lastError = error instanceof Error ? error.message : String(error);
+        console.error(`Error de conexión guardando venta (intento ${attempt}/3):`, error);
+        if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, 700 * attempt));
+      }
+    }
 
+    if (!serverSaved) {
+      addNotification(
+        'VENTA NO REGISTRADA',
+        `La venta NO fue confirmada por Neon y no se descontó el inventario. ${lastError}`,
+        'critical'
+      );
+      throw new Error(`No se pudo registrar la venta en Neon: ${lastError}`);
+    }
 
+    // Neon confirmed the atomic transaction: now commit the same state locally.
+    setProducts(updatedProducts);
+    safeLocalStorageSet(`${STORAGE_KEY}_products`, JSON.stringify(updatedProducts));
+
+    if (saleMovements.length > 0) {
+      setMovements((prev) => [...saleMovements, ...prev]);
+    }
+
+    setAccounts((prevAccounts) => {
+      const nextAccounts = [...prevAccounts];
+      enrichedPagos.forEach((pago) => {
+        if (pago.estado_liquidacion === 'pendiente_banco') return;
+        const accIndex = nextAccounts.findIndex((acc) => acc.nombre === pago.cuenta);
+        if (accIndex !== -1) {
+          nextAccounts[accIndex] = {
+            ...nextAccounts[accIndex],
+            saldo: nextAccounts[accIndex].saldo + pago.monto,
+          };
+        }
+      });
+      return nextAccounts;
+    });
+
+    setSales((prev) => {
+      const updated = [completedSale, ...prev];
+      safeLocalStorageSet(`${STORAGE_KEY}_sales`, JSON.stringify(updated));
+      return updated;
+    });
+
+    try { await syncFromServer(false); } catch (syncError) {
+      console.error('Error sincronizando después de venta confirmada:', syncError);
+    }
 
     addNotification(
       'Venta Exitosa',
@@ -1470,6 +1472,34 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return true;
   };
 
+  // Actualizar datos administrativos de una factura sin tocar inventario ni totales.
+  const updateSaleDetails = async (saleId: string, updates: Partial<Pick<Sale, 'numero_factura' | 'cliente_nombre' | 'cliente_apellido' | 'cliente_rif' | 'cliente_telefono' | 'cliente_correo' | 'notas'>>): Promise<boolean> => {
+    const sale = sales.find((s) => s.id === saleId);
+    if (!sale) return false;
+    try {
+      const res = await fetch(`/api/sales/${saleId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...updates, estado: 'modificada' }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || json.updated !== true) {
+        addNotification('No se pudo actualizar la factura', json.error || 'El servidor no confirmó el cambio.', 'critical');
+        return false;
+      }
+      setSales((prev) => {
+        const updated = prev.map((s) => s.id === saleId ? ({ ...s, ...updates, estado: 'modificada' } as Sale) : s);
+        try { localStorage.setItem(`${STORAGE_KEY}_sales`, JSON.stringify(updated)); } catch {}
+        return updated;
+      });
+      addNotification('Factura actualizada', `Factura #${updates.numero_factura || sale.numero_factura} actualizada correctamente.`, 'success');
+      return true;
+    } catch (err) {
+      addNotification('No se pudo actualizar la factura', 'Sin conexión con el servidor.', 'critical');
+      return false;
+    }
+  };
+
   // Anular una venta registrada por error: se conserva en el historial
   // (marcada como anulada, no se borra) y se devuelve el stock vendido.
   const voidSale = async (saleId: string, motivo: string): Promise<boolean> => {
@@ -1482,57 +1512,33 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ motivo }),
       });
-      if (!res.ok) {
-        const errJson = await res.json().catch(() => ({}));
-        addNotification(
-          'No se pudo anular',
-          errJson.error || 'El servidor no confirmó la anulación. Verifica tu conexión e inténtalo de nuevo.',
-          'critical'
-        );
+      const result = await res.json().catch(() => ({}));
+      if (!res.ok || result.success !== true) {
+        addNotification('No se pudo anular', result.error || 'El servidor no confirmó la anulación.', 'critical');
         return false;
       }
-    } catch (err) {
+
+      // El backend hace la anulación + devolución de stock en una sola operación.
+      // No volvemos a sumar stock localmente para evitar duplicarlo.
+      setSales((prev) => {
+        const updated = prev.map((s) =>
+          s.id === saleId ? ({ ...s, estado: 'anulada', motivo_anulacion: motivo } as any) : s
+        );
+        safeLocalStorageSet(`${STORAGE_KEY}_sales`, JSON.stringify(updated));
+        return updated;
+      });
+
+      try { await syncFromServer(false); } catch {}
+      addNotification(
+        'Venta Anulada',
+        `Factura #${sale.numero_factura} fue anulada. El stock vendido fue devuelto al inventario.`,
+        'info'
+      );
+      return true;
+    } catch {
       addNotification('No se pudo anular', 'Sin conexión con el servidor. Inténtalo de nuevo.', 'critical');
       return false;
     }
-
-    // Restaurar stock localmente
-    setProducts((prev) => {
-      const updated = prev.map((p) => {
-        const matching = sale.items.filter((item) =>
-          (item.producto_id && p.id && String(item.producto_id).trim() === String(p.id).trim()) ||
-          (item.sku && p.sku && item.sku.trim().toLowerCase() === p.sku.trim().toLowerCase()) ||
-          (
-            item.nombre_producto && p.nombre &&
-            item.nombre_producto.trim().toLowerCase() === p.nombre.trim().toLowerCase() &&
-            item.talla && p.talla &&
-            String(item.talla).trim() === String(p.talla).trim()
-          )
-        );
-        const qtyToRestore = matching.reduce((sum, it) => sum + (Number(it.cantidad) || 0), 0);
-        return qtyToRestore > 0 ? { ...p, stock: Number(p.stock || 0) + qtyToRestore } : p;
-      });
-      try { localStorage.setItem(`${STORAGE_KEY}_products`, JSON.stringify(updated)); } catch {}
-      return updated;
-    });
-
-    // Marcar la venta como anulada en el estado local (se conserva, no se borra)
-    setSales((prev) => {
-      const updated = prev.map((s) =>
-        s.id === saleId ? ({ ...s, estado: 'anulada', motivo_anulacion: motivo } as any) : s
-      );
-      try { localStorage.setItem(`${STORAGE_KEY}_sales`, JSON.stringify(updated)); } catch {}
-      return updated;
-    });
-
-
-
-    addNotification(
-      'Venta Anulada',
-      `Factura #${sale.numero_factura} fue anulada. El stock vendido fue devuelto al inventario.`,
-      'info'
-    );
-    return true;
   };
 
   // Sistema de Apartados (Layaway)
@@ -1613,11 +1619,24 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setLayaways((prev) => [newLayaway, ...prev]);
 
     // Backend sync
-    fetch('/api/layaways', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(newLayaway),
-    }).catch(() => {});
+    void (async () => {
+      try {
+        const response = await fetch('/api/layaways', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(newLayaway),
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok || result.saved !== true) {
+          addNotification('Error de sincronización', result.error || 'El apartado no pudo guardarse en Neon.', 'critical');
+          return;
+        }
+        await syncFromServer(false);
+      } catch (error) {
+        console.error('Error guardando apartado en servidor:', error);
+        addNotification('Sin conexión con el servidor', 'El apartado quedó localmente pendiente. Verifica Neon/Vercel.', 'critical');
+      }
+    })();
 
 
 
@@ -1916,8 +1935,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     // Deduct from account balance if account matches
     setAccounts((prevAccounts) =>
       prevAccounts.map((acc) => {
-        if (acc.nombre.toLowerCase().includes(expenseData.cuenta_origen.toLowerCase()) ||
-            expenseData.cuenta_origen.toLowerCase().includes(acc.nombre.toLowerCase())) {
+        if ((acc.nombre || '').toLowerCase().includes(String(expenseData.cuenta_origen || '').toLowerCase()) ||
+            String(expenseData.cuenta_origen || '').toLowerCase().includes((acc.nombre || '').toLowerCase())) {
           const deduct = acc.moneda === 'USD' ? expenseData.monto_usd : expenseData.monto_bs;
           return {
             ...acc,
@@ -1947,8 +1966,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     // Revert account balance
     setAccounts((prevAccounts) =>
       prevAccounts.map((acc) => {
-        if (acc.nombre.toLowerCase().includes(target.cuenta_origen.toLowerCase()) ||
-            target.cuenta_origen.toLowerCase().includes(acc.nombre.toLowerCase())) {
+        if ((acc.nombre || '').toLowerCase().includes(String(target.cuenta_origen || '').toLowerCase()) ||
+            String(target.cuenta_origen || '').toLowerCase().includes((acc.nombre || '').toLowerCase())) {
           const refund = acc.moneda === 'USD' ? target.monto_usd : target.monto_bs;
           return {
             ...acc,
@@ -2045,7 +2064,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     // 1. Descontar los Bolívares del saldo en Bs (Pago Móvil / Efectivo Bs)
     setAccounts((prevAccounts) =>
       prevAccounts.map((acc) => {
-        if (acc.moneda === 'Bs' && acc.nombre.toLowerCase().includes('pago móvil')) {
+        if (acc.moneda === 'Bs' && (acc.nombre || '').toLowerCase().includes('pago móvil')) {
           return {
             ...acc,
             saldo: Math.max(0, acc.saldo - purchaseData.monto_bs_gastado),
@@ -2058,11 +2077,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     // 2. Acreditar los Dólares al saldo positivo en USD (Binance / Zelle / Efectivo)
     setAccounts((prevAccounts) =>
       prevAccounts.map((acc) => {
-        const methodLower = purchaseData.metodo.toLowerCase();
+        const methodLower = String(purchaseData.metodo || '').toLowerCase();
         if (
-          (methodLower.includes('binance') && acc.nombre.toLowerCase().includes('binance')) ||
-          (methodLower.includes('zelle') && acc.nombre.toLowerCase().includes('zelle')) ||
-          (methodLower.includes('efectivo') && acc.nombre.toLowerCase().includes('efectivo usd'))
+          (methodLower.includes('binance') && (acc.nombre || '').toLowerCase().includes('binance')) ||
+          (methodLower.includes('zelle') && (acc.nombre || '').toLowerCase().includes('zelle')) ||
+          (methodLower.includes('efectivo') && (acc.nombre || '').toLowerCase().includes('efectivo usd'))
         ) {
           return {
             ...acc,
@@ -2089,17 +2108,17 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     // Revertir balances
     setAccounts((prevAccounts) =>
       prevAccounts.map((acc) => {
-        if (acc.moneda === 'Bs' && acc.nombre.toLowerCase().includes('pago móvil')) {
+        if (acc.moneda === 'Bs' && (acc.nombre || '').toLowerCase().includes('pago móvil')) {
           return {
             ...acc,
             saldo: acc.saldo + target.monto_bs_gastado,
           };
         }
-        const methodLower = target.metodo.toLowerCase();
+        const methodLower = String(target.metodo || '').toLowerCase();
         if (
-          (methodLower.includes('binance') && acc.nombre.toLowerCase().includes('binance')) ||
-          (methodLower.includes('zelle') && acc.nombre.toLowerCase().includes('zelle')) ||
-          (methodLower.includes('efectivo') && acc.nombre.toLowerCase().includes('efectivo usd'))
+          (methodLower.includes('binance') && (acc.nombre || '').toLowerCase().includes('binance')) ||
+          (methodLower.includes('zelle') && (acc.nombre || '').toLowerCase().includes('zelle')) ||
+          (methodLower.includes('efectivo') && (acc.nombre || '').toLowerCase().includes('efectivo usd'))
         ) {
           return {
             ...acc,
@@ -2194,9 +2213,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
 
     const targetAcc =
-      accounts.find((a) => a.nombre.toLowerCase() === targetAccountName.toLowerCase()) ||
-      accounts.find((a) => a.nombre.toLowerCase().includes('pago móvil')) ||
-      accounts.find((a) => a.nombre.toLowerCase().includes('punto de venta')) ||
+      accounts.find((a) => (a.nombre || '').toLowerCase() === String(targetAccountName || '').toLowerCase()) ||
+      accounts.find((a) => (a.nombre || '').toLowerCase().includes('pago móvil')) ||
+      accounts.find((a) => (a.nombre || '').toLowerCase().includes('punto de venta')) ||
       accounts[0];
 
     const acreditadoDate = fechaConciliacion || new Date().toISOString();
@@ -2229,7 +2248,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     };
 
     const remainingPendingCashea = updatedPagos
-      .filter((p) => p.cuenta.toLowerCase().includes('cashea') && p.estado_liquidacion !== 'conciliado_en_banco')
+      .filter((p) => (p.cuenta || '').toLowerCase().includes('cashea') && p.estado_liquidacion !== 'conciliado_en_banco')
       .reduce((sum, p) => sum + p.monto_equivalente_usd, 0);
 
     const updatedSale: Sale = {
@@ -2379,65 +2398,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return await sendInventoryWebhook(customProducts || products, { force: true });
   }, [products]);
 
-  const addAccountingRecord = useCallback((recordData: Omit<AccountingRecord, 'id' | 'created_at'> & { id?: string }): AccountingRecord => {
-    const id = recordData.id || `manual-${Date.now()}`;
-    const timestamp = new Date().toISOString();
-    const newRecord: AccountingRecord = {
-      ...recordData,
-      id,
-      created_at: timestamp,
-    };
-    setManualAccountingRecords((prev) => {
-      const updated = [newRecord, ...prev];
-      safeLocalStorageSet(`${STORAGE_KEY}_accounting`, JSON.stringify(updated));
-      return updated;
-    });
-    saveAccountingRecordApi(newRecord).catch(() => {});
-    addNotification('Asiento Registrado', `Asiento ${newRecord.numero_asiento} guardado en el Libro Diario.`, 'success');
-    return newRecord;
-  }, [addNotification]);
-
-  const updateAccountingRecord = useCallback((id: string, updates: Partial<AccountingRecord>) => {
-    setManualAccountingRecords((prev) => {
-      const index = prev.findIndex((r) => r.id === id);
-      let updated: AccountingRecord[];
-      if (index !== -1) {
-        updated = [...prev];
-        updated[index] = { ...updated[index], ...updates };
-      } else {
-        const found = accountingRecords.find((r) => r.id === id);
-        if (found) {
-          updated = [{ ...found, ...updates }, ...prev];
-        } else {
-          updated = prev;
-        }
-      }
-      safeLocalStorageSet(`${STORAGE_KEY}_accounting`, JSON.stringify(updated));
-      const targetRecord = updated.find((r) => r.id === id);
-      if (targetRecord) {
-        saveAccountingRecordApi(targetRecord).catch(() => {});
-      }
-      return updated;
-    });
-    addNotification('Asiento Actualizado', 'Modificaciones guardadas en el Libro Diario.', 'info');
-  }, [accountingRecords, addNotification]);
-
-  const deleteAccountingRecord = useCallback(async (id: string): Promise<boolean> => {
-    setManualAccountingRecords((prev) => {
-      const updated = prev.filter((r) => r.id !== id);
-      safeLocalStorageSet(`${STORAGE_KEY}_accounting`, JSON.stringify(updated));
-      return updated;
-    });
-    await deleteAccountingRecordApi(id).catch(() => {});
-    addNotification('Asiento Eliminado', 'Se eliminó el asiento seleccionado del Libro Diario.', 'info');
-    return true;
-  }, [addNotification]);
-
-  const syncAllAccountingRecords = useCallback(async () => {
-    await syncAllAccountingApi(accountingRecords).catch(() => {});
-    addNotification('Contabilidad Sincronizada', 'El Libro Diario completo fue respaldado en el servidor.', 'success');
-  }, [accountingRecords, addNotification]);
-
   return (
     <StoreContext.Provider
       value={{
@@ -2514,11 +2474,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         exportStoreBackup,
         importStoreBackup,
         triggerInventoryWebhook,
-        accountingRecords,
-        addAccountingRecord,
-        updateAccountingRecord,
-        deleteAccountingRecord,
-        syncAllAccountingRecords,
       }}
     >
       {children}

@@ -60,7 +60,7 @@ export const BdvFileImportModal: React.FC<BdvFileImportModalProps> = ({
               cleanPaymentRef === cleanRef
             );
           }
-          return p.referencia.trim().toLowerCase() === mov.referencia.trim().toLowerCase();
+          return String(p.referencia || '').trim().toLowerCase() === String(mov.referencia || '').trim().toLowerCase();
         });
       });
 
@@ -189,9 +189,9 @@ export const BdvFileImportModal: React.FC<BdvFileImportModalProps> = ({
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
       return (
-        m.referencia.toLowerCase().includes(term) ||
-        m.descripcion.toLowerCase().includes(term) ||
-        (m.cliente && m.cliente.toLowerCase().includes(term))
+        (m.referencia || '').toLowerCase().includes(term) ||
+        (m.descripcion || '').toLowerCase().includes(term) ||
+        (m.cliente && (m.cliente || '').toLowerCase().includes(term))
       );
     }
     return true;

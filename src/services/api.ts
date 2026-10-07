@@ -7,8 +7,7 @@ import {
   Expense,
   BankMovement,
   NeonTableInfo,
-  DailyCashClosure,
-  AccountingRecord
+  DailyCashClosure
 } from '../types';
 
 /**
@@ -363,61 +362,6 @@ export async function saveClosureApi(closure: DailyCashClosure): Promise<boolean
     return Boolean(json.saved);
   } catch (err) {
     console.error('Error saving closure to API:', err);
-    return false;
-  }
-}
-
-// Centralized Accounting API client (Libro Diario / Patentado V10)
-export async function fetchAccountingApi(): Promise<AccountingRecord[]> {
-  try {
-    const res = await fetch('/api/accounting');
-    const json = await safeJson(res, { data: [] });
-    return json.data || [];
-  } catch (err) {
-    console.error('Error fetching accounting from API:', err);
-    return [];
-  }
-}
-
-export async function saveAccountingRecordApi(record: AccountingRecord): Promise<boolean> {
-  try {
-    const res = await fetch('/api/accounting', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(record),
-    });
-    const json = await safeJson(res, { saved: false });
-    return Boolean(json.saved);
-  } catch (err) {
-    console.error('Error saving accounting record to API:', err);
-    return false;
-  }
-}
-
-export async function deleteAccountingRecordApi(id: string): Promise<boolean> {
-  try {
-    const res = await fetch(`/api/accounting/${encodeURIComponent(id)}`, {
-      method: 'DELETE',
-    });
-    const json = await safeJson(res, { success: false });
-    return Boolean(json.success);
-  } catch (err) {
-    console.error('Error deleting accounting record:', err);
-    return false;
-  }
-}
-
-export async function syncAllAccountingApi(records: AccountingRecord[]): Promise<boolean> {
-  try {
-    const res = await fetch('/api/accounting/sync-all', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ records }),
-    });
-    const json = await safeJson(res, { success: false });
-    return Boolean(json.success);
-  } catch (err) {
-    console.error('Error syncing all accounting records:', err);
     return false;
   }
 }

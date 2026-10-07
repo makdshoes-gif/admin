@@ -126,10 +126,10 @@ export const ExpensesManager: React.FC = () => {
       const matchCat = selectedCategory === 'todas' || e.categoria === selectedCategory;
       const term = searchTerm.toLowerCase();
       const matchSearch =
-        e.descripcion.toLowerCase().includes(term) ||
-        (e.beneficiario && e.beneficiario.toLowerCase().includes(term)) ||
-        (e.comprobante_ref && e.comprobante_ref.toLowerCase().includes(term)) ||
-        e.cuenta_origen.toLowerCase().includes(term);
+        (e.descripcion || '').toLowerCase().includes(term) ||
+        (e.beneficiario && (e.beneficiario || '').toLowerCase().includes(term)) ||
+        (e.comprobante_ref && (e.comprobante_ref || '').toLowerCase().includes(term)) ||
+        (e.cuenta_origen || '').toLowerCase().includes(term);
       return matchCat && matchSearch;
     });
   }, [periodExpenses, selectedCategory, searchTerm]);
