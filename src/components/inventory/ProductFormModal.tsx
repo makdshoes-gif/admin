@@ -47,6 +47,12 @@ interface SizeStockItem {
   stock: number;
 }
 
+interface ColorImageItem {
+  id: string;
+  color: string;
+  imagen: string;
+}
+
 export const ProductFormModal: React.FC<ProductFormModalProps> = ({
   isOpen,
   onClose,
@@ -76,6 +82,10 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
   const [precio, setPrecio] = useState(editingProduct?.precio?.toString() || '80.00');
   const [stockMinimo, setStockMinimo] = useState(editingProduct?.stock_minimo?.toString() || '2');
   const [imagen, setImagen] = useState(editingProduct?.imagen || '');
+  // Carga masiva: cada foto puede representar un color distinto del mismo modelo.
+  const [colorImages, setColorImages] = useState<ColorImageItem[]>(
+    editingProduct?.imagen ? [{ id: 'existing-1', color: editingProduct?.color || 'Estándar', imagen: editingProduct.imagen }] : []
+  );
   const [descripcion, setDescripcion] = useState(editingProduct?.descripcion || '');
   const [descripcionOriginalIA, setDescripcionOriginalIA] = useState<string | null>(null);
   const [genero, setGenero] = useState(editingProduct?.genero || 'Unisex');
@@ -553,7 +563,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
     }
   };
 
-  const processImageFile = async (file: File) => {
+  const processImageFile = async (file: File): Promise<string> => {
     if (!file.type.startsWith('image/')) {
       alert('Por favor selecciona un archivo de imagen válido (JPG, PNG, WebP).');
       return;
@@ -569,36 +579,98 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
       });
       setImagen(res.dataUrl);
       setCompressionInfo(res);
+      return res.dataUrl;
       setCameraError(null);
     } catch (err) {
       console.error('Error comprimiendo imagen:', err);
       // Fallback
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        if (typeof e.target?.result === 'string') {
-          setImagen(e.target.result);
-        }
-      };
-      reader.readAsDataURL(file);
+      return await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          if (typeof e.target?.result === 'string') {
+            setImagen(e.target.result);
+            resolve(e.target.result);
+          } else reject(new Error('No se pudo leer la imagen'));
+        };
+        reader.onerror = () => reject(reader.error || new Error('No se pudo leer la imagen'));
+        reader.readAsDataURL(file);
+      });
     } finally {
       setIsCompressingImage(false);
     }
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      processImageFile(file);
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    if (files.length === 1) {
+      processImageFile(files[0]).then((img) => {
+        setColorImages([{ id: `${Date.now()}-0`, color: color.trim() || 'Estándar', imagen: img }]);
+      }).catch(() => {});
+    } else {
+      void handleMultipleImageFiles(files);
+    }
+    e.target.value = '';
+  };
+
+  const handleMultipleImageFiles = async (files: File[]) => {
+    const imageFiles = files.filter((f) => f.type.startsWith('image/'));
+    if (!imageFiles.length) {
+      alert('Selecciona archivos de imagen válidos.');
+      return;
+    }
+    if (imageFiles.length > 12) {
+      alert('Puedes cargar hasta 12 colores/fotos a la vez.');
+      return;
+    }
+    setIsCompressingImage(true);
+    try {
+      const results: ColorImageItem[] = [];
+      for (let i = 0; i < imageFiles.length; i++) {
+        const file = imageFiles[i];
+        const compressed = await compressImageFile(file, {
+          maxDimension: 1280,
+          quality: 0.82,
+          maxSizeBytes: 500 * 1024,
+        });
+        results.push({
+          id: `${Date.now()}-${i}-${Math.random().toString(36).slice(2, 7)}`,
+          color: imageFiles.length === 1 ? (color.trim() || 'Estándar') : `Color ${i + 1}`,
+          imagen: compressed.dataUrl,
+        });
+      }
+      setColorImages(results);
+      if (results[0]) {
+        setImagen(results[0].imagen);
+        setColor(results[0].color);
+      }
+    } catch (err) {
+      console.error('Error cargando imágenes múltiples:', err);
+      alert('No se pudieron procesar todas las imágenes. Intenta nuevamente.');
+    } finally {
+      setIsCompressingImage(false);
     }
   };
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDraggingFile(false);
-    const file = e.dataTransfer.files?.[0];
-    if (file) {
-      processImageFile(file);
-    }
+    const files = Array.from(e.dataTransfer.files || []);
+    if (files.length > 1) void handleMultipleImageFiles(files);
+    else if (files[0]) processImageFile(files[0]).then((img) => setColorImages([{ id: `${Date.now()}-0`, color: color.trim() || 'Estándar', imagen: img }])).catch(() => {});
+  };
+
+  const updateColorImage = (id: string, patch: Partial<ColorImageItem>) => {
+    setColorImages((prev) => prev.map((item) => item.id === id ? { ...item, ...patch } : item));
+  };
+
+  const removeColorImage = (id: string) => {
+    setColorImages((prev) => {
+      const next = prev.filter((item) => item.id !== id);
+      setImagen(next[0]?.imagen || '');
+      if (next[0]?.color) setColor(next[0].color);
+      return next;
+    });
   };
 
   const handleCloseModal = () => {
@@ -678,16 +750,21 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
         .filter(Boolean);
 
       const itemsToCreate: Omit<ShoeProduct, 'id' | 'created_at'>[] = [];
+      // Si se cargaron varias fotos, cada foto es una variante de color.
+      // Todas comparten costo, precio, marca, modelo y tallas; solo cambia color/imagen/SKU.
+      const colorVariants = colorImages.length > 0
+        ? colorImages.map((v) => ({ color: v.color.trim() || 'Estándar', imagen: v.imagen }))
+        : colorTokens.map((c) => ({ color: c, imagen: finalImagen }));
 
-      if (colorTokens.length > 1) {
-        // Create matrix of sizes x colors
-        colorTokens.forEach((cName) => {
+      if (colorVariants.length > 1) {
+        colorVariants.forEach((variant) => {
           activeSizes.forEach((s) => {
             const formattedTalla = s.talla.replace(/\s+/g, '');
-            const colorCode = cName.substring(0, 3).toUpperCase();
+            const colorCode = variant.color.substring(0, 3).replace(/[^A-Za-z0-9]/g, '').toUpperCase() || 'COL';
             itemsToCreate.push({
               ...baseProductData,
-              color: cName,
+              color: variant.color,
+              imagen: variant.imagen,
               sku: `${sku.trim().toUpperCase()}-${colorCode}-${formattedTalla}`,
               talla: s.talla,
               stock: s.stock,
@@ -695,11 +772,13 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
           });
         });
       } else {
-        // Single color with multiple sizes
+        const variant = colorVariants[0] || { color: color.trim() || 'Estándar', imagen: finalImagen };
         activeSizes.forEach((s) => {
           const formattedTalla = s.talla.replace(/\s+/g, '');
           itemsToCreate.push({
             ...baseProductData,
+            color: variant.color,
+            imagen: variant.imagen,
             sku: `${sku.trim().toUpperCase()}-${formattedTalla}`,
             talla: s.talla,
             stock: s.stock,
@@ -1413,9 +1492,41 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
               >
                 <Upload className="w-6 h-6 text-slate-400" />
                 <p className="font-semibold text-slate-700 text-xs">
-                  Haz clic o arrastra una imagen aquí
+                  Haz clic o arrastra varias imágenes aquí
                 </p>
-                <p className="text-[10px] text-slate-400">JPG, PNG o WebP</p>
+                <p className="text-[10px] text-slate-400">JPG, PNG o WebP • varias a la vez • cada foto puede ser un color</p>
+              </div>
+            )}
+
+            {/* MULTI-COLOR IMAGE VARIANTS */}
+            {colorImages.length > 0 && (
+              <div className="space-y-2 p-3 bg-indigo-50/60 border border-indigo-200 rounded-xl">
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <p className="font-bold text-indigo-900 text-xs">Fotos por color ({colorImages.length})</p>
+                    <p className="text-[10px] text-indigo-700">Todas usarán el mismo costo y precio. Cada foto genera su variante de color.</p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {colorImages.map((item, index) => (
+                    <div key={item.id} className="bg-white border border-indigo-100 rounded-xl p-2 flex gap-2 items-center">
+                      <img src={item.imagen} alt={`Color ${index + 1}`} className="w-16 h-16 rounded-lg object-contain bg-slate-50 border border-slate-200 shrink-0" />
+                      <div className="min-w-0 flex-1 space-y-1">
+                        <label className="text-[10px] font-bold text-slate-600">Color</label>
+                        <input
+                          type="text"
+                          value={item.color}
+                          onChange={(e) => updateColorImage(item.id, { color: e.target.value })}
+                          placeholder="Ej. Negro, Blanco, Rojo"
+                          className="w-full px-2 py-1.5 border border-slate-200 rounded-lg text-xs focus:outline-none focus:border-indigo-500"
+                        />
+                      </div>
+                      <button type="button" onClick={() => removeColorImage(item.id)} className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-lg" title="Quitar foto/color">
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
 
@@ -1437,6 +1548,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
               ref={fileInputRef}
               type="file"
               accept="image/*"
+              multiple
               onChange={handleFileChange}
               className="hidden"
             />
