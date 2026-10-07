@@ -116,6 +116,7 @@ export interface Sale {
   subtotal_usd: number;
   descuento_usd: number;
   aplica_iva: boolean;
+  iva_incluido?: boolean; // true = el IVA ya está incluido dentro del precio facturado
   porcentaje_iva: number;
   iva_monto_usd: number;
   total_usd: number;

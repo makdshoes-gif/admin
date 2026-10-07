@@ -258,6 +258,7 @@ export async function initDatabaseSchema() {
         subtotal_usd NUMERIC(12, 2) NOT NULL,
         descuento_usd NUMERIC(12, 2) DEFAULT 0,
         aplica_iva BOOLEAN DEFAULT FALSE,
+        iva_incluido BOOLEAN DEFAULT FALSE,
         porcentaje_iva NUMERIC(5, 2) DEFAULT 0,
         iva_monto_usd NUMERIC(12, 2) DEFAULT 0,
         total_usd NUMERIC(12, 2) NOT NULL,
@@ -335,6 +336,7 @@ export async function initDatabaseSchema() {
     // productos (con sus fotos) cada vez que revisa si hay novedades.
     await sql`ALTER TABLE shoe_products ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()`;
 
+    await sql`ALTER TABLE sales_transactions ADD COLUMN IF NOT EXISTS iva_incluido BOOLEAN DEFAULT FALSE`;
     await sql`ALTER TABLE sales_transactions ADD COLUMN IF NOT EXISTS cliente_correo VARCHAR(150)`;
     await sql`ALTER TABLE sales_transactions ADD COLUMN IF NOT EXISTS notas TEXT`;
     await sql`ALTER TABLE sales_transactions ADD COLUMN IF NOT EXISTS estado VARCHAR(20) DEFAULT 'completada'`;
@@ -554,7 +556,7 @@ export async function saveSaleAndDeductStock(sale: any): Promise<{
        ), inserted AS (
          INSERT INTO sales_transactions (
            id, numero_factura, cliente_nombre, cliente_apellido, cliente_rif,
-           cliente_telefono, cliente_correo, subtotal_usd, descuento_usd, aplica_iva,
+           cliente_telefono, cliente_correo, subtotal_usd, descuento_usd, aplica_iva, iva_incluido,
            porcentaje_iva, iva_monto_usd, total_usd, total_bs, costo_total_usd,
            ganancia_neta_usd, tasa_cambio, items, pagos, fecha, usuario, notas, estado,
            total_positivo_inmediato_usd, total_cashea_pendiente_usd, estado_cashea
@@ -564,7 +566,7 @@ export async function saveSaleAndDeductStock(sale: any): Promise<{
            COALESCE(sale->>'cliente_apellido',''), COALESCE(sale->>'cliente_rif',''),
            COALESCE(sale->>'cliente_telefono',''), COALESCE(sale->>'cliente_correo',''),
            COALESCE((sale->>'subtotal_usd')::numeric,0), COALESCE((sale->>'descuento_usd')::numeric,0),
-           COALESCE((sale->>'aplica_iva')::boolean,FALSE), COALESCE((sale->>'porcentaje_iva')::numeric,0),
+           COALESCE((sale->>'aplica_iva')::boolean,FALSE), COALESCE((sale->>'iva_incluido')::boolean,FALSE), COALESCE((sale->>'porcentaje_iva')::numeric,0),
            COALESCE((sale->>'iva_monto_usd')::numeric,0), COALESCE((sale->>'total_usd')::numeric,0),
            COALESCE((sale->>'total_bs')::numeric,0), COALESCE((sale->>'costo_total_usd')::numeric,0),
            COALESCE((sale->>'ganancia_neta_usd')::numeric,0), COALESCE((sale->>'tasa_cambio')::numeric,0),
@@ -620,14 +622,14 @@ export async function insertSale(sale: any): Promise<boolean> {
   await sql`
     INSERT INTO sales_transactions (
       id, numero_factura, cliente_nombre, cliente_apellido, cliente_rif,
-      cliente_telefono, cliente_correo, subtotal_usd, descuento_usd, aplica_iva,
+      cliente_telefono, cliente_correo, subtotal_usd, descuento_usd, aplica_iva, iva_incluido,
       porcentaje_iva, iva_monto_usd, total_usd, total_bs, costo_total_usd,
       ganancia_neta_usd, tasa_cambio, items, pagos, fecha, usuario, notas, estado,
       total_positivo_inmediato_usd, total_cashea_pendiente_usd, estado_cashea
     ) VALUES (
       ${sale.id}, ${sale.numero_factura}, ${sale.cliente_nombre || ''}, ${sale.cliente_apellido || ''},
       ${sale.cliente_rif || ''}, ${sale.cliente_telefono || ''}, ${sale.cliente_correo || ''},
-      ${sale.subtotal_usd || 0}, ${sale.descuento_usd || 0}, ${!!sale.aplica_iva},
+      ${sale.subtotal_usd || 0}, ${sale.descuento_usd || 0}, ${!!sale.aplica_iva}, ${!!sale.iva_incluido},
       ${sale.porcentaje_iva || 0}, ${sale.iva_monto_usd || 0}, ${sale.total_usd || 0},
       ${sale.total_bs || 0}, ${sale.costo_total_usd || 0}, ${sale.ganancia_neta_usd || 0},
       ${sale.tasa_cambio || 0}, ${JSON.stringify(sale.items || [])}, ${JSON.stringify(sale.pagos || [])},

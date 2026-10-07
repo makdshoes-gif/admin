@@ -74,6 +74,7 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
   const [discountType, setDiscountType] = useState<'none' | 'percent' | 'fixed'>('none');
   const [discountValue, setDiscountValue] = useState<number>(0);
   const [applyIva, setApplyIva] = useState(false);
+  const [ivaIncluded, setIvaIncluded] = useState(true);
   const ivaPercent = 16;
 
   // Invoice & Customer Data
@@ -232,12 +233,22 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
     return 0;
   }, [subtotalUsd, discountType, discountValue]);
 
+  const taxableOrGrossAfterDiscount = useMemo(() => Math.max(0, subtotalUsd - discountUsd), [subtotalUsd, discountUsd]);
+
+  // Cuando el precio ya contiene IVA, el impuesto se extrae del precio final:
+  // base = total / 1.16 e IVA = total - base. Nunca se suma otro 16%.
   const ivaUsd = useMemo(() => {
     if (!applyIva) return 0;
-    return (subtotalUsd - discountUsd) * (ivaPercent / 100);
-  }, [subtotalUsd, discountUsd, applyIva, ivaPercent]);
+    if (ivaIncluded) return taxableOrGrossAfterDiscount * (ivaPercent / (100 + ivaPercent));
+    return taxableOrGrossAfterDiscount * (ivaPercent / 100);
+  }, [taxableOrGrossAfterDiscount, applyIva, ivaIncluded, ivaPercent]);
 
-  const totalUsd = Math.max(0, subtotalUsd - discountUsd + ivaUsd);
+  const totalUsd = Math.max(
+    0,
+    ivaIncluded && applyIva
+      ? taxableOrGrossAfterDiscount
+      : taxableOrGrossAfterDiscount + ivaUsd
+  );
   const totalBs = totalUsd * effectiveExchangeRate;
   const totalCartQuantity = useMemo(() => cart.reduce((sum, item) => sum + item.quantity, 0), [cart]);
 
@@ -327,6 +338,8 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
     setCustomerPhone('');
     setDiscountType('none');
     setDiscountValue(0);
+    setApplyIva(false);
+    setIvaIncluded(true);
     setMixedPayments([]);
     setBdvVerifiedData(null);
     setEditingPricingId(null);
@@ -469,6 +482,7 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
       subtotal_usd: subtotalUsd,
       descuento_usd: discountUsd,
       aplica_iva: applyIva,
+      iva_incluido: applyIva ? ivaIncluded : false,
       porcentaje_iva: applyIva ? ivaPercent : 0,
       iva_monto_usd: ivaUsd,
       total_usd: totalUsd,
@@ -1219,23 +1233,35 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
                       </div>
                     </div>
 
-                    {/* IVA (16% SENIAT) Switch */}
-                    <div className="flex items-center justify-between pt-2.5 border-t border-slate-200 text-xs sm:text-sm">
-                      <div>
-                        <span className="text-slate-800 font-black block">IVA (16% SENIAT):</span>
-                        <span className="text-xs text-slate-500">Impuesto según normativa fiscal</span>
+                    {/* IVA (16% SENIAT) */}
+                    <div className="pt-2.5 border-t border-slate-200 text-xs sm:text-sm space-y-2.5">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <span className="text-slate-800 font-black block">IVA (16% SENIAT):</span>
+                          <span className="text-xs text-slate-500">Puedes incluirlo dentro del precio del zapato.</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setApplyIva(!applyIva)}
+                          className={`px-3 py-2 rounded-xl text-xs font-black cursor-pointer transition ${
+                            applyIva ? 'bg-indigo-600 text-white shadow-2xs' : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
+                          }`}
+                        >
+                          {applyIva ? 'IVA 16% activo' : 'Sin IVA'}
+                        </button>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => setApplyIva(!applyIva)}
-                        className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-black cursor-pointer transition ${
-                          applyIva
-                            ? 'bg-indigo-600 text-white shadow-2xs'
-                            : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
-                        }`}
-                      >
-                        {applyIva ? 'IVA Aplicado (+16%)' : 'Exento de IVA'}
-                      </button>
+                      {applyIva && (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          <button type="button" onClick={() => setIvaIncluded(true)} className={`text-left p-2.5 rounded-xl border font-bold ${ivaIncluded ? 'border-indigo-500 bg-indigo-50 text-indigo-800' : 'border-slate-200 bg-white text-slate-600'}`}>
+                            <span className="block">✓ IVA incluido</span>
+                            <span className="text-[10px] font-medium">El precio ya contiene el 16%</span>
+                          </button>
+                          <button type="button" onClick={() => setIvaIncluded(false)} className={`text-left p-2.5 rounded-xl border font-bold ${!ivaIncluded ? 'border-indigo-500 bg-indigo-50 text-indigo-800' : 'border-slate-200 bg-white text-slate-600'}`}>
+                            <span className="block">IVA adicional</span>
+                            <span className="text-[10px] font-medium">Se suma 16% al precio</span>
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -1760,8 +1786,8 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
                     )}
                     {applyIva && (
                       <div className="flex justify-between items-center text-xs sm:text-sm text-slate-700 font-bold">
-                        <span>IVA (16% SENIAT):</span>
-                        <span className="font-mono font-bold text-slate-900 text-sm sm:text-base">+${ivaUsd.toFixed(2)}</span>
+                        <span>{ivaIncluded ? 'IVA 16% incluido:' : 'IVA 16% adicional:'}</span>
+                        <span className="font-mono font-bold text-slate-900 text-sm sm:text-base">${ivaUsd.toFixed(2)}</span>
                       </div>
                     )}
                     

@@ -329,8 +329,8 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ sale, onClose }) => 
 
                 {sale.aplica_iva && (
                   <div className="flex justify-between text-stone-600">
-                    <span>BASE IMPONIBLE (16%):</span>
-                    <span className="font-bold text-stone-900">+${sale.iva_monto_usd.toFixed(2)}</span>
+                    <span>IVA 16% {sale.iva_incluido ? '(incluido)' : ''}:</span>
+                    <span className="font-bold text-stone-900">${sale.iva_monto_usd.toFixed(2)}</span>
                   </div>
                 )}
 
@@ -524,8 +524,8 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ sale, onClose }) => 
                   )}
                   {sale.aplica_iva && (
                     <div className="flex justify-between text-xs text-slate-600 font-semibold">
-                      <span>IVA (16% SENIAT):</span>
-                      <span className="font-mono text-slate-900">+${sale.iva_monto_usd.toFixed(2)}</span>
+                      <span>IVA (16% SENIAT) {sale.iva_incluido ? 'incluido' : 'adicional'}:</span>
+                      <span className="font-mono text-slate-900">${sale.iva_monto_usd.toFixed(2)}</span>
                     </div>
                   )}
 

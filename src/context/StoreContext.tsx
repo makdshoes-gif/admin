@@ -1328,7 +1328,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     });
 
     // 5. Finalize Sale Record
-    const gananciaNeta = saleData.total_usd - totalCosto;
+    const ingresoNetoSinIva = Math.max(0, Number(saleData.total_usd || 0) - Number(saleData.iva_monto_usd || 0));
+    const gananciaNeta = ingresoNetoSinIva - totalCosto;
     const estadoCashea = totalCasheaPendienteUsd > 0 ? ('pendiente_banco' as const) : ('sin_cashea' as const);
 
     const completedSale: Sale = {
