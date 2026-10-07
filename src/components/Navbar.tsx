@@ -15,22 +15,26 @@ import {
   Check,
   UserCheck,
   Menu,
+  Cloud,
+  Database,
   Landmark,
   TrendingDown,
   Receipt,
   User,
   BookmarkCheck,
   Calendar,
+  Sparkles,
   LogOut,
   ShieldCheck,
   Lock,
   BookOpen
 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
+import { CloudIntegrationModal } from './common/CloudIntegrationModal';
 import { MakdLogo } from './common/MakdLogo';
 import { UserWindowModal } from './common/UserWindowModal';
 
-export type NavigationTab = 'pos' | 'inventory' | 'layaways' | 'reports' | 'cash' | 'expenses' | 'conciliacion' | 'contabilidad';
+export type NavigationTab = 'pos' | 'inventory' | 'layaways' | 'catalogo' | 'reports' | 'cash' | 'expenses' | 'conciliacion' | 'accounting';
 
 interface NavbarProps {
   activeTab: NavigationTab;
@@ -52,11 +56,12 @@ export const Sidebar: React.FC<{
     { id: 'pos' as const, label: 'Punto de Venta', icon: ShoppingCart, count: null },
     { id: 'inventory' as const, label: 'Gestión Inventario', icon: Boxes, count: criticalStockProducts.length },
     { id: 'layaways' as const, label: 'Sistema de Apartados', icon: BookmarkCheck, count: activeLayawaysCount > 0 ? activeLayawaysCount : null },
+    { id: 'accounting' as const, label: 'Contabilidad Central', icon: BookOpen, count: null },
     { id: 'reports' as const, label: 'Facturas & Reportes', icon: Receipt, count: null },
+    { id: 'catalogo' as const, label: 'Catálogo Redes (Adidas)', icon: Sparkles, count: 'DROP' },
     { id: 'cash' as const, label: 'Caja & Arqueo', icon: Wallet, count: null },
     { id: 'expenses' as const, label: 'Gastos & Fin de Mes', icon: TrendingDown, count: null },
     { id: 'conciliacion' as const, label: 'Conciliación Bancaria', icon: Landmark, count: null },
-    { id: 'contabilidad' as const, label: 'Contabilidad • Diario / Mayor', icon: BookOpen, count: null },
   ];
 
   return (
@@ -167,6 +172,22 @@ export const Sidebar: React.FC<{
             <LogOut className="w-4 h-4" />
           </button>
         </div>
+
+        {/* Real-time Status Card (High Density Mockup) */}
+        <div className="px-4 pb-4">
+          <div className="bg-slate-800 rounded-lg p-3 border border-slate-700/60">
+            <p className="text-[10px] text-slate-400 uppercase font-bold mb-1">
+              Estado en Tiempo Real
+            </p>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>
+                <span className="text-[11px] text-slate-200 font-medium">Sincronización Neon</span>
+              </div>
+              <span className="text-[10px] font-mono text-emerald-400 font-bold">Activo</span>
+            </div>
+          </div>
+        </div>
       </aside>
     </>
   );
@@ -204,6 +225,7 @@ export const Header: React.FC<{
   const [newRate, setNewRate] = useState(exchangeRate.toString());
   const [showNotifications, setShowNotifications] = useState(false);
   const [manualMode, setManualMode] = useState(false);
+  const [showCloudModal, setShowCloudModal] = useState(false);
   const [showUserModal, setShowUserModal] = useState(false);
 
   const unreadCount = notifications.filter((n) => !n.read).length;
@@ -234,6 +256,8 @@ export const Header: React.FC<{
         return 'Gestión de Inventario y Almacén';
       case 'layaways':
         return 'Sistema de Apartados y Reservas';
+      case 'catalogo':
+        return 'Catálogo Streetwear Tipo Adidas (Redes Sociales)';
       case 'reports':
         return 'Reportes Automáticos de Ventas';
       case 'cash':
@@ -241,7 +265,9 @@ export const Header: React.FC<{
       case 'expenses':
         return 'Control de Gastos & Balance de Fin de Mes';
       case 'conciliacion':
-        return 'Conciliación Bancaria';
+        return 'Conciliación Bancaria & Neon Database';
+      case 'accounting':
+        return 'Contabilidad Central & Libro Diario (Patentado V10)';
       default:
         return 'Administración de Zapatería';
     }
@@ -269,7 +295,7 @@ export const Header: React.FC<{
         </div>
       </div>
 
-      {/* Right Actions: Apartados, Live Revenue, BCV Rate, Bell, User Profile & Exit */}
+      {/* Right Actions: Apartados, Live Revenue, BCV Rate, Neon DB, Bell, User Profile & Exit */}
       <div className="flex items-center gap-1 sm:gap-2 shrink-0">
         
         {/* Quick Apartados Access Button */}
@@ -344,6 +370,22 @@ export const Header: React.FC<{
               isBcvSyncing ? 'animate-spin text-indigo-600' : ''
             }`}
           />
+        </button>
+
+        {/* Neon PostgreSQL Cloud Sync Badge */}
+        <button
+          id="neon-cloud-badge"
+          onClick={() => setShowCloudModal(true)}
+          title="Base de datos Neon PostgreSQL"
+          className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg bg-emerald-50 border border-emerald-200 text-xs text-emerald-800 hover:bg-emerald-100 transition-colors cursor-pointer shadow-2xs font-semibold shrink-0"
+        >
+          <Database className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+          <span className="hidden md:inline">Neon DB</span>
+          <span
+            className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+              syncStatus === 'syncing' ? 'bg-amber-500 animate-ping' : 'bg-emerald-500'
+            }`}
+          ></span>
         </button>
 
         {/* Notification Bell */}
@@ -660,6 +702,12 @@ export const Header: React.FC<{
           </div>
         </div>
       )}
+
+      {/* Cloud & BDV Integrations Modal */}
+      <CloudIntegrationModal
+        isOpen={showCloudModal}
+        onClose={() => setShowCloudModal(false)}
+      />
 
       {/* Ventana de Usuario Modal con Logo MAKD */}
       <UserWindowModal

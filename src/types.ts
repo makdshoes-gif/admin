@@ -257,15 +257,6 @@ export interface BankMovement {
   vinculado_tipo?: 'venta' | 'gasto' | 'transferencia' | 'otro';
   vinculado_id?: string;
   notas?: string;
-  cashea?: {
-    habilitado: boolean;
-    porcentaje_inicial: number;
-    numero_cuotas: number;
-    porcentajes_cuotas: number[];
-    cuenta_inicial?: string;
-    cuenta_financiamiento?: string;
-    referencia?: string;
-  };
   created_at: string;
 }
 
@@ -296,15 +287,6 @@ export interface CurrencyPurchase {
   referencia?: string;      // N° de orden Binance, ID de Zelle, etc.
   usuario: string;
   notas?: string;
-  cashea?: {
-    habilitado: boolean;
-    porcentaje_inicial: number;
-    numero_cuotas: number;
-    porcentajes_cuotas: number[];
-    cuenta_inicial?: string;
-    cuenta_financiamiento?: string;
-    referencia?: string;
-  };
   created_at: string;
 }
 
@@ -369,15 +351,65 @@ export interface Layaway {
   estado: LayawayStatus;
   usuario: string;
   notas?: string;
-  cashea?: {
-    habilitado: boolean;
-    porcentaje_inicial: number;
-    numero_cuotas: number;
-    porcentajes_cuotas: number[];
-    cuenta_inicial?: string;
-    cuenta_financiamiento?: string;
-    referencia?: string;
-  };
   created_at: string;
   updated_at: string;
+}
+
+export type AccountingOperationType =
+  | 'Venta'
+  | 'Compra'
+  | 'Gasto'
+  | 'Pago'
+  | 'Cashea'
+  | 'Apartado'
+  | 'Ajuste';
+
+export type AccountingDocType =
+  | 'FACTURA'
+  | 'RECIBO'
+  | 'GASTO'
+  | 'APARTADO'
+  | 'COMPRA'
+  | 'LIQUIDACION'
+  | 'NOTA_CREDITO'
+  | 'COMPROBANTE';
+
+export interface AccountingJournalLine {
+  id: string;
+  partida: string;
+  cuenta: string;
+  subcuenta: string;
+  clasificacion: string;
+  subclasificacion: string;
+  debe: number;
+  haber: number;
+  descripcion: string;
+}
+
+export interface AccountingRecord {
+  id: string;
+  numero_asiento: string; // ej: AS-00001
+  fecha: string; // YYYY-MM-DD
+  partida: string; // ej: 01, 02
+  cuenta: string;
+  subcuenta: string;
+  clasificacion: string; // Ingresos, Activo, Pasivo, Costos, Gastos, Patrimonio
+  subclasificacion: string; // Ventas gravadas, Activo Circulante, Cuentas por Cobrar, etc.
+  mes_ano: string; // MM-YYYY ej: 10-2026
+  metodo_pago: string; // Cashea, Efectivo USD, Punto de Venta, Pago Móvil, etc.
+  numero_documento: string; // FAC-000125, GAST-001, etc.
+  tipo_documento: AccountingDocType | string;
+  sujeto: string; // Razón social / Proveedor / Cliente
+  rif: string;
+  moneda: Currency;
+  debe: number;
+  haber: number;
+  operacion_tipo: AccountingOperationType; // Venta/Compra
+  origen_tipo?: 'venta' | 'compra' | 'gasto' | 'cobro_cashea' | 'apartado' | 'manual';
+  origen_id?: string;
+  observaciones?: string;
+  url_comprobante?: string;
+  tasa_cambio?: number;
+  created_at: string;
+  lineas_asiento?: AccountingJournalLine[];
 }

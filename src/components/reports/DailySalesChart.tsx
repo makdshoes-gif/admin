@@ -94,12 +94,12 @@ export const DailySalesChart: React.FC<DailySalesChartProps> = ({ sales, exchang
         if (!salesByDay[key]) {
           salesByDay[key] = { totalUsd: 0, totalBs: 0, pairs: 0, count: 0, profitUsd: 0 };
         }
-        const pairsCount = sale.items.reduce((sum, it) => sum + (Number(it.cantidad) || 0), 0);
-        salesByDay[key].totalUsd += Number(sale.total_usd) || 0;
-        salesByDay[key].totalBs += Number(sale.total_bs) || 0;
+        const pairsCount = sale.items.reduce((sum, it) => sum + it.cantidad, 0);
+        salesByDay[key].totalUsd += sale.total_usd;
+        salesByDay[key].totalBs += sale.total_bs;
         salesByDay[key].pairs += pairsCount;
         salesByDay[key].count += 1;
-        salesByDay[key].profitUsd += Number(sale.ganancia_neta_usd) || 0;
+        salesByDay[key].profitUsd += sale.ganancia_neta_usd;
       }
     });
 

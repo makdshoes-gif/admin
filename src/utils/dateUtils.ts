@@ -78,23 +78,10 @@ export function createSaleTimestamp(invoiceDate?: string): string {
     : getTodayVenezuela();
 
   const now = new Date();
-  let hh = String(now.getHours()).padStart(2, '0');
-  let mm = String(now.getMinutes()).padStart(2, '0');
-  let ss = String(now.getSeconds()).padStart(2, '0');
-  try {
-    const parts = new Intl.DateTimeFormat('en-GB', {
-      timeZone: 'America/Caracas',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      hourCycle: 'h23',
-    }).formatToParts(now);
-    hh = parts.find((p) => p.type === 'hour')?.value || hh;
-    mm = parts.find((p) => p.type === 'minute')?.value || mm;
-    ss = parts.find((p) => p.type === 'second')?.value || ss;
-  } catch {}
+  const hh = String(now.getHours()).padStart(2, '0');
+  const mm = String(now.getMinutes()).padStart(2, '0');
+  const ss = String(now.getSeconds()).padStart(2, '0');
 
-  // Timestamp ISO con offset de Venezuela. PostgreSQL lo convierte correctamente
-  // a TIMESTAMP WITH TIME ZONE y conserva la fecha civil seleccionada.
-  return `${targetDate}T${hh}:${mm}:${ss}-04:00`;
+  // Formato local YYYY-MM-DDTHH:mm:ss sin Z para preservar el día de negocio
+  return `${targetDate}T${hh}:${mm}:${ss}`;
 }

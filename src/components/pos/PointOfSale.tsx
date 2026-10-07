@@ -52,7 +52,6 @@ export interface CartItem {
 export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ onNavigateToLayaways }) => {
   const {
     products,
-    sales,
     exchangeRate,
     accounts,
     recordSale,
@@ -79,15 +78,6 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
   // Invoice & Customer Data
   const todayIso = getTodayVenezuela();
   const [invoiceDate, setInvoiceDate] = useState<string>(() => getTodayVenezuela());
-  const getNextInvoiceNumber = React.useCallback(() => {
-    const max = sales.reduce((highest, sale) => {
-      const m = String(sale.numero_factura || '').match(/(?:MK[- ]?)?(\d+)$/i);
-      return m ? Math.max(highest, Number(m[1]) || 0) : highest;
-    }, 0);
-    return `MK-${String(max + 1).padStart(6, '0')}`;
-  }, [sales]);
-  const [invoiceNumber, setInvoiceNumber] = useState<string>(() => 'MK-000001');
-  const [reservedInvoiceNumber, setReservedInvoiceNumber] = useState<string>('');
   const [customSaleRate, setCustomSaleRate] = useState<string>('');
   const [isCustomSaleRate, setIsCustomSaleRate] = useState(false);
   const [customerName, setCustomerName] = useState('');
@@ -128,21 +118,6 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
 
   // Post-sale Receipt Modal
   const [lastSale, setLastSale] = useState<Sale | null>(null);
-  React.useEffect(() => {
-    let cancelled = false;
-    fetch('/api/invoices/next', { method: 'POST', headers: { 'Content-Type': 'application/json' } })
-      .then((r) => r.ok ? r.json() : null)
-      .then((j) => {
-        if (!cancelled && j?.numero_factura) {
-          setInvoiceNumber(j.numero_factura);
-          setReservedInvoiceNumber(j.numero_factura);
-        } else if (!cancelled) {
-          setInvoiceNumber(getNextInvoiceNumber());
-        }
-      })
-      .catch(() => { if (!cancelled) setInvoiceNumber(getNextInvoiceNumber()); });
-    return () => { cancelled = true; };
-  }, [getNextInvoiceNumber]);
 
   // Billing View Mode when cart has items: 'expanded' (wide principal workbench) | 'split' | 'fullscreen'
   const [billingViewMode, setBillingViewMode] = useState<'expanded' | 'split' | 'fullscreen'>('expanded');
@@ -406,7 +381,7 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
   };
 
   // Finalize Sale
-  const handleFinalizeSale = async () => {
+  const handleFinalizeSale = () => {
     if (cart.length === 0) return;
 
     // Check payments
@@ -450,17 +425,12 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
       };
     });
 
-    let finalInvoiceNumber = invoiceNumber.trim() || getNextInvoiceNumber();
-    // Si el número visible sigue siendo el reservado por Neon, es el correlativo
-    // oficial. Si la cajera lo cambió manualmente, respetamos su número.
-    if (!finalInvoiceNumber) finalInvoiceNumber = reservedInvoiceNumber || getNextInvoiceNumber();
+    const invoiceNumber = `MK-${Math.floor(1000 + Math.random() * 9000)}`;
 
     const finalSaleDate = createSaleTimestamp(invoiceDate);
 
-    let newSale: Sale;
-    try {
-      newSale = await recordSale({
-      numero_factura: finalInvoiceNumber,
+    const newSale = recordSale({
+      numero_factura: invoiceNumber,
       cliente_nombre: customerName.trim() || 'Consumidor Final',
       cliente_apellido: customerLastName.trim() || '',
       cliente_rif: customerRif.trim() || undefined,
@@ -477,12 +447,7 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
       pagos: finalPayments,
       fecha: finalSaleDate,
       usuario: userRole === 'admin' ? 'Admin' : 'Cajera',
-      });
-    } catch (error) {
-      console.error('Venta rechazada por el servidor:', error);
-      alert(error instanceof Error ? error.message : 'No se pudo registrar la venta. Verifica Neon e intenta nuevamente.');
-      return;
-    }
+    });
 
     setExchangeRateForDate(invoiceDate, effectiveExchangeRate);
 
@@ -502,11 +467,10 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
     setInvoiceDate(getTodayVenezuela());
     setIsMixedPaymentOpen(false);
     setLastSale(newSale);
-    setInvoiceNumber(`MK-${String(Number((finalInvoiceNumber.match(/(\d+)$/) || [0, 0])[1]) + 1).padStart(6, '0')}`);
   };
 
   return (
-    <div className="w-full max-w-none mx-0 space-y-4 px-2 sm:px-4 lg:px-5">
+    <div className="max-w-7xl mx-auto space-y-5">
       
       {/* Top Banner / Stats */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-3.5 sm:p-4 rounded-2xl border border-slate-200 shadow-xs">
@@ -1299,21 +1263,6 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
                       </div>
                     </div>
 
-                    {/* Número de Factura */}
-                    <div className="pt-2.5 border-t border-slate-200 mb-3">
-                      <label className="text-xs font-black text-slate-700 uppercase tracking-wider block mb-1.5">
-                        <span className="flex items-center gap-1.5"><Receipt className="w-4 h-4 text-indigo-600" /> Número de Factura</span>
-                      </label>
-                      <input
-                        type="text"
-                        value={invoiceNumber}
-                        onChange={(e) => setInvoiceNumber(e.target.value.toUpperCase().replace(/\s+/g, ''))}
-                        placeholder="MK-000001"
-                        className="w-full px-3 py-2 bg-white border border-indigo-200 rounded-xl text-slate-900 font-mono font-black focus:outline-none focus:border-indigo-600 focus:ring-2 focus:ring-indigo-500/20"
-                      />
-                      <p className="text-[10px] text-slate-400 mt-1">Numeración corrida automática. Puedes cambiarla antes de emitir la factura.</p>
-                    </div>
-
                     {/* Fecha de Emisión Factura */}
                     <div className="pt-2.5 border-t border-slate-200">
                       <div className="flex items-center justify-between text-xs font-black uppercase tracking-wider text-slate-700 mb-1.5">
@@ -1440,52 +1389,8 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
                           Cobro Multimoneda Combinado:
                         </div>
 
-                        {/* Resumen explícito de Cashea, incluyendo 0% de inicial */}
-                        {mixedPayments.some((pay) => (pay.cuenta || '').toLowerCase().includes('cashea')) && (
-                          <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 space-y-1.5 text-xs sm:text-sm">
-                            <div className="font-black text-amber-900">CASHEA — Resumen de facturación</div>
-                            <div className="flex justify-between font-bold text-slate-700">
-                              <span>Inicial:</span>
-                              <span>{casheaDownPercent}% — ${((totalUsd * casheaDownPercent) / 100).toFixed(2)} USD</span>
-                            </div>
-                            <div className="flex justify-between font-bold text-slate-700">
-                              <span>Financiamiento Cashea:</span>
-                              <span>{100 - casheaDownPercent}% — ${(totalUsd * (100 - casheaDownPercent) / 100).toFixed(2)} USD</span>
-                            </div>
-                            <div className="text-[11px] text-amber-800 font-semibold">
-                              {casheaDownPercent === 0
-                                ? 'Inicial hoy: $0.00. El 100% queda pendiente de liquidación por Cashea.'
-                                : 'La inicial entra como pago inmediato y el saldo queda pendiente de liquidación por Cashea.'}
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Resumen Cashea explícito, incluido cuando la inicial es 0% */}
-                        {mixedPayments.some((pay) => (pay.cuenta || '').toLowerCase().includes('cashea')) && (
-                          <div className="p-3 bg-amber-50 border border-amber-300 rounded-xl space-y-1.5 text-xs sm:text-sm">
-                            <div className="flex items-center justify-between font-black text-amber-900">
-                              <span>CASHEA</span>
-                              <span>{casheaDownPercent}% inicial</span>
-                            </div>
-                            <div className="flex justify-between text-amber-800">
-                              <span>Inicial:</span>
-                              <strong>${((totalUsd * casheaDownPercent) / 100).toFixed(2)}</strong>
-                            </div>
-                            <div className="flex justify-between text-amber-800">
-                              <span>Financiamiento Cashea:</span>
-                              <strong>${(totalUsd - (totalUsd * casheaDownPercent) / 100).toFixed(2)}</strong>
-                            </div>
-                            {casheaDownPercent === 0 && (
-                              <div className="pt-1 border-t border-amber-200 font-black text-amber-900">
-                                Inicial 0% — $0,00 · 100% pendiente por liquidar
-                              </div>
-                            )}
-                          </div>
-                        )}
-
                         {/* List of current mixed payments */}
                         {mixedPayments.map((pay, idx) => (
-
                           <div
                             key={pay.id ? `mixed-pay-${pay.id}-${idx}` : `mixed-pay-${idx}`}
                             className="flex items-center justify-between p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-xs sm:text-sm"
@@ -1598,7 +1503,7 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
                               Porcentaje de Inicial a cobrar hoy:
                             </label>
                             <div className="grid grid-cols-4 gap-1.5">
-                              {[0, 40, 50, 60].map((pct) => (
+                              {[40, 50, 60].map((pct) => (
                                 <button
                                   key={pct}
                                   type="button"
@@ -1615,10 +1520,10 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
                               <div className="relative">
                                 <input
                                   type="number"
-                                  min="0"
+                                  min="1"
                                   max="99"
                                   value={casheaDownPercent}
-                                  onChange={(e) => setCasheaDownPercent(Math.min(99, Math.max(0, Number(e.target.value) || 0)))}
+                                  onChange={(e) => setCasheaDownPercent(Math.min(99, Math.max(1, Number(e.target.value) || 0)))}
                                   className="w-full py-2 px-2 bg-white border border-slate-300 rounded-xl text-xs sm:text-sm font-black text-center text-slate-800"
                                   placeholder="%"
                                 />
@@ -1775,7 +1680,7 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
                         </span>
                       </div>
                       <div className="text-left sm:text-right mt-1 sm:mt-0 min-w-0">
-                        <div className="text-xl sm:text-2xl lg:text-3xl font-black text-indigo-700 font-mono tracking-tight truncate">
+                        <div className="text-2xl sm:text-3xl lg:text-4xl font-black text-indigo-700 font-mono tracking-tight truncate">
                           ${totalUsd.toFixed(2)}
                         </div>
                         <div className="text-sm sm:text-lg font-bold text-slate-900 font-mono mt-0.5 truncate">

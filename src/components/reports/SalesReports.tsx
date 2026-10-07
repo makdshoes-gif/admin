@@ -31,6 +31,7 @@ import {
   ChevronDown,
   ChevronUp,
   BarChart3,
+  FileText,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -49,9 +50,10 @@ import { ReceiptModal } from '../common/ReceiptModal';
 import { DailySalesChart } from './DailySalesChart';
 import { GoogleSheetsSyncModal } from '../common/GoogleSheetsSyncModal';
 import { getTodayVenezuela, getYesterdayVenezuela, getSaleDateKey } from '../../utils/dateUtils';
+import { generateSalesReportPdf, generateIndividualReceiptPdf } from '../../utils/salesPdfGenerator';
 
 export const SalesReports: React.FC = () => {
-  const { sales, exchangeRate, products, bcvInfo, isBcvSyncing, syncBcvRate, updateSaleDate, updateSaleDetails, voidSale } = useStore();
+  const { sales, exchangeRate, products, bcvInfo, isBcvSyncing, syncBcvRate, updateSaleDate, voidSale } = useStore();
 
   const [period, setPeriod] = useState<ReportPeriod>('este_mes');
   const [customStartDate, setCustomStartDate] = useState('');
@@ -60,8 +62,6 @@ export const SalesReports: React.FC = () => {
   const [lastGeneratedTime, setLastGeneratedTime] = useState<string>(new Date().toLocaleTimeString());
   const [isSheetsModalOpen, setIsSheetsModalOpen] = useState(false);
   const [editingSaleDateId, setEditingSaleDateId] = useState<string | null>(null);
-  const [editingInvoiceId, setEditingInvoiceId] = useState<string | null>(null);
-  const [tempInvoiceNumber, setTempInvoiceNumber] = useState('');
   const [tempDateValue, setTempDateValue] = useState<string>('');
   const [saleToVoid, setSaleToVoid] = useState<Sale | null>(null);
   const [voidReason, setVoidReason] = useState('');
@@ -178,12 +178,12 @@ export const SalesReports: React.FC = () => {
 
     const roundedDays = daysList.map((d) => ({
       ...d,
-      efectivo: Number(Number(d.efectivo ?? 0).toFixed(2)),
-      punto: Number(Number(d.punto ?? 0).toFixed(2)),
-      movil: Number(Number(d.movil ?? 0).toFixed(2)),
-      cashea: Number(Number(d.cashea ?? 0).toFixed(2)),
-      otros: Number(Number(d.otros ?? 0).toFixed(2)),
-      total: Number(Number(d.total ?? 0).toFixed(2)),
+      efectivo: Number(d.efectivo.toFixed(2)),
+      punto: Number(d.punto.toFixed(2)),
+      movil: Number(d.movil.toFixed(2)),
+      cashea: Number(d.cashea.toFixed(2)),
+      otros: Number(d.otros.toFixed(2)),
+      total: Number(d.total.toFixed(2)),
     }));
 
     let sumEfectivo = 0;
@@ -314,7 +314,7 @@ export const SalesReports: React.FC = () => {
       if (typeof s.total_positivo_inmediato_usd === 'number') {
         return acc + s.total_positivo_inmediato_usd;
       }
-      const nonCashea = s.pagos.filter((p) => !(p.cuenta || '').toLowerCase().includes('cashea'));
+      const nonCashea = s.pagos.filter((p) => !p.cuenta.toLowerCase().includes('cashea'));
       return acc + nonCashea.reduce((sum, p) => sum + p.monto_equivalente_usd, 0);
     }, 0);
   }, [filteredSales]);
@@ -326,7 +326,7 @@ export const SalesReports: React.FC = () => {
         return acc + s.total_cashea_pendiente_usd;
       }
       const casheaPays = s.pagos.filter(
-        (p) => (p.cuenta || '').toLowerCase().includes('cashea') && p.estado_liquidacion !== 'conciliado_en_banco'
+        (p) => p.cuenta.toLowerCase().includes('cashea') && p.estado_liquidacion !== 'conciliado_en_banco'
       );
       return acc + casheaPays.reduce((sum, p) => sum + p.monto_equivalente_usd, 0);
     }, 0);
@@ -336,7 +336,7 @@ export const SalesReports: React.FC = () => {
     return filteredSales.reduce((acc, s) => {
       if (s.estado === 'anulada') return acc;
       const reconciledCashea = s.pagos.filter(
-        (p) => (p.cuenta || '').toLowerCase().includes('cashea') && p.estado_liquidacion === 'conciliado_en_banco'
+        (p) => p.cuenta.toLowerCase().includes('cashea') && p.estado_liquidacion === 'conciliado_en_banco'
       );
       return acc + reconciledCashea.reduce((sum, p) => sum + p.monto_equivalente_usd, 0);
     }, 0);
@@ -344,25 +344,25 @@ export const SalesReports: React.FC = () => {
 
   const casheaSalesCount = useMemo(() => {
     return filteredSales.filter(
-      (s) => s.estado !== 'anulada' && s.pagos.some((p) => (p.cuenta || '').toLowerCase().includes('cashea'))
+      (s) => s.estado !== 'anulada' && s.pagos.some((p) => p.cuenta.toLowerCase().includes('cashea'))
     ).length;
   }, [filteredSales]);
 
   const directSalesCount = useMemo(() => {
     return filteredSales.filter(
-      (s) => s.estado !== 'anulada' && !s.pagos.some((p) => (p.cuenta || '').toLowerCase().includes('cashea'))
+      (s) => s.estado !== 'anulada' && !s.pagos.some((p) => p.cuenta.toLowerCase().includes('cashea'))
     ).length;
   }, [filteredSales]);
 
   const displayedSales = useMemo(() => {
     if (paymentTypeFilter === 'cashea') {
       return filteredSales.filter((s) =>
-        s.pagos.some((p) => (p.cuenta || '').toLowerCase().includes('cashea'))
+        s.pagos.some((p) => p.cuenta.toLowerCase().includes('cashea'))
       );
     }
     if (paymentTypeFilter === 'direct') {
       return filteredSales.filter(
-        (s) => !s.pagos.some((p) => (p.cuenta || '').toLowerCase().includes('cashea'))
+        (s) => !s.pagos.some((p) => p.cuenta.toLowerCase().includes('cashea'))
       );
     }
     return filteredSales;
@@ -489,12 +489,32 @@ export const SalesReports: React.FC = () => {
     XLSX.writeFile(wb, `Reporte_Ventas_MAKD_SHOP_${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
+  // Export to PDF (jsPDF Resumen de Cierre Diario)
+  const handleExportPdf = () => {
+    generateSalesReportPdf({
+      sales: displayedSales,
+      periodLabel: period === 'personalizado' ? `${customStartDate || 'Inicio'} al ${customEndDate || 'Fin'}` : period.replace('_', ' '),
+      startDate: customStartDate,
+      endDate: customEndDate,
+      exchangeRate,
+      totalRevenueUsd,
+      totalRevenueBs,
+      totalCostUsd,
+      netProfitUsd,
+      profitMarginPercent,
+      totalPairsSold,
+      averageTicketUsd,
+      paymentBreakdown: paymentMethodBreakdown,
+      topSellingShoes,
+    });
+  };
+
   const handlePrintReport = () => {
     window.print();
   };
 
   return (
-    <div className="w-full max-w-none mx-0 space-y-4 px-2 sm:px-4 lg:px-5">
+    <div className="max-w-7xl mx-auto space-y-5">
       
       {/* Top Banner with Automatic Refresh & Period Selector */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
@@ -536,6 +556,16 @@ export const SalesReports: React.FC = () => {
           >
             <RefreshCw className="w-3.5 h-3.5" />
             <span className="text-[11px] text-slate-500 hidden sm:inline">{lastGeneratedTime}</span>
+          </button>
+
+          <button
+            id="export-pdf-report-btn"
+            onClick={handleExportPdf}
+            className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer whitespace-nowrap shrink-0"
+            title="Descargar Reporte y Resumen de Cierre Diario en PDF profesional"
+          >
+            <FileText className="w-4 h-4" />
+            <span>Exportar PDF</span>
           </button>
 
           <button
@@ -899,7 +929,7 @@ export const SalesReports: React.FC = () => {
             </div>
             <div className="text-xl font-bold font-mono text-slate-900">
               {weeklyCurrency === 'USD'
-                ? `$${Number(weeklyTotals.efectivo ?? 0).toFixed(2)}`
+                ? `$${weeklyTotals.efectivo.toFixed(2)}`
                 : `${weeklyTotals.efectivo.toLocaleString('es-VE', { maximumFractionDigits: 0 })} Bs`}
             </div>
             <p className="text-[10px] text-slate-500">
@@ -922,7 +952,7 @@ export const SalesReports: React.FC = () => {
             </div>
             <div className="text-xl font-bold font-mono text-slate-900">
               {weeklyCurrency === 'USD'
-                ? `$${Number(weeklyTotals.punto ?? 0).toFixed(2)}`
+                ? `$${weeklyTotals.punto.toFixed(2)}`
                 : `${weeklyTotals.punto.toLocaleString('es-VE', { maximumFractionDigits: 0 })} Bs`}
             </div>
             <p className="text-[10px] text-slate-500">
@@ -945,7 +975,7 @@ export const SalesReports: React.FC = () => {
             </div>
             <div className="text-xl font-bold font-mono text-slate-900">
               {weeklyCurrency === 'USD'
-                ? `$${Number(weeklyTotals.movil ?? 0).toFixed(2)}`
+                ? `$${weeklyTotals.movil.toFixed(2)}`
                 : `${weeklyTotals.movil.toLocaleString('es-VE', { maximumFractionDigits: 0 })} Bs`}
             </div>
             <p className="text-[10px] text-slate-500">
@@ -968,7 +998,7 @@ export const SalesReports: React.FC = () => {
             </div>
             <div className="text-xl font-bold font-mono text-slate-900">
               {weeklyCurrency === 'USD'
-                ? `$${Number(weeklyTotals.cashea ?? 0).toFixed(2)}`
+                ? `$${weeklyTotals.cashea.toFixed(2)}`
                 : `${weeklyTotals.cashea.toLocaleString('es-VE', { maximumFractionDigits: 0 })} Bs`}
             </div>
             <p className="text-[10px] text-slate-500">
@@ -985,7 +1015,7 @@ export const SalesReports: React.FC = () => {
               Total facturado en la semana:{' '}
               <strong className="text-slate-900 font-mono">
                 {weeklyCurrency === 'USD'
-                  ? `$${Number(weeklyTotals.total ?? 0).toFixed(2)}`
+                  ? `$${weeklyTotals.total.toFixed(2)}`
                   : `${weeklyTotals.total.toLocaleString('es-VE', { maximumFractionDigits: 0 })} Bs`}
               </strong>{' '}
               ({weeklyTotals.transacciones} {weeklyTotals.transacciones === 1 ? 'venta' : 'ventas'})
@@ -998,7 +1028,7 @@ export const SalesReports: React.FC = () => {
               <span className="font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded font-mono text-[11px]">
                 {weeklyTotals.peakDay.dayLabel} (
                 {weeklyCurrency === 'USD'
-                  ? `$${Number(weeklyTotals.peakDay?.total ?? 0).toFixed(2)}`
+                  ? `$${weeklyTotals.peakDay.total.toFixed(2)}`
                   : `${weeklyTotals.peakDay.total.toLocaleString('es-VE', { maximumFractionDigits: 0 })} Bs`}
                 )
               </span>
@@ -1243,34 +1273,34 @@ export const SalesReports: React.FC = () => {
                       </td>
                       <td className="py-2.5 px-3 text-right font-mono font-semibold text-emerald-600">
                         {weeklyCurrency === 'USD'
-                          ? `$${Number(d.efectivo ?? 0).toFixed(2)}`
+                          ? `$${d.efectivo.toFixed(2)}`
                           : `${d.efectivo.toLocaleString('es-VE', { maximumFractionDigits: 0 })} Bs`}
                       </td>
                       <td className="py-2.5 px-3 text-right font-mono font-semibold text-blue-600">
                         {weeklyCurrency === 'USD'
-                          ? `$${Number(d.punto ?? 0).toFixed(2)}`
+                          ? `$${d.punto.toFixed(2)}`
                           : `${d.punto.toLocaleString('es-VE', { maximumFractionDigits: 0 })} Bs`}
                       </td>
                       <td className="py-2.5 px-3 text-right font-mono font-semibold text-purple-600">
                         {weeklyCurrency === 'USD'
-                          ? `$${Number(d.movil ?? 0).toFixed(2)}`
+                          ? `$${d.movil.toFixed(2)}`
                           : `${d.movil.toLocaleString('es-VE', { maximumFractionDigits: 0 })} Bs`}
                       </td>
                       <td className="py-2.5 px-3 text-right font-mono font-semibold text-amber-600">
                         {weeklyCurrency === 'USD'
-                          ? `$${Number(d.cashea ?? 0).toFixed(2)}`
+                          ? `$${d.cashea.toFixed(2)}`
                           : `${d.cashea.toLocaleString('es-VE', { maximumFractionDigits: 0 })} Bs`}
                       </td>
                       {hasOtrosPayments && (
                         <td className="py-2.5 px-3 text-right font-mono text-slate-500">
                           {weeklyCurrency === 'USD'
-                            ? `$${Number(d.otros ?? 0).toFixed(2)}`
+                            ? `$${d.otros.toFixed(2)}`
                             : `${d.otros.toLocaleString('es-VE', { maximumFractionDigits: 0 })} Bs`}
                         </td>
                       )}
                       <td className="py-2.5 px-3 text-right font-mono font-bold text-slate-900 bg-slate-50/50">
                         {weeklyCurrency === 'USD'
-                          ? `$${Number(d.total ?? 0).toFixed(2)}`
+                          ? `$${d.total.toFixed(2)}`
                           : `${d.total.toLocaleString('es-VE', { maximumFractionDigits: 0 })} Bs`}
                       </td>
                     </tr>
@@ -1282,34 +1312,34 @@ export const SalesReports: React.FC = () => {
                     <td className="py-2.5 px-3 text-center font-mono">{weeklyTotals.transacciones}</td>
                     <td className="py-2.5 px-3 text-right font-mono text-emerald-700">
                       {weeklyCurrency === 'USD'
-                        ? `$${Number(weeklyTotals.efectivo ?? 0).toFixed(2)}`
+                        ? `$${weeklyTotals.efectivo.toFixed(2)}`
                         : `${weeklyTotals.efectivo.toLocaleString('es-VE', { maximumFractionDigits: 0 })} Bs`}
                     </td>
                     <td className="py-2.5 px-3 text-right font-mono text-blue-700">
                       {weeklyCurrency === 'USD'
-                        ? `$${Number(weeklyTotals.punto ?? 0).toFixed(2)}`
+                        ? `$${weeklyTotals.punto.toFixed(2)}`
                         : `${weeklyTotals.punto.toLocaleString('es-VE', { maximumFractionDigits: 0 })} Bs`}
                     </td>
                     <td className="py-2.5 px-3 text-right font-mono text-purple-700">
                       {weeklyCurrency === 'USD'
-                        ? `$${Number(weeklyTotals.movil ?? 0).toFixed(2)}`
+                        ? `$${weeklyTotals.movil.toFixed(2)}`
                         : `${weeklyTotals.movil.toLocaleString('es-VE', { maximumFractionDigits: 0 })} Bs`}
                     </td>
                     <td className="py-2.5 px-3 text-right font-mono text-amber-700">
                       {weeklyCurrency === 'USD'
-                        ? `$${Number(weeklyTotals.cashea ?? 0).toFixed(2)}`
+                        ? `$${weeklyTotals.cashea.toFixed(2)}`
                         : `${weeklyTotals.cashea.toLocaleString('es-VE', { maximumFractionDigits: 0 })} Bs`}
                     </td>
                     {hasOtrosPayments && (
                       <td className="py-2.5 px-3 text-right font-mono text-slate-600">
                         {weeklyCurrency === 'USD'
-                          ? `$${Number(weeklyTotals.otros ?? 0).toFixed(2)}`
+                          ? `$${weeklyTotals.otros.toFixed(2)}`
                           : `${weeklyTotals.otros.toLocaleString('es-VE', { maximumFractionDigits: 0 })} Bs`}
                       </td>
                     )}
                     <td className="py-2.5 px-3 text-right font-mono text-emerald-600 bg-slate-200/60">
                       {weeklyCurrency === 'USD'
-                        ? `$${Number(weeklyTotals.total ?? 0).toFixed(2)}`
+                        ? `$${weeklyTotals.total.toFixed(2)}`
                         : `${weeklyTotals.total.toLocaleString('es-VE', { maximumFractionDigits: 0 })} Bs`}
                     </td>
                   </tr>
@@ -1413,7 +1443,7 @@ export const SalesReports: React.FC = () => {
 
                     <div className="text-right shrink-0">
                       <div className="font-mono font-bold text-xs text-emerald-600">
-                        ${Number(item.totalUsd ?? 0).toFixed(2)}
+                        ${item.totalUsd.toFixed(2)}
                       </div>
                       <div className="text-[10px] text-slate-400 font-mono">
                         {sharePercent.toFixed(1)}% del total
@@ -1458,7 +1488,7 @@ export const SalesReports: React.FC = () => {
                   {pm.cuenta}
                 </span>
                 <div className="text-base font-bold font-mono text-slate-900 mt-1">
-                  ${Number(pm.montoUsd ?? 0).toFixed(2)}
+                  ${pm.montoUsd.toFixed(2)}
                 </div>
                 <div className="flex items-center justify-center gap-1.5 mt-1">
                   <span
@@ -1471,7 +1501,7 @@ export const SalesReports: React.FC = () => {
                     {isCashea ? 'Por Liquidar' : 'En Cuenta'}
                   </span>
                   <span className="text-[10px] font-semibold text-slate-500 font-mono">
-                    {Number(pm.porcentaje ?? 0).toFixed(1)}%
+                    {pm.porcentaje.toFixed(1)}%
                   </span>
                 </div>
               </div>
@@ -1560,41 +1590,11 @@ export const SalesReports: React.FC = () => {
                 displayedSales.map((sale) => (
                   <tr key={sale.id} className={`hover:bg-slate-50/80 transition-colors ${sale.estado === 'anulada' ? 'opacity-50' : ''}`}>
                     <td className="py-2.5 px-4 font-mono font-bold text-indigo-600">
-                      {editingInvoiceId === sale.id ? (
-                        <div className="flex items-center gap-1">
-                          <input
-                            value={tempInvoiceNumber}
-                            onChange={(e) => setTempInvoiceNumber(e.target.value.toUpperCase().replace(/\s+/g, ''))}
-                            className="w-28 px-1.5 py-1 border border-indigo-300 rounded bg-white text-slate-800 font-mono text-[11px]"
-                          />
-                          <button
-                            onClick={async () => {
-                              if (tempInvoiceNumber.trim()) {
-                                const ok = await updateSaleDetails(sale.id, { numero_factura: tempInvoiceNumber.trim() });
-                                if (ok) setEditingInvoiceId(null);
-                              }
-                            }}
-                            className="p-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded cursor-pointer"
-                            title="Guardar número de factura"
-                          >
-                            <Check className="w-3 h-3" />
-                          </button>
-                          <button onClick={() => setEditingInvoiceId(null)} className="p-1 text-slate-400 hover:text-slate-600 cursor-pointer"><X className="w-3 h-3" /></button>
-                        </div>
-                      ) : (
-                        <div className="flex items-center gap-1.5 group">
-                          <span>#{sale.numero_factura}</span>
-                          {sale.estado === 'anulada' && (
-                            <span className="inline-block px-1.5 py-0.5 rounded bg-rose-100 text-rose-700 text-[9px] font-bold align-middle">ANULADA</span>
-                          )}
-                          {sale.estado !== 'anulada' && (
-                            <button
-                              onClick={() => { setEditingInvoiceId(sale.id); setTempInvoiceNumber(sale.numero_factura || ''); }}
-                              className="opacity-0 group-hover:opacity-100 p-0.5 text-indigo-500 hover:text-indigo-700 hover:bg-indigo-50 rounded transition cursor-pointer"
-                              title="Editar número de factura"
-                            ><Edit2 className="w-2.5 h-2.5" /></button>
-                          )}
-                        </div>
+                      #{sale.numero_factura}
+                      {sale.estado === 'anulada' && (
+                        <span className="ml-1.5 inline-block px-1.5 py-0.5 rounded bg-rose-100 text-rose-700 text-[9px] font-bold align-middle">
+                          ANULADA
+                        </span>
                       )}
                     </td>
 
@@ -1672,23 +1672,23 @@ export const SalesReports: React.FC = () => {
                     </td>
 
                     <td className="py-2.5 px-3 text-right font-mono font-bold text-slate-900">
-                      ${Number(sale.total_usd ?? 0).toFixed(2)}
+                      ${sale.total_usd.toFixed(2)}
                     </td>
 
                     <td className="py-2.5 px-3 text-right font-mono text-slate-500 text-[11px]">
-                      {Number(sale.total_bs ?? 0).toFixed(0)} Bs
+                      {sale.total_bs.toFixed(0)} Bs
                     </td>
 
                     <td className="py-2.5 px-3 text-right font-mono font-semibold text-emerald-600">
-                      +${Number(sale.ganancia_neta_usd ?? 0).toFixed(2)}
+                      +${sale.ganancia_neta_usd.toFixed(2)}
                     </td>
 
                     <td className="py-2.5 px-3 text-[11px]">
                       <div className="space-y-1 min-w-[190px]">
                         {sale.pagos.map((p, idx) => {
-                          const isCashea = (p.cuenta || '').toLowerCase().includes('cashea');
-                          const isPos = (p.cuenta || '').toLowerCase().includes('punto') || (p.cuenta || '').toLowerCase().includes('pos');
-                          const isPagoMovil = (p.cuenta || '').toLowerCase().includes('pago móvil') || (p.cuenta || '').toLowerCase().includes('pago movil');
+                          const isCashea = p.cuenta.toLowerCase().includes('cashea');
+                          const isPos = p.cuenta.toLowerCase().includes('punto') || p.cuenta.toLowerCase().includes('pos');
+                          const isPagoMovil = p.cuenta.toLowerCase().includes('pago móvil') || p.cuenta.toLowerCase().includes('pago movil');
                           const isReconciled = p.estado_liquidacion === 'conciliado_en_banco';
                           return (
                             <div
@@ -1708,14 +1708,14 @@ export const SalesReports: React.FC = () => {
                                 {p.referencia ? ` (${p.referencia})` : ''}
                               </span>
                               <span className="font-bold shrink-0 ml-1">
-                                ${Number(p.monto_equivalente_usd ?? 0).toFixed(2)}
+                                ${p.monto_equivalente_usd.toFixed(2)}
                               </span>
                             </div>
                           );
                         })}
 
                         {/* If sale includes Cashea and is a split payment */}
-                        {sale.pagos.some((p) => (p.cuenta || '').toLowerCase().includes('cashea')) && sale.pagos.length > 1 && (
+                        {sale.pagos.some((p) => p.cuenta.toLowerCase().includes('cashea')) && sale.pagos.length > 1 && (
                           <div className="px-1.5 py-0.5 rounded bg-amber-100/70 border border-amber-300/80 text-[9px] font-bold text-amber-900 flex items-center justify-between">
                             <span>Inicial: ${(sale.total_positivo_inmediato_usd || 0).toFixed(2)}</span>
                             <span>Cashea: ${(sale.total_cashea_pendiente_usd || 0).toFixed(2)}</span>
@@ -1724,14 +1724,23 @@ export const SalesReports: React.FC = () => {
                       </div>
                     </td>
 
-                    <td className="py-2.5 px-4 text-center">
-                      <button
-                        onClick={() => setSelectedSaleForReceipt(sale)}
-                        className="p-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-900 transition-colors cursor-pointer"
-                        title="Ver Comprobante / Imprimir"
-                      >
-                        <Eye className="w-3.5 h-3.5" />
-                      </button>
+                    <td className="py-2.5 px-3 text-center">
+                      <div className="flex items-center justify-center gap-1">
+                        <button
+                          onClick={() => setSelectedSaleForReceipt(sale)}
+                          className="p-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-900 transition-colors cursor-pointer"
+                          title="Ver Comprobante / Imprimir"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => generateIndividualReceiptPdf(sale, exchangeRate)}
+                          className="p-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-600 transition-colors cursor-pointer"
+                          title="Descargar Recibo en PDF"
+                        >
+                          <FileText className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </td>
 
                     <td className="py-2.5 px-4 text-center">
