@@ -1,0 +1,141 @@
+{
+  "entities": {
+    "Product": {
+      "title": "Product",
+      "description": "A product item in the shoe store inventory",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "nombre": { "type": "string" },
+        "sku": { "type": "string" },
+        "categoria": { "type": "string" },
+        "marca": { "type": "string" },
+        "tipo": { "type": "string" },
+        "talla": { "type": "string" },
+        "color": { "type": "string" },
+        "moneda": { "type": "string" },
+        "precio": { "type": "number" },
+        "costo": { "type": "number" },
+        "stock": { "type": "number" },
+        "stock_minimo": { "type": "number" },
+        "activo": { "type": "boolean" },
+        "imagen": { "type": "string" },
+        "created_at": { "type": "string" }
+      },
+      "required": ["id", "nombre", "sku", "talla", "precio", "costo", "stock"]
+    },
+    "Sale": {
+      "title": "Sale",
+      "description": "A recorded POS sale",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "numero_factura": { "type": "string" },
+        "cliente_nombre": { "type": "string" },
+        "cliente_cedula": { "type": "string" },
+        "fecha": { "type": "string" },
+        "tasa_bcv": { "type": "number" },
+        "total_usd": { "type": "number" },
+        "total_bs": { "type": "number" },
+        "costo_total_usd": { "type": "number" },
+        "ganancia_neta_usd": { "type": "number" },
+        "vendedor": { "type": "string" },
+        "created_at": { "type": "string" }
+      },
+      "required": ["id", "numero_factura", "fecha", "total_usd", "total_bs"]
+    },
+    "StockMovement": {
+      "title": "StockMovement",
+      "description": "Audit trail of inventory change",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "producto_id": { "type": "string" },
+        "producto_nombre": { "type": "string" },
+        "sku": { "type": "string" },
+        "talla": { "type": "string" },
+        "marca": { "type": "string" },
+        "tipo": { "type": "string" },
+        "cantidad": { "type": "number" },
+        "stock_anterior": { "type": "number" },
+        "stock_nuevo": { "type": "number" },
+        "motivo": { "type": "string" },
+        "fecha": { "type": "string" },
+        "usuario": { "type": "string" }
+      },
+      "required": ["id", "producto_id", "tipo", "cantidad", "stock_anterior", "stock_nuevo", "fecha"]
+    },
+    "Expense": {
+      "title": "Expense",
+      "description": "Store operating expense",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "categoria": { "type": "string" },
+        "descripcion": { "type": "string" },
+        "monto": { "type": "number" },
+        "moneda": { "type": "string" },
+        "monto_usd": { "type": "number" },
+        "fecha": { "type": "string" },
+        "comprobante": { "type": "string" },
+        "created_at": { "type": "string" }
+      },
+      "required": ["id", "categoria", "descripcion", "monto", "moneda", "fecha"]
+    },
+    "CashClosure": {
+      "title": "CashClosure",
+      "description": "Daily register closure",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "fecha": { "type": "string" },
+        "usuario": { "type": "string" },
+        "total_ventas_usd": { "type": "number" },
+        "total_ventas_bs": { "type": "number" },
+        "cantidad_transacciones": { "type": "number" },
+        "pares_vendidos": { "type": "number" },
+        "cerrado_at": { "type": "string" },
+        "notas": { "type": "string" }
+      },
+      "required": ["id", "fecha", "total_ventas_usd", "total_ventas_bs", "cerrado_at"]
+    },
+    "StoreConfig": {
+      "title": "StoreConfig",
+      "description": "Global store configuration and exchange rates",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "exchangeRate": { "type": "number" },
+        "adminPin": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "exchangeRate"]
+    }
+  },
+  "firestore": {
+    "/products/{productId}": {
+      "schema": "Product",
+      "description": "Products catalog in the store"
+    },
+    "/sales/{saleId}": {
+      "schema": "Sale",
+      "description": "Sales records in the store"
+    },
+    "/movements/{movementId}": {
+      "schema": "StockMovement",
+      "description": "Stock movements history"
+    },
+    "/expenses/{expenseId}": {
+      "schema": "Expense",
+      "description": "Store operational expenses"
+    },
+    "/cash_closures/{closureId}": {
+      "schema": "CashClosure",
+      "description": "Daily cash register closures"
+    },
+    "/store_config/{configId}": {
+      "schema": "StoreConfig",
+      "description": "Store settings and rate configuration"
+    }
+  }
+}
