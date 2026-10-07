@@ -1013,7 +1013,7 @@ export async function getNeonTableData(tableName: string, limit = 50): Promise<{
 export async function getAccountingManualEntries(start?: string, end?: string) {
   const sql = getNeonSql(); if (!sql) return [];
   await initDatabaseSchema();
-  if (start && end) return await sql`SELECT * FROM accounting_entries WHERE fecha::text::timestamptz >= ${start}::date AND fecha::text::timestamptz < (${end}::date + INTERVAL '1 day') ORDER BY fecha DESC, created_at DESC`;
+  if (start && end) return await sql`SELECT * FROM accounting_entries WHERE fecha >= ${start}::date AND fecha < (${end}::date + INTERVAL '1 day') ORDER BY fecha DESC, created_at DESC`;
   return await sql`SELECT * FROM accounting_entries ORDER BY fecha DESC, created_at DESC`;
 }
 
@@ -1057,7 +1057,7 @@ export async function getAccountingLedger(start?:string,end?:string) {
     entries.push({id:`venta-${s.id}`,fecha:s.fecha,numero_asiento:`V-${s.numero_factura||s.id}`,tipo:'venta',origen:'venta',origen_id:s.id,documento:s.numero_factura,tipo_documento:'Factura',sujeto:`${s.cliente_nombre||''} ${s.cliente_apellido||''}`.trim(),rif:s.cliente_rif||'',tasa_dolar:Number(s.tasa_cambio||0),lineas:enrichedLineas});
   }
   for(const e of expenses as any[]){ const amt=Number(e.monto_usd||0); if(amt<=0) continue; entries.push({id:`gasto-${e.id}`,fecha:e.fecha,numero_asiento:`G-${e.id}`,tipo:'gasto',origen:'gasto',origen_id:e.id,documento:e.comprobante_ref||e.id,tipo_documento:'Comprobante de Gasto',sujeto:e.beneficiario||'',metodo_pago:e.cuenta_origen,tasa_dolar:Number(e.tasa_cambio||0),lineas:[enrichLine({cuenta:e.categoria,debe:amt,haber:0,clasificacion:'Gasto'},'01','Gasto'),enrichLine({cuenta:e.cuenta_origen||'Caja / Banco',debe:0,haber:amt,clasificacion:'Activo'},'01','Gasto')]}); }
-  for(const m of manual as any[]) entries.push({...m,lineas: typeof m.lineas==='string'?JSON.parse(m.lineas):m.lineas});
+  for(const m of manual as any[]){ let parsedLines:any[]=[]; try { parsedLines=Array.isArray(m.lineas)?m.lineas:(typeof m.lineas==='string'?JSON.parse(m.lineas||'[]'):[]); } catch { parsedLines=[]; } entries.push({...m,lineas:Array.isArray(parsedLines)?parsedLines:[]}); }
   const ledgerMap:any={}; for(const en of entries){ for(const l of en.lineas||[]){const k=l.cuenta||'Sin cuenta'; if(!ledgerMap[k]) ledgerMap[k]={cuenta:k,debe:0,haber:0,movimientos:[]}; ledgerMap[k].debe+=Number(l.debe||0); ledgerMap[k].haber+=Number(l.haber||0); ledgerMap[k].movimientos.push({...l,fecha:en.fecha,documento:en.documento,numero_asiento:en.numero_asiento,origen:en.origen});}}
   return {entries:entries.sort((a,b)=>new Date(b.fecha).getTime()-new Date(a.fecha).getTime()),ledger:Object.values(ledgerMap).map((x:any)=>({...x,saldo:x.debe-x.haber})).sort((a:any,b:any)=>a.cuenta.localeCompare(b.cuenta))};
 }
