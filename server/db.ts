@@ -1032,6 +1032,10 @@ export async function saveAccountingEntry(entry: any) {
   const totalHaber = lineas.reduce((s:any,l:any)=>s+Number(l.haber||0),0);
   if (!lineas.length || Math.abs(totalDebe-totalHaber)>0.01) throw new Error('El asiento debe estar cuadrado: Debe = Haber.');
   const id = String(entry.id || `asi-${Date.now()}`);
+  if (entry.origen && entry.origen_id) {
+    const existing = await sql`SELECT id, numero_asiento, total_debe, total_haber FROM accounting_entries WHERE origen=${String(entry.origen)} AND origen_id=${String(entry.origen_id)} LIMIT 1`;
+    if (existing.length) return { id: existing[0].id, numeroAsiento: existing[0].numero_asiento, totalDebe: Number(existing[0].total_debe || 0), totalHaber: Number(existing[0].total_haber || 0), alreadySaved: true };
+  }
   const numeroAsiento = String(entry.numero_asiento || await getNextAccountingEntryNumber(sql));
   await sql`INSERT INTO accounting_entries (id,fecha,numero_asiento,tipo,origen,origen_id,sujeto,rif,documento,tipo_documento,metodo_pago,tasa_dolar,total_debe,total_haber,lineas,libro_compra_venta,total_compras,compras_no_gravadas,compras_gravadas,porcentaje_impuesto,ingresos_brutos,retencion_iva,retencion_islr,retencion_municipal,observaciones,updated_at)
     VALUES (${id}, COALESCE(${entry.fecha}::timestamptz,NOW()),${numeroAsiento},${entry.tipo||'manual'},${entry.origen||'manual'},${entry.origen_id||null},${entry.sujeto||null},${entry.rif||null},${entry.documento||null},${entry.tipo_documento||null},${entry.metodo_pago||null},${Number(entry.tasa_dolar||0)},${totalDebe},${totalHaber},${JSON.stringify(lineas)},${!!entry.libro_compra_venta},${Number(entry.total_compras||0)},${Number(entry.compras_no_gravadas||0)},${Number(entry.compras_gravadas||0)},${Number(entry.porcentaje_impuesto||0)},${Number(entry.ingresos_brutos||0)},${Number(entry.retencion_iva||0)},${Number(entry.retencion_islr||0)},${Number(entry.retencion_municipal||0)},${entry.observaciones||null},NOW())

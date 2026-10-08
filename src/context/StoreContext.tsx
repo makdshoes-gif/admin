@@ -925,6 +925,45 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return products.filter((p) => p.activo && p.stock <= p.stock_minimo);
   }, [products]);
 
+  // Registra automáticamente en el Libro Diario la compra asociada al ingreso de mercancía.
+  // El costo del inventario se carga a Inventario de Mercancía y se acredita a Proveedores
+  // hasta que exista un pago/documento de compra que indique la forma de cancelación.
+  const registerInventoryPurchaseAccounting = (items: ShoeProduct[], sourceId: string, document?: string) => {
+    const valid = items.filter((p) => Number(p.stock || 0) > 0 && Number(p.costo || 0) > 0);
+    if (!valid.length) return;
+    const totalCost = Number(valid.reduce((sum, p) => sum + Number(p.costo || 0) * Number(p.stock || 0), 0).toFixed(2));
+    if (totalCost <= 0) return;
+    const fecha = new Date().toISOString();
+    const detail = valid.map((p) => `${p.nombre} | SKU ${p.sku || ''} | Talla ${p.talla || ''} | Color ${p.color || ''} | Cant. ${Number(p.stock || 0)} | Costo ${Number(p.costo || 0).toFixed(2)}`).join('\n');
+    fetch('/api/accounting/journal', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: `compra-inv-${sourceId}`,
+        fecha,
+        tipo: 'compra',
+        origen: 'compra_inventario',
+        origen_id: sourceId,
+        documento: document || `ENT-${sourceId}`,
+        tipo_documento: 'ENTRADA INVENTARIO',
+        sujeto: 'Proveedor / Compra de mercancía',
+        metodo_pago: 'Pendiente a proveedor',
+        tasa_dolar: Number(exchangeRate || 0),
+        total_compras: totalCost,
+        compras_no_gravadas: totalCost,
+        compras_gravadas: 0,
+        porcentaje_impuesto: 0,
+        observaciones: `Entrada de inventario valorizada al costo.\n${detail}`,
+        lineas: [
+          { partida: '01', cuenta: 'Inventario de Mercancía', subcuenta: 'Calzado', clasificacion: 'Activo', subclasificacion: 'Inventario', moneda: 'USD', debe: totalCost, haber: 0, venta_compra: 'Compra' },
+          { partida: '01', cuenta: 'Proveedores', subcuenta: 'Mercancía', clasificacion: 'Pasivo', subclasificacion: 'Cuentas por pagar', moneda: 'USD', debe: 0, haber: totalCost, venta_compra: 'Compra' },
+        ],
+      }),
+    }).then(async (r) => {
+      if (!r.ok) { const body = await r.json().catch(() => ({})); console.error('No se pudo registrar la compra de inventario en contabilidad:', body?.error || r.status); }
+    }).catch((e) => console.error('Error registrando compra de inventario en contabilidad:', e));
+  };
+
   // Add Product
   const addProduct = (productData: Omit<ShoeProduct, 'id' | 'created_at'>) => {
     const newId = `prod-${Date.now()}`;
@@ -1002,6 +1041,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     }
 
+    registerInventoryPurchaseAccounting([newProduct], newProduct.id, `ENT-${newProduct.id}`);
+
     addNotification(
       'Producto Creado',
       `${newProduct.nombre} (Talla ${newProduct.talla}) agregado con éxito.`,
@@ -1023,6 +1064,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       id: `prod-${timestamp}-${idx}-${Math.random().toString(36).substring(2, 6)}`,
       created_at: createdDate,
     }));
+
+    registerInventoryPurchaseAccounting(formattedProducts, `BULK-${timestamp}`, `ENT-${timestamp}`);
 
     // Generate initial movements for those with stock > 0
     const newMovements: StockMovement[] = formattedProducts
