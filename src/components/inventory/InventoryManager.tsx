@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import * as XLSX from 'xlsx';
 import {
   Boxes,
   Search,
@@ -65,6 +66,31 @@ export const InventoryManager: React.FC = () => {
   const [isAiScannerOpen, setIsAiScannerOpen] = useState(false);
   const [initialAiData, setInitialAiData] = useState<ShoeAiResult | null>(null);
   const [initialAiImage, setInitialAiImage] = useState<string | null>(null);
+
+  const exportInventoryExcel = () => {
+    const productById = new Map(products.map((p) => [p.id, p]));
+    const headers = ['Nº','Fecha Creado','año','Mes','Fecha','Tipo De Movimiento','Tipo Documento','Numero Doc','Nombre','Codigo','Precio','Cantidad','Impuesto','Total','Descripcion'];
+    const rows = movements.map((m, i) => {
+      const p = productById.get(m.producto_id);
+      const d = new Date(m.fecha);
+      const precio = Number(p?.precio || 0);
+      const cantidad = Number(m.cantidad || 0);
+      return [i + 1, p?.created_at ? new Date(p.created_at).toLocaleString('es-VE') : '', d.getFullYear() || '', d.toLocaleDateString('es-VE',{month:'long'}), d.toLocaleDateString('es-VE'), m.tipo, m.tipo === 'venta' ? 'FACTURA' : 'MOVIMIENTO', m.id, m.producto_nombre, m.sku, precio, cantidad, 0, precio * cantidad, m.motivo || ''];
+    });
+    const ws = XLSX.utils.aoa_to_sheet([
+      ['PatentaDoc'],
+      ['Libro de Inventario (Entrada - Salida)'],
+      ['Contribuyente:','MAKD ESTUDIO CREATIVO, C.A.'],
+      ['Fecha de Exportacion:',new Date().toLocaleString('es-VE')],
+      ['Exportado Por:','MAKD ESTUDIO CREATIVO, C.A.'],
+      [], headers, ...rows
+    ]);
+    ws['!merges']=[{s:{r:0,c:0},e:{r:0,c:14}},{s:{r:1,c:0},e:{r:1,c:14}}];
+    ws['!cols']=headers.map((_,i)=>({wch:[6,20,8,14,14,22,16,20,32,20,14,12,12,16,35][i]}));
+    ws['!autofilter']={ref:`A7:O${7+rows.length}`}; ws['!freeze']={xSplit:0,ySplit:7};
+    const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'Hoja1');
+    XLSX.writeFile(wb,`MAKD_Libro_Inventario_Entrada_Salida_${new Date().toISOString().slice(0,10)}.xlsx`);
+  };
 
   const [isMovementModalOpen, setIsMovementModalOpen] = useState(false);
   const [movementTargetProduct, setMovementTargetProduct] = useState<ShoeProduct | null>(null);
@@ -237,6 +263,17 @@ export const InventoryManager: React.FC = () => {
           >
             <Sparkles className="w-4 h-4 text-cyan-400" />
             <span>Cámara IA</span>
+          </button>
+
+          <button
+            id="export-inventory-excel-btn"
+            type="button"
+            onClick={exportInventoryExcel}
+            className="px-3 py-2 bg-white hover:bg-slate-50 text-slate-700 font-semibold rounded-xl text-xs flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer shrink-0 whitespace-nowrap border border-slate-200"
+            title="Exportar libro de inventario con el formato de PatentaDoc"
+          >
+            <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+            <span>Exportar Inventario</span>
           </button>
 
           <button

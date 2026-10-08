@@ -51,6 +51,12 @@ interface ColorImageItem {
   id: string;
   color: string;
   imagen: string;
+  nombre?: string;
+  sku?: string;
+  talla?: string;
+  stock?: number;
+  costo?: number;
+  precio?: number;
 }
 
 export const ProductFormModal: React.FC<ProductFormModalProps> = ({
@@ -84,9 +90,18 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
   const [imagen, setImagen] = useState(editingProduct?.imagen || '');
   // Carga masiva: cada foto puede representar un color distinto del mismo modelo.
   const [colorImages, setColorImages] = useState<ColorImageItem[]>(
-    editingProduct?.imagen ? [{ id: 'existing-1', color: editingProduct?.color || 'Estándar', imagen: editingProduct.imagen }] : []
+    editingProduct?.imagen ? [{ id: 'existing-1', color: editingProduct?.color || 'Estándar', imagen: editingProduct.imagen, nombre: editingProduct.nombre, sku: editingProduct.sku, talla: editingProduct.talla, stock: editingProduct.stock, costo: editingProduct.costo, precio: editingProduct.precio }] : []
   );
   const [descripcion, setDescripcion] = useState(editingProduct?.descripcion || '');
+
+  useEffect(() => {
+    if (!isOpen) return;
+    if (editingProduct) {
+      setColorImages(editingProduct.imagen ? [{ id: `existing-${editingProduct.id}`, color: editingProduct.color || 'Estándar', imagen: editingProduct.imagen, nombre: editingProduct.nombre, sku: editingProduct.sku, talla: editingProduct.talla, stock: editingProduct.stock, costo: editingProduct.costo, precio: editingProduct.precio }] : []);
+    } else {
+      setColorImages([]);
+    }
+  }, [isOpen, editingProduct?.id]);
   const [descripcionOriginalIA, setDescripcionOriginalIA] = useState<string | null>(null);
   const [genero, setGenero] = useState(editingProduct?.genero || 'Unisex');
   const [esOriginal, setEsOriginal] = useState(editingProduct?.es_original !== false);
@@ -637,6 +652,12 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
           id: `${Date.now()}-${i}-${Math.random().toString(36).slice(2, 7)}`,
           color: imageFiles.length === 1 ? (color.trim() || 'Estándar') : `Color ${i + 1}`,
           imagen: compressed.dataUrl,
+          nombre: imageFiles.length === 1 ? nombre.trim() : `${nombre.trim() || 'Producto'} ${i + 1}`,
+          sku: imageFiles.length === 1 ? sku.trim().toUpperCase() : `${sku.trim().toUpperCase() || 'PROD'}-${String(i + 1).padStart(2,'0')}`,
+          talla: singleTalla,
+          stock: parseInt(singleStock, 10) || 0,
+          costo: Number(costo) || 0,
+          precio: Number(precio) || 0,
         });
       }
       setColorImages(results);
@@ -738,6 +759,26 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
     };
 
     if (entryMode === 'multi' && !editingProduct) {
+      // Si hay varias fotos, cada foto representa un producto independiente.
+      // En este modo cada tarjeta trae su propia talla y stock, por lo que no exigimos la tabla de tallas compartidas.
+      // Comparten costo/precio del formulario, pero pueden tener nombre, SKU, color, talla y stock propios.
+      if (colorImages.length > 1) {
+        const itemsToCreate = colorImages.map((item, index) => ({
+          ...baseProductData,
+          costo: Number(item.costo ?? parsedCosto),
+          precio: Number(item.precio ?? parsedPrecio),
+          nombre: item.nombre?.trim() || `${nombre.trim() || 'Producto'} ${index + 1}`,
+          color: item.color?.trim() || 'Estándar',
+          imagen: item.imagen,
+          sku: item.sku?.trim().toUpperCase() || `${sku.trim().toUpperCase() || 'PROD'}-${String(index + 1).padStart(2,'0')}`,
+          talla: item.talla?.trim() || singleTalla,
+          stock: Number(item.stock ?? 0),
+        }));
+        if (onSaveBulk) onSaveBulk(itemsToCreate); else itemsToCreate.forEach((item) => onSave(item));
+        onClose();
+        return;
+      }
+
       if (activeSizes.length === 0) {
         alert('Debes seleccionar al menos una talla para el modelo.');
         return;
@@ -1503,23 +1544,22 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
               <div className="space-y-2 p-3 bg-indigo-50/60 border border-indigo-200 rounded-xl">
                 <div className="flex items-center justify-between gap-2">
                   <div>
-                    <p className="font-bold text-indigo-900 text-xs">Fotos por color ({colorImages.length})</p>
-                    <p className="text-[10px] text-indigo-700">Todas usarán el mismo costo y precio. Cada foto genera su variante de color.</p>
+                    <p className="font-bold text-indigo-900 text-xs">Productos a crear ({colorImages.length})</p>
+                    <p className="text-[10px] text-indigo-700">Cada foto será un producto independiente. Costo y precio se toman del formulario; puedes cambiar nombre, SKU, color, talla y stock de cada uno.</p>
                   </div>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   {colorImages.map((item, index) => (
                     <div key={item.id} className="bg-white border border-indigo-100 rounded-xl p-2 flex gap-2 items-center">
                       <img src={item.imagen} alt={`Color ${index + 1}`} className="w-16 h-16 rounded-lg object-contain bg-slate-50 border border-slate-200 shrink-0" />
-                      <div className="min-w-0 flex-1 space-y-1">
-                        <label className="text-[10px] font-bold text-slate-600">Color</label>
-                        <input
-                          type="text"
-                          value={item.color}
-                          onChange={(e) => updateColorImage(item.id, { color: e.target.value })}
-                          placeholder="Ej. Negro, Blanco, Rojo"
-                          className="w-full px-2 py-1.5 border border-slate-200 rounded-lg text-xs focus:outline-none focus:border-indigo-500"
-                        />
+                      <div className="min-w-0 flex-1 grid grid-cols-2 gap-1.5">
+                        <input type="text" value={item.nombre || ''} onChange={(e) => updateColorImage(item.id,{nombre:e.target.value})} placeholder="Nombre del producto" className="col-span-2 w-full px-2 py-1.5 border border-slate-200 rounded-lg text-xs" />
+                        <input type="text" value={item.sku || ''} onChange={(e) => updateColorImage(item.id,{sku:e.target.value.toUpperCase()})} placeholder="SKU" className="w-full px-2 py-1.5 border border-slate-200 rounded-lg text-xs" />
+                        <input type="text" value={item.color || ''} onChange={(e) => updateColorImage(item.id,{color:e.target.value})} placeholder="Color" className="w-full px-2 py-1.5 border border-slate-200 rounded-lg text-xs" />
+                        <input type="text" value={item.talla || ''} onChange={(e) => updateColorImage(item.id,{talla:e.target.value})} placeholder="Talla" className="w-full px-2 py-1.5 border border-slate-200 rounded-lg text-xs" />
+                        <input type="number" min="0" value={Number(item.stock ?? 0)} onChange={(e) => updateColorImage(item.id,{stock:Number(e.target.value)||0})} placeholder="Stock" className="w-full px-2 py-1.5 border border-slate-200 rounded-lg text-xs" />
+                        <input type="number" min="0" step="0.01" value={Number(item.costo ?? costo)} onChange={(e) => updateColorImage(item.id,{costo:Number(e.target.value)||0})} placeholder="Costo" className="w-full px-2 py-1.5 border border-slate-200 rounded-lg text-xs" />
+                        <input type="number" min="0" step="0.01" value={Number(item.precio ?? precio)} onChange={(e) => updateColorImage(item.id,{precio:Number(e.target.value)||0})} placeholder="Precio" className="w-full px-2 py-1.5 border border-slate-200 rounded-lg text-xs" />
                       </div>
                       <button type="button" onClick={() => removeColorImage(item.id)} className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-lg" title="Quitar foto/color">
                         <Trash2 className="w-4 h-4" />
