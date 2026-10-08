@@ -810,8 +810,10 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
 
         {/* Facturación & Checkout Panel */}
         <div
-          className={`space-y-4 transition-all duration-200 ${
-            mobileActiveView === 'catalog' ? 'hidden lg:block' : 'block'
+          className={`${billingViewMode === 'fullscreen' && cart.length > 0
+            ? 'fixed inset-0 z-[100] h-[100dvh] w-screen overflow-y-auto overscroll-contain bg-slate-50 p-2 sm:p-4 lg:p-6 rounded-none'
+            : 'space-y-4 transition-all duration-200'} ${
+            mobileActiveView === 'catalog' && !(billingViewMode === 'fullscreen' && cart.length > 0) ? 'hidden lg:block' : 'block'
           } ${
             cart.length === 0
               ? 'lg:col-span-5 xl:col-span-4'
@@ -911,7 +913,7 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
                     <button
                       type="button"
                       onClick={() => setBillingViewMode('fullscreen')}
-                      title="Facturación Pantalla Completa"
+                      title="Abrir facturación en toda la pantalla"
                       className={`px-2.5 py-1 rounded-md font-semibold flex items-center gap-1 transition cursor-pointer whitespace-nowrap ${
                         billingViewMode === 'fullscreen'
                           ? 'bg-white text-indigo-700 shadow-2xs font-bold'
@@ -919,7 +921,7 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
                       }`}
                     >
                       <Maximize2 className="w-3 h-3" />
-                      <span>Completa</span>
+                      <span>Todo pantalla</span>
                     </button>
                   </div>
 
@@ -928,7 +930,7 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
                       type="button"
                       onClick={() => setBillingViewMode('expanded')}
                       className="text-xs text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-2.5 py-1.5 rounded-lg font-bold flex items-center gap-1 transition cursor-pointer whitespace-nowrap shrink-0"
-                      title="Ver catálogo para agregar más calzados"
+                      title="Volver al catálogo para agregar más calzados"
                     >
                       <Plus className="w-3.5 h-3.5" />
                       <span>+ Calzado</span>
