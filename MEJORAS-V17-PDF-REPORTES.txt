@@ -1,0 +1,13 @@
+MAKD SHOP V17 - REPORTES PDF CON MEMBRETE
+
+Cambios incluidos:
+- Libro Mayor: acción "Descargar Libro Mayor PDF" para exportar el resumen de cuentas, debe, haber y saldo.
+- Libro Mayor por cuenta: al abrir una cuenta, acción "Descargar PDF" para imprimir su detalle de movimientos.
+- Libro de Ventas / Reportes de Ventas: acción "Descargar PDF" que incluye el período seleccionado, indicadores y detalle de facturas/ventas filtradas.
+- Los reportes llevan membrete MAKD SHOP / MAKD ESTUDIO CREATIVO, C.A. y el logo public/logo-makd.png.
+
+Uso:
+Al pulsar la acción PDF se abre la ventana de impresión del navegador. Selecciona "Guardar como PDF" como destino para guardar el archivo.
+
+Validación:
+El ZIP se verifica por integridad. No se pudo completar npm install dentro del entorno de preparación, por lo que no se confirma una compilación de producción.

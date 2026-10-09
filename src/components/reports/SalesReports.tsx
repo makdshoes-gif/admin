@@ -6,6 +6,7 @@ import {
   Download,
   Printer,
   FileSpreadsheet,
+  FileText,
   Package,
   Layers,
   Sparkles,
@@ -493,6 +494,16 @@ export const SalesReports: React.FC = () => {
     window.print();
   };
 
+  const handleDownloadSalesPdf = () => {
+    const w = window.open('', '_blank', 'width=1200,height=850');
+    if (!w) { alert('Permite las ventanas emergentes para generar el PDF.'); return; }
+    const escPdf = (value: unknown) => String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    const moneyPdf = (value: unknown) => Number(value || 0).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const salesRows = filteredSales.map(s => `<tr><td>${escPdf(s.numero_factura)}</td><td>${escPdf(new Date(s.fecha).toLocaleDateString('es-VE'))}</td><td>${escPdf(`${s.cliente_nombre || ''} ${s.cliente_apellido || ''}`.trim() || 'Consumidor final')}</td><td>${escPdf(s.cliente_rif || 'N/A')}</td><td class="num">${s.items.reduce((acc, it) => acc + Number(it.cantidad || 0), 0)}</td><td class="num">${moneyPdf(s.subtotal_usd)}</td><td class="num">${moneyPdf(s.iva_monto_usd)}</td><td class="num">${moneyPdf(s.total_usd)}</td><td class="num">${moneyPdf(s.total_bs)}</td><td>${escPdf((s.pagos || []).map(p => `${p.cuenta}: ${p.monto} ${p.moneda}`).join(' · '))}</td></tr>`).join('');
+    w.document.write(`<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Libro de Ventas MAKD SHOP</title><style>@page{size:A4 landscape;margin:10mm}*{box-sizing:border-box}body{font-family:Arial,sans-serif;color:#111;font-size:9px}.letterhead{display:flex;align-items:center;gap:15px;border-bottom:3px solid #111;padding-bottom:9px;margin-bottom:12px}.letterhead img{width:100px;height:68px;object-fit:contain}.brand h1{font-size:18px;margin:0 0 3px}.brand p{margin:2px 0}.title{text-align:center;font-size:15px;font-weight:800;margin:10px 0 3px;text-transform:uppercase}.subtitle{text-align:center;margin:0 0 12px;color:#444}.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:10px 0}.kpi{border:1px solid #555;padding:8px}.kpi b{display:block;margin-bottom:4px}.num{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}table{width:100%;border-collapse:collapse}th,td{border:1px solid #555;padding:4px;vertical-align:top}th{background:#e9edf3;text-align:left;font-size:8px}.foot{border-top:1px solid #777;margin-top:12px;padding-top:6px;display:flex;justify-content:space-between;font-size:8px}@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}</style></head><body><header class="letterhead"><img src="${window.location.origin}/logo-makd.png" alt="Logo MAKD SHOP"><div class="brand"><h1>MAKD SHOP</h1><p><b>MAKD ESTUDIO CREATIVO, C.A.</b></p><p>Libro de Ventas · Reporte administrativo</p><p>Fecha de emisión: ${escPdf(new Date().toLocaleString('es-VE'))}</p></div></header><h2 class="title">Libro de Ventas</h2><p class="subtitle">Período: ${escPdf(period.replace(/_/g, ' ').toUpperCase())}${period === 'personalizado' ? ` · ${escPdf(customStartDate || 'inicio')} al ${escPdf(customEndDate || 'actual')}` : ''}</p><section class="kpis"><div class="kpi"><b>Ventas totales USD</b>$${moneyPdf(totalRevenueUsd)}</div><div class="kpi"><b>Ventas totales Bs</b>${moneyPdf(totalRevenueBs)} Bs</div><div class="kpi"><b>Ganancia neta USD</b>$${moneyPdf(netProfitUsd)}</div><div class="kpi"><b>Operaciones registradas</b>${filteredSales.length}</div></section><table><thead><tr><th>Factura</th><th>Fecha</th><th>Cliente</th><th>RIF</th><th class="num">Pares</th><th class="num">Subtotal USD</th><th class="num">IVA USD</th><th class="num">Total USD</th><th class="num">Total Bs</th><th>Método(s) de pago</th></tr></thead><tbody>${salesRows || '<tr><td colspan="10">No hay ventas para el período seleccionado.</td></tr>'}</tbody><tfoot><tr><th colspan="4">TOTALES DEL REPORTE</th><th class="num">${totalPairsSold}</th><th class="num">—</th><th class="num">—</th><th class="num">$${moneyPdf(totalRevenueUsd)}</th><th class="num">${moneyPdf(totalRevenueBs)} Bs</th><th></th></tr></tfoot></table><footer class="foot"><span>MAKD SHOP · MAKD ESTUDIO CREATIVO, C.A.</span><span>Reporte generado desde el sistema administrativo</span></footer><script>window.onload=()=>setTimeout(()=>window.print(),350)</script></body></html>`);
+    w.document.close();
+  };
+
   return (
     <div className="w-full max-w-none mx-0 space-y-4 px-2 sm:px-4 lg:px-5">
       
@@ -545,6 +556,16 @@ export const SalesReports: React.FC = () => {
           >
             <Download className="w-4 h-4" />
             <span>Excel (.xlsx)</span>
+          </button>
+
+          <button
+            id="export-pdf-btn"
+            onClick={handleDownloadSalesPdf}
+            className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer whitespace-nowrap shrink-0"
+            title="Descargar Libro de Ventas en PDF con membrete MAKD SHOP"
+          >
+            <FileText className="w-4 h-4" />
+            <span>Descargar PDF</span>
           </button>
 
           <button

@@ -1,0 +1,17 @@
+MAKD SHOP V18 - CONCILIACIÓN CASHEA POR EXCEL
+
+Novedades:
+- Nuevo botón “Conciliar subiendo Excel” en la pestaña de Liquidaciones Cashea.
+- Lee archivos XLSX, XLS y CSV usando la primera hoja.
+- Reconoce columnas del reporte Cashea: Fecha de Transaccion, Moneda, Método de pago, Cuenta, Monto pagado en VES, Monto Pagado en USD, Fecha Tasa de Cambio, Tasa de Cambio, # Referencia, # Cuota Pagada, # Orden, # Factura, Sucursal y Monto asignado.
+- Muestra vista previa, conteo de coincidencias, filas sin coincidencia y posibles duplicados.
+- Busca ventas por número de factura y luego intenta número de orden contra el ID de venta.
+- Registra cada transacción como movimiento de ingreso en conciliación bancaria, vincula las filas que coinciden con ventas que tienen pago Cashea y conserva los datos originales en las notas del movimiento.
+- Reduce el saldo Cashea pendiente según el total “Monto asignado” importado para la factura; cuando se cubre el total, aparece en el historial conciliado.
+- Las filas sin coincidencia quedan pendientes para revisión manual.
+- Detecta duplicados por referencia y factura, evitando volver a importar las mismas filas.
+
+Notas:
+- Se usa la primera hoja del archivo y se esperan encabezados en la primera fila.
+- El cálculo de avance usa “Monto asignado” como USD; si viene vacío, usa “Monto Pagado en USD”.
+- No se pudo completar la instalación de dependencias en este entorno, por lo que no se confirmó el build completo. Revisar compilación en el entorno de desarrollo antes de publicar en Vercel.

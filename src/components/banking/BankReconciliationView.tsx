@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { BdvFileImportModal } from './BdvFileImportModal';
 import { GoogleSheetsSyncModal } from '../common/GoogleSheetsSyncModal';
+import { CasheaExcelImportModal } from './CasheaExcelImportModal';
 
 export const BankReconciliationView: React.FC = () => {
   const {
@@ -30,11 +31,13 @@ export const BankReconciliationView: React.FC = () => {
     exchangeRate,
     accounts,
     reconcileCasheaPayment,
+    importBankMovements,
   } = useStore();
 
   const [activeReconciliationTab, setActiveReconciliationTab] = useState<'bancos' | 'cashea'>('bancos');
   const [isBdvModalOpen, setIsBdvModalOpen] = useState(false);
   const [isSheetsModalOpen, setIsSheetsModalOpen] = useState(false);
+  const [isCasheaExcelModalOpen, setIsCasheaExcelModalOpen] = useState(false);
 
   // Cashea Reconciliation Target State
   const [casheaReconcileTarget, setCasheaReconcileTarget] = useState<{
@@ -114,6 +117,7 @@ export const BankReconciliationView: React.FC = () => {
       paymentId: string;
       montoUsd: number;
       montoBs: number;
+      montoExcelConciliadoUsd: number;
       estado: string;
       referencia?: string;
     }> = [];
@@ -127,6 +131,7 @@ export const BankReconciliationView: React.FC = () => {
       paymentId: string;
       montoUsd: number;
       montoBs: number;
+      montoExcelConciliadoUsd: number;
       estado: string;
       referencia?: string;
       bancoReceptor?: string;
@@ -135,6 +140,16 @@ export const BankReconciliationView: React.FC = () => {
     sales.forEach((s) => {
       s.pagos.forEach((p) => {
         if ((p.cuenta || '').toLowerCase().includes('cashea')) {
+          const excelAssignedUsd = bankMovements
+            .filter((m) => m.vinculado_id === s.id && (m.notas || '').startsWith('CASHEA_EXCEL_ROW:'))
+            .reduce((sum, m) => {
+              try {
+                const raw = (m.notas || '').split('CASHEA_EXCEL_ROW:')[1]?.split(' | ')[0];
+                const details = JSON.parse(raw || '{}');
+                return sum + Number(details.montoAsignado || details.montoUSD || 0);
+              } catch { return sum; }
+            }, 0);
+          const restanteUsd = Math.max(0, p.monto_equivalente_usd - excelAssignedUsd);
           const item = {
             saleId: s.id,
             factura: s.numero_factura,
@@ -142,13 +157,14 @@ export const BankReconciliationView: React.FC = () => {
             fecha: s.fecha,
             totalFacturaUsd: s.total_usd,
             paymentId: p.id,
-            montoUsd: p.monto_equivalente_usd,
-            montoBs: p.monto_equivalente_usd * exchangeRate,
+            montoUsd: p.estado_liquidacion === 'conciliado_en_banco' ? p.monto_equivalente_usd : (restanteUsd <= 0.005 ? Math.min(p.monto_equivalente_usd, excelAssignedUsd) : restanteUsd),
+            montoBs: (p.estado_liquidacion === 'conciliado_en_banco' ? p.monto_equivalente_usd : (restanteUsd <= 0.005 ? Math.min(p.monto_equivalente_usd, excelAssignedUsd) : restanteUsd)) * exchangeRate,
+            montoExcelConciliadoUsd: excelAssignedUsd,
             estado: p.estado_liquidacion || 'pendiente_banco',
             referencia: p.referencia,
-            bancoReceptor: p.cuenta_banco_liquidacion,
+            bancoReceptor: p.cuenta_banco_liquidacion || (excelAssignedUsd > 0 ? 'Importado desde Excel Cashea' : undefined),
           };
-          if (p.estado_liquidacion === 'conciliado_en_banco') {
+          if (p.estado_liquidacion === 'conciliado_en_banco' || restanteUsd <= 0.005) {
             conciliados.push(item);
           } else {
             pending.push(item);
@@ -158,7 +174,7 @@ export const BankReconciliationView: React.FC = () => {
     });
 
     return { pending, conciliados };
-  }, [sales, exchangeRate]);
+  }, [sales, exchangeRate, bankMovements]);
 
   const totalCasheaPendingUsd = useMemo(() => {
     return casheaItems.pending.reduce((sum, item) => sum + item.montoUsd, 0);
@@ -463,9 +479,14 @@ export const BankReconciliationView: React.FC = () => {
                       Selecciona una factura para marcar la liquidación recibida en tu banco
                     </p>
                   </div>
-                  <span className="text-xs font-bold text-amber-700 bg-amber-50 px-3 py-1 rounded-full border border-amber-200">
-                    Total: ${totalCasheaPendingUsd.toFixed(2)} USD
-                  </span>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-xs font-bold text-amber-700 bg-amber-50 px-3 py-1 rounded-full border border-amber-200">
+                      Total: ${totalCasheaPendingUsd.toFixed(2)} USD
+                    </span>
+                    <button type="button" onClick={() => setIsCasheaExcelModalOpen(true)} className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold shadow-sm">
+                      <UploadCloud className="w-4 h-4" /> Conciliar subiendo Excel
+                    </button>
+                  </div>
                 </div>
 
                 <div className="overflow-x-auto">
@@ -521,6 +542,8 @@ export const BankReconciliationView: React.FC = () => {
                             <td className="py-3 px-4 text-center whitespace-nowrap">
                               <button
                                 type="button"
+                                disabled={item.montoExcelConciliadoUsd > 0.005}
+                                title={item.montoExcelConciliadoUsd > 0.005 ? 'Esta factura ya tiene cuotas registradas desde Excel. Importa las cuotas restantes para evitar duplicar el abono.' : 'Conciliar manualmente'}
                                 onClick={() => {
                                   setCasheaReconcileTarget({
                                     saleId: item.saleId,
@@ -532,9 +555,9 @@ export const BankReconciliationView: React.FC = () => {
                                   });
                                   setCasheaBankRef('');
                                 }}
-                                className="px-3 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-[11px] font-bold shadow-2xs transition cursor-pointer"
+                                className="px-3 py-1 bg-amber-500 hover:bg-amber-600 disabled:bg-slate-300 disabled:cursor-not-allowed text-white rounded-lg text-[11px] font-bold shadow-2xs transition cursor-pointer"
                               >
-                                Conciliar en Banco
+                                {item.montoExcelConciliadoUsd > 0.005 ? 'Continuar por Excel' : 'Conciliar en Banco'}
                               </button>
                             </td>
                           </tr>
@@ -1038,6 +1061,15 @@ export const BankReconciliationView: React.FC = () => {
       <BdvFileImportModal
         isOpen={isBdvModalOpen}
         onClose={() => setIsBdvModalOpen(false)}
+      />
+
+      <CasheaExcelImportModal
+        isOpen={isCasheaExcelModalOpen}
+        onClose={() => setIsCasheaExcelModalOpen(false)}
+        sales={sales}
+        bankMovements={bankMovements}
+        exchangeRate={exchangeRate}
+        importBankMovements={importBankMovements}
       />
 
       {/* Google Sheets Sync Modal */}
