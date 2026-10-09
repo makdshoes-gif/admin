@@ -57,6 +57,11 @@ interface ColorImageItem {
   stock?: number;
   costo?: number;
   precio?: number;
+  descripcion?: string;
+  marca?: string;
+  tipo?: string;
+  genero?: string;
+  aiLoading?: boolean;
 }
 
 export const ProductFormModal: React.FC<ProductFormModalProps> = ({
@@ -618,13 +623,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
     if (!files.length) return;
-    if (files.length === 1) {
-      processImageFile(files[0]).then((img) => {
-        setColorImages([{ id: `${Date.now()}-0`, color: color.trim() || 'Estándar', imagen: img }]);
-      }).catch(() => {});
-    } else {
-      void handleMultipleImageFiles(files);
-    }
+    void handleMultipleImageFiles(files);
     e.target.value = '';
   };
 
@@ -658,12 +657,41 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
           stock: parseInt(singleStock, 10) || 0,
           costo: Number(costo) || 0,
           precio: Number(precio) || 0,
+          aiLoading: true,
         });
       }
       setColorImages(results);
       if (results[0]) {
         setImagen(results[0].imagen);
         setColor(results[0].color);
+      }
+      // Analiza cada foto por separado y completa la ficha de ese producto.
+      for (const item of results) {
+        try {
+          const ai = await analyzeShoeWithAi(item.imagen, 'Analiza exclusivamente el producto visible en esta foto. Devuelve nombre comercial, marca, color, tipo, género y una descripción comercial objetiva basada solo en lo visible. No inventes SKU, talla, stock ni precio.');
+          const aiDescription = [ai.descripcion_comercial, ai.detalles_estilo ? `Detalles: ${ai.detalles_estilo}` : '', ai.material ? `Material aparente: ${ai.material}` : ''].filter(Boolean).join('\n\n');
+          setColorImages((current) => current.map((x) => x.id !== item.id ? x : ({
+            ...x,
+            nombre: ai.nombre || x.nombre,
+            marca: ai.marca || '',
+            color: ai.color || x.color,
+            tipo: ai.tipo || '',
+            genero: ai.genero || '',
+            descripcion: aiDescription,
+            aiLoading: false,
+          })));
+          if (results.length === 1) {
+            if (ai.nombre) setNombre(ai.nombre);
+            if (ai.marca) setMarca(ai.marca);
+            if (ai.color) setColor(ai.color);
+            if (ai.tipo) setTipo(ai.tipo as ShoeType);
+            if (ai.genero) setGenero(ai.genero);
+            if (aiDescription) { setDescripcion(aiDescription); setDescripcionOriginalIA(aiDescription); }
+          }
+        } catch (error) {
+          console.warn('No se pudo analizar una foto de inventario:', error);
+          setColorImages((current) => current.map((x) => x.id === item.id ? { ...x, aiLoading: false } : x));
+        }
       }
     } catch (err) {
       console.error('Error cargando imágenes múltiples:', err);
@@ -768,6 +796,10 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
           costo: Number(item.costo ?? parsedCosto),
           precio: Number(item.precio ?? parsedPrecio),
           nombre: item.nombre?.trim() || `${nombre.trim() || 'Producto'} ${index + 1}`,
+          marca: item.marca?.trim() || baseProductData.marca,
+          tipo: item.tipo || baseProductData.tipo,
+          genero: item.genero || baseProductData.genero,
+          descripcion: item.descripcion?.trim() || baseProductData.descripcion,
           color: item.color?.trim() || 'Estándar',
           imagen: item.imagen,
           sku: item.sku?.trim().toUpperCase() || `${sku.trim().toUpperCase() || 'PROD'}-${String(index + 1).padStart(2,'0')}`,
@@ -1560,6 +1592,9 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
                         <input type="number" min="0" value={Number(item.stock ?? 0)} onChange={(e) => updateColorImage(item.id,{stock:Number(e.target.value)||0})} placeholder="Stock" className="w-full px-2 py-1.5 border border-slate-200 rounded-lg text-xs" />
                         <input type="number" min="0" step="0.01" value={Number(item.costo ?? costo)} onChange={(e) => updateColorImage(item.id,{costo:Number(e.target.value)||0})} placeholder="Costo" className="w-full px-2 py-1.5 border border-slate-200 rounded-lg text-xs" />
                         <input type="number" min="0" step="0.01" value={Number(item.precio ?? precio)} onChange={(e) => updateColorImage(item.id,{precio:Number(e.target.value)||0})} placeholder="Precio" className="w-full px-2 py-1.5 border border-slate-200 rounded-lg text-xs" />
+                        <input type="text" value={item.marca || ''} onChange={(e) => updateColorImage(item.id,{marca:e.target.value})} placeholder="Marca detectada por IA" className="col-span-2 w-full px-2 py-1.5 border border-slate-200 rounded-lg text-xs" />
+                        <textarea value={item.descripcion || ''} onChange={(e) => updateColorImage(item.id,{descripcion:e.target.value})} placeholder={item.aiLoading ? 'La IA está analizando esta foto…' : 'Descripción individual de esta foto'} rows={3} className="col-span-2 w-full px-2 py-1.5 border border-slate-200 rounded-lg text-xs" />
+                        <div className="col-span-2 text-[10px] text-indigo-600">{item.aiLoading ? '✨ Analizando esta imagen con IA…' : item.descripcion ? '✓ Descripción individual lista; puedes editarla' : 'No se pudo generar la descripción automáticamente; puedes escribirla.'}</div>
                       </div>
                       <button type="button" onClick={() => removeColorImage(item.id)} className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-lg" title="Quitar foto/color">
                         <Trash2 className="w-4 h-4" />

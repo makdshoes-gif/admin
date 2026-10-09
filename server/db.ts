@@ -1063,7 +1063,33 @@ export async function getAccountingLedger(start?:string,end?:string) {
     const enrichedLineas=lineas.map((l:any)=>enrichLine(l,'01','Venta'));
     entries.push({id:`venta-${s.id}`,fecha:s.fecha,numero_asiento:`V-${s.numero_factura||s.id}`,tipo:'venta',origen:'venta',origen_id:s.id,documento:s.numero_factura,tipo_documento:'Factura',sujeto:`${s.cliente_nombre||''} ${s.cliente_apellido||''}`.trim(),rif:s.cliente_rif||'',tasa_dolar:Number(s.tasa_cambio||0),lineas:enrichedLineas});
   }
-  for(const e of expenses as any[]){ const amt=Number(e.monto_usd||0); if(amt<=0) continue; entries.push({id:`gasto-${e.id}`,fecha:e.fecha,numero_asiento:`G-${e.id}`,tipo:'gasto',origen:'gasto',origen_id:e.id,documento:e.comprobante_ref||e.id,tipo_documento:'Comprobante de Gasto',sujeto:e.beneficiario||'',metodo_pago:e.cuenta_origen,tasa_dolar:Number(e.tasa_cambio||0),lineas:[enrichLine({cuenta:e.categoria,debe:amt,haber:0,clasificacion:'Gasto'},'01','Gasto'),enrichLine({cuenta:e.cuenta_origen||'Caja / Banco',debe:0,haber:amt,clasificacion:'Activo'},'01','Gasto')]}); }
+  // Los gastos se reflejan automáticamente en Diario y Mayor desde el registro original.
+  // Cada asiento conserva la moneda del gasto y la de la cuenta pagadora; ambos importes
+  // se convierten a la moneda funcional usando la tasa histórica del propio gasto.
+  for(const e of expenses as any[]){
+    const tasa=Number(e.tasa_cambio||0);
+    const monedaGasto=String(e.moneda||'USD').toUpperCase()==='BS'?'Bs':'USD';
+    const montoOriginal=Number(e.monto|| (monedaGasto==='Bs'?e.monto_bs:e.monto_usd) || 0);
+    const montoBs=Number(e.monto_bs|| (monedaGasto==='Bs'?montoOriginal:montoOriginal*tasa) || 0);
+    const montoUsd=Number(e.monto_usd|| (monedaGasto==='USD'?montoOriginal:(tasa>0?montoOriginal/tasa:0)) || 0);
+    if(montoOriginal<=0 || (monedaGasto==='USD' && tasa<=0 && !Number(e.monto_usd))) continue;
+    const cuentaOrigen=String(e.cuenta_origen||'Caja / Banco');
+    const origenLower=cuentaOrigen.toLowerCase();
+    const cuentaPagoEsBs=/(^|[^a-z])bs([^a-z]|$)|bol[ií]var|pago\s*m[oó]vil|punto\s*de\s*venta|bdv|venezuela|mercantil|banesco|banco/i.test(origenLower) && !/(usd|d[oó]lar|zelle|binance)/i.test(origenLower);
+    const monedaPago=cuentaPagoEsBs?'Bs':'USD';
+    const montoPago=monedaPago==='Bs'?montoBs:montoUsd;
+    const cuentaGasto=String(e.categoria||'Otros Gastos Operativos');
+    const glosa=[e.descripcion,e.notas].filter(Boolean).join(' — ');
+    entries.push({
+      id:`gasto-${e.id}`,fecha:e.fecha,numero_asiento:`G-${e.id}`,tipo:'gasto',origen:'gasto',origen_id:e.id,
+      documento:e.comprobante_ref||e.id,tipo_documento:'Comprobante de Gasto',sujeto:e.beneficiario||'',
+      metodo_pago:cuentaOrigen,tasa_dolar:tasa,observaciones:glosa,
+      lineas:[
+        enrichLine({cuenta:cuentaGasto,subcuenta:e.descripcion||'',debe:montoOriginal,haber:0,moneda:monedaGasto,clasificacion:'Gasto'},'01','Gasto'),
+        enrichLine({cuenta:cuentaOrigen,debe:0,haber:montoPago,moneda:monedaPago,clasificacion:'Activo'},'02','Gasto')
+      ]
+    });
+  }
   for(const m of manual as any[]){ let parsedLines:any[]=[]; try { parsedLines=Array.isArray(m.lineas)?m.lineas:(typeof m.lineas==='string'?JSON.parse(m.lineas||'[]'):[]); } catch { parsedLines=[]; } entries.push({...m,lineas:Array.isArray(parsedLines)?parsedLines:[]}); }
   const ledgerMap:any={}; for(const en of entries){ for(const l of en.lineas||[]){const k=l.cuenta||'Sin cuenta'; if(!ledgerMap[k]) ledgerMap[k]={cuenta:k,debe:0,haber:0,movimientos:[]}; ledgerMap[k].debe+=Number(l.debe||0); ledgerMap[k].haber+=Number(l.haber||0); ledgerMap[k].movimientos.push({...l,fecha:en.fecha,documento:en.documento,numero_asiento:en.numero_asiento,origen:en.origen});}}
   return {entries:entries.sort((a,b)=>new Date(b.fecha).getTime()-new Date(a.fecha).getTime()),ledger:Object.values(ledgerMap).map((x:any)=>({...x,saldo:x.debe-x.haber})).sort((a:any,b:any)=>a.cuenta.localeCompare(b.cuenta))};

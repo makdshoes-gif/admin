@@ -1,0 +1,12 @@
+MAKD SHOP V21 — Integración de gastos con Libro Diario y Libro Mayor
+
+Cambios:
+- Los gastos guardados se muestran automáticamente como asientos en el Libro Diario y afectan el Libro Mayor.
+- El asiento conserva la moneda original del gasto (Bs o USD) y usa la tasa histórica registrada.
+- La contrapartida utiliza la cuenta de origen del pago y calcula el importe en la moneda de esa cuenta cuando puede identificarse por su nombre (Bs/banco/pago móvil frente a USD/Zelle/Binance).
+- Se incluye la descripción y las notas del gasto en las observaciones del asiento.
+- Los asientos de gastos se generan desde la tabla de gastos, no se duplican insertando otro asiento contable independiente.
+
+Verificación:
+- El código de la integración fue actualizado y revisado.
+- No se afirma compilación completa: en este entorno las dependencias del proyecto no están instaladas; se requiere instalar dependencias y validar build antes del despliegue.

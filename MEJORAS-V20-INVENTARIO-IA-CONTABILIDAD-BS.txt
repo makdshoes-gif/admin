@@ -1,0 +1,18 @@
+MAKD SHOP V20
+
+1. INVENTARIO INTELIGENTE POR FOTO
+- Al subir imágenes, cada foto se analiza individualmente con la IA.
+- Se rellenan nombre comercial, marca, color, tipo, género y descripción de la imagen cuando la IA puede reconocerlos.
+- Cada ficha tiene una descripción editable independiente antes de guardar.
+- No se inventan SKU, tallas, stock, costos ni precios: esos datos permanecen editables/manuales.
+
+2. LIBROS CONTABLES EN BOLÍVARES
+- Bs es la moneda principal mostrada en Libro Diario y Libro Mayor.
+- Se registra la tasa BCV histórica por fecha del movimiento.
+- Se muestra el equivalente USD de Debe y Haber usando la tasa de esa fecha.
+- Los asientos nuevos requieren una tasa BCV válida y se validan en bolívares para cuadrar Debe/Haber.
+- PDF del comprobante, PDF del Libro Mayor y Excel muestran tasa y equivalencias donde aplica.
+- Registros históricos sin tasa válida no reciben una conversión inventada; el equivalente USD aparece como no disponible.
+
+NOTA DE VALIDACIÓN
+- El ZIP se revisa por integridad. La compilación completa no se ha podido ejecutar porque las dependencias del proyecto no están instaladas en este entorno.
