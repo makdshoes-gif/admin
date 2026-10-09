@@ -102,6 +102,25 @@ export interface SalePayment {
   cuenta_banco_liquidacion?: string;
   referencia_bancaria?: string;
   fecha_conciliacion?: string;
+  numero_cuotas?: 3 | 6;
+  monto_cuota_usd?: number;
+  porcentaje_inicial?: number;
+}
+
+export interface CasheaAbono {
+  id: string;
+  fecha: string;
+  referencia: string;
+  factura: string;
+  cuota: string;
+  orden: string;
+  monto_usd: number;
+  monto_aplicado_usd: number;
+  monto_ves: number;
+  tasa_cambio: number;
+  metodo_pago: string;
+  cuenta: string;
+  sucursal: string;
 }
 
 export interface Sale {
@@ -136,6 +155,7 @@ export interface Sale {
   total_positivo_inmediato_usd?: number; // Monto que entró en positivo inmediatamente (Pago Móvil, Punto de Venta, etc.)
   total_cashea_pendiente_usd?: number;   // Monto que queda pendiente por conciliar en banco según caiga
   estado_cashea?: 'sin_cashea' | 'pendiente_banco' | 'conciliado_total' | 'conciliado_parcial';
+  cashea_abonos?: CasheaAbono[];
   created_at: string;
 }
 

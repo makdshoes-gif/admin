@@ -1,0 +1,12 @@
+MAKD SHOP V19 — ABONOS CASHEA Y MODALIDAD DE 6 CUOTAS
+
+1. La importación Excel aplica cada fila coincidente como un abono individual a la factura Cashea.
+2. El monto que reduce la deuda es “Monto asignado” (USD), sin agrupar los movimientos.
+3. Se guarda historial por abono: fecha, referencia, factura, cuota, orden, monto, moneda/tasa, método, cuenta y sucursal.
+4. El saldo pendiente se reduce por cada abono y la factura permanece parcial hasta llegar a cero.
+5. Se omiten duplicados detectados por referencia y factura; el historial también evita aplicar la misma referencia/cuota dos veces.
+6. La vista del comprobante muestra los abonos Cashea y el saldo pendiente actual.
+7. La facturación POS permite elegir modalidad de 3 o 6 cuotas y muestra un estimado por cuota. Se guarda la modalidad en el pago Cashea.
+8. Se añade la columna JSONB cashea_abonos para persistir el historial en Neon.
+
+Nota: el monto estimado por cuota es una división simple del saldo financiado; las cuotas reales, comisiones o calendarios oficiales de Cashea pueden diferir.

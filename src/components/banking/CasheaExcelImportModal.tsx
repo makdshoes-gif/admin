@@ -17,6 +17,7 @@ interface Props {
   bankMovements: BankMovement[];
   exchangeRate: number;
   importBankMovements: (movements: Omit<BankMovement, 'id' | 'created_at'>[]) => number;
+  applyCasheaExcelAbonos: (abonos: Array<{ saleId: string; fecha: string; referencia: string; factura: string; cuota: string; orden: string; montoUsd: number; montoVes: number; tasaCambio: number; metodoPago: string; cuenta: string; sucursal: string }>) => number;
 }
 
 const norm = (value: unknown) => String(value ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9#]+/g, ' ').trim();
@@ -41,19 +42,20 @@ const dateText = (value: unknown) => {
   return String(value ?? '').trim();
 };
 
-export const CasheaExcelImportModal: React.FC<Props> = ({ isOpen, onClose, sales, bankMovements, exchangeRate, importBankMovements }) => {
+export const CasheaExcelImportModal: React.FC<Props> = ({ isOpen, onClose, sales, bankMovements, exchangeRate, importBankMovements, applyCasheaExcelAbonos }) => {
   const inputRef = useRef<HTMLInputElement>(null);
   const [fileName, setFileName] = useState('');
   const [rows, setRows] = useState<CasheaRow[]>([]);
   const [error, setError] = useState('');
   const [imported, setImported] = useState<number | null>(null);
+  const [appliedAbonos, setAppliedAbonos] = useState(0);
   const [busy, setBusy] = useState(false);
 
   const preview = useMemo(() => rows.slice(0, 100), [rows]);
   if (!isOpen) return null;
 
   const parseFile = async (file: File) => {
-    setBusy(true); setError(''); setImported(null); setFileName(file.name);
+    setBusy(true); setError(''); setImported(null); setAppliedAbonos(0); setFileName(file.name);
     try {
       const buffer = await file.arrayBuffer();
       const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
@@ -100,7 +102,7 @@ export const CasheaExcelImportModal: React.FC<Props> = ({ isOpen, onClose, sales
     if (!toImport.length) { setError('No hay filas nuevas para importar.'); return; }
     const movements: Omit<BankMovement, 'id' | 'created_at'>[] = toImport.map(r => {
       const matched = r.matchStatus === 'matched';
-      const usd = r.montoAsignado || r.montoUSD || (r.montoVES && r.tasaCambio ? r.montoVES / r.tasaCambio : 0);
+      const usd = r.montoUSD || r.montoAsignado || (r.montoVES && r.tasaCambio ? r.montoVES / r.tasaCambio : 0);
       const bs = r.montoVES || (usd * (r.tasaCambio || exchangeRate));
       const details = { fechaTransaccion: r.fechaTransaccion, moneda: r.moneda, metodoPago: r.metodoPago, cuenta: r.cuenta, montoVES: r.montoVES, montoUSD: r.montoUSD, fechaTasa: r.fechaTasa, tasaCambio: r.tasaCambio, cuota: r.cuota, orden: r.orden, factura: r.factura, sucursal: r.sucursal, montoAsignado: r.montoAsignado };
       return {
@@ -118,7 +120,13 @@ export const CasheaExcelImportModal: React.FC<Props> = ({ isOpen, onClose, sales
       } as Omit<BankMovement, 'id' | 'created_at'>;
     });
     const count = importBankMovements(movements);
-    setImported(count); setError('');
+    const abonos = toImport.filter((r) => r.matchStatus === 'matched' && !!r.matchedSaleId).map((r) => ({
+      saleId: r.matchedSaleId!, fecha: r.fechaTransaccion, referencia: r.referencia || `CASHEA-${r.factura}-${r.cuota}`,
+      factura: r.factura, cuota: r.cuota, orden: r.orden, montoUsd: r.montoAsignado,
+      montoVes: r.montoVES, tasaCambio: r.tasaCambio, metodoPago: r.metodoPago, cuenta: r.cuenta, sucursal: r.sucursal,
+    }));
+    const applied = applyCasheaExcelAbonos(abonos);
+    setImported(count); setAppliedAbonos(applied); setError('');
   };
 
   const matchedCount = rows.filter(r => r.matchStatus === 'matched').length;
@@ -137,7 +145,7 @@ export const CasheaExcelImportModal: React.FC<Props> = ({ isOpen, onClose, sales
             <button onClick={() => inputRef.current?.click()} disabled={busy} className="shrink-0 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold disabled:opacity-50"><UploadCloud className="w-4 h-4" />{busy ? 'Leyendo archivo…' : 'Seleccionar Excel'}</button>
           </div>
           {error && <div className="flex items-start gap-2 rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800"><AlertCircle className="w-4 h-4 shrink-0" />{error}</div>}
-          {imported !== null && <div className="flex items-start gap-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-800"><CheckCircle2 className="w-4 h-4 shrink-0" /><div><p className="font-bold">Importación registrada</p><p>Se añadieron {imported} transacciones a la conciliación bancaria. Las filas coincidentes se vincularon a su venta Cashea; las no coincidentes quedan pendientes para revisión.</p></div></div>}
+          {imported !== null && <div className="flex items-start gap-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-800"><CheckCircle2 className="w-4 h-4 shrink-0" /><div><p className="font-bold">Importación registrada</p><p>Se añadieron {imported} transacciones. Se aplicaron {appliedAbonos} abonos individuales a facturas Cashea y se redujo su saldo pendiente. Las filas sin coincidencia quedan para revisión.</p></div></div>}
           {rows.length > 0 && <>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               <div className="rounded-xl border p-3"><p className="text-[10px] uppercase text-slate-500 font-bold">Filas leídas</p><p className="text-xl font-black">{rows.length}</p></div>

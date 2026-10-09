@@ -396,6 +396,21 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ sale, onClose }) => 
                     </div>
                   </div>
                 )}
+                {!!sale.cashea_abonos?.length && (
+                  <div className="mt-2 pt-1.5 border-t border-stone-300 text-[9px] text-stone-700">
+                    <p className="font-black uppercase tracking-wide mb-1">Abonos Cashea registrados</p>
+                    {sale.cashea_abonos.map((abono) => (
+                      <div key={abono.id} className="flex justify-between gap-2 py-0.5">
+                        <span className="min-w-0 truncate">{abono.fecha?.slice(0, 10)} · Cuota {abono.cuota || 'N/D'} · Ref. {abono.referencia || 'N/D'}</span>
+                        <span className="font-bold shrink-0">-${Number(abono.monto_aplicado_usd || 0).toFixed(2)}</span>
+                      </div>
+                    ))}
+                    <div className="flex justify-between border-t border-stone-200 mt-1 pt-1 font-black text-amber-900">
+                      <span>Saldo pendiente actual</span>
+                      <span>${Number(sale.total_cashea_pendiente_usd || 0).toFixed(2)}</span>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Barcode & Footer Notice */}

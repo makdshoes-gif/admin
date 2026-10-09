@@ -11,6 +11,7 @@ import {
   CurrencyPurchase,
   Layaway,
   LayawayPayment,
+  CasheaAbono,
 } from '../types';
 import {
   INITIAL_PRODUCTS,
@@ -113,6 +114,7 @@ interface StoreContextType {
   addBankMovement: (movement: Omit<BankMovement, 'id' | 'created_at'>) => void;
   updateBankMovement: (id: string, updates: Partial<BankMovement>) => void;
   importBankMovements: (movements: Omit<BankMovement, 'id' | 'created_at'>[]) => number;
+  applyCasheaExcelAbonos: (abonos: Array<{ saleId: string; fecha: string; referencia: string; factura: string; cuota: string; orden: string; montoUsd: number; montoVes: number; tasaCambio: number; metodoPago: string; cuenta: string; sucursal: string }>) => number;
   addCurrencyPurchase: (purchase: Omit<CurrencyPurchase, 'id' | 'created_at'>) => void;
   deleteCurrencyPurchase: (id: string) => void;
   markNotificationsAsRead: () => void;
@@ -2095,6 +2097,59 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return newItems.length;
   };
 
+  // Aplicar cada fila del Excel Cashea como abono individual a su factura.
+  // Se conserva el historial por fila y se reduce solo el saldo pendiente.
+  const applyCasheaExcelAbonos: StoreContextType['applyCasheaExcelAbonos'] = (abonos) => {
+    if (!abonos.length) return 0;
+    let nextSales = [...sales];
+    let appliedCount = 0;
+    const changed = new Map<string, Sale>();
+    for (const row of abonos) {
+      const index = nextSales.findIndex((item) => item.id === row.saleId);
+      if (index < 0) continue;
+      const sale = nextSales[index];
+      const history = [...(sale.cashea_abonos || [])];
+      const ref = (row.referencia || `CASHEA-${row.factura}-${row.cuota}`).trim();
+      if (history.some((item) => item.referencia === ref && item.factura === row.factura && item.cuota === row.cuota)) continue;
+      const pending = Math.max(0, Number(sale.total_cashea_pendiente_usd ?? sale.pagos.filter((p) => (p.cuenta || '').toLowerCase().includes('cashea')).reduce((sum, p) => sum + Number(p.monto_equivalente_usd || 0), 0)) || 0);
+      const amount = Math.max(0, Number(row.montoUsd) || 0);
+      if (!amount) continue;
+      const applied = Math.min(pending, amount);
+      const entry: CasheaAbono = {
+        id: `cashea-abono-${Date.now()}-${appliedCount}-${Math.random().toString(36).slice(2, 7)}`,
+        fecha: row.fecha, referencia: ref, factura: row.factura, cuota: row.cuota, orden: row.orden,
+        monto_usd: amount, monto_aplicado_usd: applied, monto_ves: Number(row.montoVes) || 0,
+        tasa_cambio: Number(row.tasaCambio) || 0, metodo_pago: row.metodoPago, cuenta: row.cuenta, sucursal: row.sucursal,
+      };
+      const remaining = Number(Math.max(0, pending - applied).toFixed(2));
+      const isFullyPaid = remaining <= 0.009;
+      const updatedPagos = isFullyPaid
+        ? sale.pagos.map((payment) => (payment.cuenta || '').toLowerCase().includes('cashea')
+            ? { ...payment, estado_liquidacion: 'conciliado_en_banco' as const, fecha_conciliacion: row.fecha, referencia_bancaria: ref }
+            : payment)
+        : sale.pagos;
+      const updated: Sale = {
+        ...sale, pagos: updatedPagos, cashea_abonos: [...history, entry], total_cashea_pendiente_usd: remaining,
+        estado_cashea: isFullyPaid ? 'conciliado_total' : 'conciliado_parcial',
+      };
+      nextSales[index] = updated;
+      changed.set(updated.id, updated);
+      appliedCount += 1;
+    }
+    if (changed.size) {
+      setSales(nextSales);
+      safeLocalStorageSet(`${STORAGE_KEY}_sales`, JSON.stringify(nextSales));
+      changed.forEach((sale) => {
+        fetch(`/api/sales/${sale.id}`, {
+          method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pagos: sale.pagos, total_cashea_pendiente_usd: sale.total_cashea_pendiente_usd, estado_cashea: sale.estado_cashea, cashea_abonos: sale.cashea_abonos }),
+        }).catch((err) => console.warn('No se pudo sincronizar el abono Cashea:', err));
+      });
+      addNotification('Abonos Cashea aplicados', `${appliedCount} abono(s) individual(es) fueron aplicados a las facturas correspondientes.`, 'success');
+    }
+    return appliedCount;
+  };
+
   // Currency Purchases (Conversión de Bs a Divisas / Binance / Zelle)
   const addCurrencyPurchase = (purchaseData: Omit<CurrencyPurchase, 'id' | 'created_at'>) => {
     const newPurchase: CurrencyPurchase = {
@@ -2489,6 +2544,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         addBankMovement,
         updateBankMovement,
         importBankMovements,
+        applyCasheaExcelAbonos,
         addCurrencyPurchase,
         deleteCurrencyPurchase,
         markNotificationsAsRead,

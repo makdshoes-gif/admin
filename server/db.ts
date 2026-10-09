@@ -345,6 +345,7 @@ export async function initDatabaseSchema() {
     await sql`ALTER TABLE sales_transactions ADD COLUMN IF NOT EXISTS total_positivo_inmediato_usd NUMERIC(12, 2) DEFAULT 0`;
     await sql`ALTER TABLE sales_transactions ADD COLUMN IF NOT EXISTS total_cashea_pendiente_usd NUMERIC(12, 2) DEFAULT 0`;
     await sql`ALTER TABLE sales_transactions ADD COLUMN IF NOT EXISTS estado_cashea VARCHAR(30) DEFAULT 'sin_cashea'`;
+    await sql`ALTER TABLE sales_transactions ADD COLUMN IF NOT EXISTS cashea_abonos JSONB DEFAULT '[]'::jsonb`;
     await sql`ALTER TABLE expenses ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()`;
     await sql`ALTER TABLE expenses ADD COLUMN IF NOT EXISTS foto_factura TEXT`;
     await sql`ALTER TABLE bank_reconciliations ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()`;
@@ -759,7 +760,7 @@ export async function updateSale(id: string, updates: Record<string, any>): Prom
     numero_factura: true, fecha: true, notas: true, cliente_nombre: true, cliente_apellido: true,
     cliente_rif: true, cliente_telefono: true, cliente_correo: true,
     pagos: true, total_positivo_inmediato_usd: true, total_cashea_pendiente_usd: true,
-    estado_cashea: true, estado: true, motivo_anulacion: true,
+    estado_cashea: true, cashea_abonos: true, estado: true, motivo_anulacion: true,
   };
   const keys = Object.keys(updates).filter((k) => allowed[k]);
   if (keys.length === 0) return false;

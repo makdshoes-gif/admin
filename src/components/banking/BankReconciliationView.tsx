@@ -32,6 +32,7 @@ export const BankReconciliationView: React.FC = () => {
     accounts,
     reconcileCasheaPayment,
     importBankMovements,
+    applyCasheaExcelAbonos,
   } = useStore();
 
   const [activeReconciliationTab, setActiveReconciliationTab] = useState<'bancos' | 'cashea'>('bancos');
@@ -1070,6 +1071,7 @@ export const BankReconciliationView: React.FC = () => {
         bankMovements={bankMovements}
         exchangeRate={exchangeRate}
         importBankMovements={importBankMovements}
+        applyCasheaExcelAbonos={applyCasheaExcelAbonos}
       />
 
       {/* Google Sheets Sync Modal */}

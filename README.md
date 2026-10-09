@@ -18,3 +18,10 @@ View your app in AI Studio: https://ai.studio/apps/b2dcdad4-bbbf-478e-8488-699c9
 2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
 3. Run the app:
    `npm run dev`
+
+
+## V19 — Abonos Cashea y modalidad de 6 cuotas
+
+- La importación Excel reduce el saldo pendiente de cada factura por el campo **Monto asignado** y guarda cada abono individual con su referencia, fecha y número de cuota.
+- El historial de abonos se muestra en el comprobante de venta y se persiste en Neon mediante `cashea_abonos`.
+- El POS permite registrar la modalidad Cashea de 3 o 6 cuotas y muestra el monto estimado por cuota.

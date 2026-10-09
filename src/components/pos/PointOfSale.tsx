@@ -116,6 +116,7 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
   // Cashea Special Split State
   const [isCasheaSplitOpen, setIsCasheaSplitOpen] = useState(false);
   const [casheaDownPercent, setCasheaDownPercent] = useState<number>(40);
+  const [casheaInstallments, setCasheaInstallments] = useState<3 | 6>(3);
   const [casheaDownAccount, setCasheaDownAccount] = useState<string>('Punto de Venta');
 
   // BDV Verification State
@@ -409,8 +410,11 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
       monto: casheaPendingUsd,
       tasa: 1,
       monto_equivalente_usd: casheaPendingUsd,
-      referencia: 'Financiamiento 3 Cuotas',
+      referencia: `Financiamiento ${casheaInstallments} Cuotas`,
       estado_liquidacion: 'pendiente_banco',
+      numero_cuotas: casheaInstallments,
+      monto_cuota_usd: Number((casheaPendingUsd / casheaInstallments).toFixed(2)),
+      porcentaje_inicial: casheaDownPercent,
     };
 
     setMixedPayments([initialPay, casheaPay]);
@@ -1620,6 +1624,17 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
                             Divide automáticamente la venta para que la <strong>Inicial entre en positivo a tu caja hoy</strong> y el saldo quede para conciliar en banco.
                           </p>
 
+                          <div>
+                            <label className="text-xs font-black text-slate-700 block mb-1">Modalidad de cuotas Cashea:</label>
+                            <div className="grid grid-cols-2 gap-2">
+                              {([3, 6] as const).map((count) => (
+                                <button key={count} type="button" onClick={() => setCasheaInstallments(count)} className={`py-2 rounded-xl text-xs font-black border ${casheaInstallments === count ? 'bg-amber-500 text-white border-amber-600' : 'bg-white text-slate-700 border-slate-200 hover:bg-amber-50'}`}>
+                                  {count} cuotas
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+
                           {/* Selector Porcentaje Inicial */}
                           <div>
                             <label className="text-xs font-black text-slate-700 block mb-1">
@@ -1690,6 +1705,10 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
                               <span>
                                 ${(totalUsd - (totalUsd * casheaDownPercent) / 100).toFixed(2)} USD (Por conciliar)
                               </span>
+                            </div>
+                            <div className="flex justify-between text-slate-700 font-bold">
+                              <span>Estimado por cuota ({casheaInstallments}):</span>
+                              <span>${((totalUsd - (totalUsd * casheaDownPercent) / 100) / casheaInstallments).toFixed(2)} USD</span>
                             </div>
                           </div>
 
