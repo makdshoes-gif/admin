@@ -665,6 +665,9 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
         setImagen(results[0].imagen);
         setColor(results[0].color);
       }
+      // La IA no debe bloquear el registro por no crear SKU: el sistema asigna uno provisional.
+      setSku((current) => current.trim() || `AUTO-${Date.now().toString().slice(-8)}`);
+      if (imageFiles.length === 1 && !nombre.trim()) setNombre('Producto por identificar');
       // Analiza cada foto por separado y completa la ficha de ese producto.
       for (const item of results) {
         try {
@@ -705,8 +708,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
     e.preventDefault();
     setIsDraggingFile(false);
     const files = Array.from(e.dataTransfer.files || []);
-    if (files.length > 1) void handleMultipleImageFiles(files);
-    else if (files[0]) processImageFile(files[0]).then((img) => setColorImages([{ id: `${Date.now()}-0`, color: color.trim() || 'Estándar', imagen: img }])).catch(() => {});
+    if (files.length) void handleMultipleImageFiles(files);
   };
 
   const updateColorImage = (id: string, patch: Partial<ColorImageItem>) => {
@@ -739,8 +741,9 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!nombre.trim() || !sku.trim()) {
-      alert('Por favor ingresa el nombre y código SKU del producto.');
+    const aiBatchMode = entryMode === 'multi' && colorImages.length > 0 && !editingProduct;
+    if (!aiBatchMode && (!nombre.trim() || !sku.trim())) {
+      alert('Por favor ingresa el nombre y código SKU del producto, o carga una foto para que la IA complete la ficha y el sistema genere un SKU provisional.');
       return;
     }
 
@@ -795,14 +798,15 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
           ...baseProductData,
           costo: Number(item.costo ?? parsedCosto),
           precio: Number(item.precio ?? parsedPrecio),
-          nombre: item.nombre?.trim() || `${nombre.trim() || 'Producto'} ${index + 1}`,
+          nombre: item.nombre?.trim() || `${nombre.trim() || 'Producto por identificar'} ${index + 1}`,
+          // Código generado localmente cuando el usuario no ingresó uno. Se puede editar antes de guardar.
+          sku: item.sku?.trim().toUpperCase() || `AUTO-${Date.now().toString().slice(-8)}-${String(index + 1).padStart(2,'0')}`,
           marca: item.marca?.trim() || baseProductData.marca,
           tipo: item.tipo || baseProductData.tipo,
           genero: item.genero || baseProductData.genero,
           descripcion: item.descripcion?.trim() || baseProductData.descripcion,
           color: item.color?.trim() || 'Estándar',
           imagen: item.imagen,
-          sku: item.sku?.trim().toUpperCase() || `${sku.trim().toUpperCase() || 'PROD'}-${String(index + 1).padStart(2,'0')}`,
           talla: item.talla?.trim() || singleTalla,
           stock: Number(item.stock ?? 0),
         }));
@@ -981,7 +985,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
               </label>
               <input
                 type="text"
-                required
+                required={!(entryMode === 'multi' && colorImages.length > 0 && !editingProduct)}
                 value={nombre}
                 onChange={(e) => setNombre(e.target.value)}
                 placeholder={
@@ -1001,7 +1005,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
               </label>
               <input
                 type="text"
-                required
+                required={!(entryMode === 'multi' && colorImages.length > 0 && !editingProduct)}
                 value={sku}
                 onChange={(e) => setSku(e.target.value)}
                 placeholder="Ej. NK-AF1-003"
@@ -1577,7 +1581,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
                 <div className="flex items-center justify-between gap-2">
                   <div>
                     <p className="font-bold text-indigo-900 text-xs">Productos a crear ({colorImages.length})</p>
-                    <p className="text-[10px] text-indigo-700">Cada foto será un producto independiente. Costo y precio se toman del formulario; puedes cambiar nombre, SKU, color, talla y stock de cada uno.</p>
+                    <p className="text-[10px] text-indigo-700">Cada foto será un producto independiente. La IA completa nombre, marca, tipo y descripción cuando puede; si falta el SKU, el sistema lo genera. Revisa y completa talla, stock, costo y precio antes de vender.</p>
                   </div>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">

@@ -214,21 +214,36 @@ export const ExpensesManager: React.FC = () => {
       .sort((a, b) => b.monto_usd - a.monto_usd);
   }, [periodExpenses, totalGastosUsd]);
 
-  const lookupSupplier = async (byDocument: boolean) => {
+  const lookupSupplier = async (byDocument: boolean): Promise<boolean> => {
     const value = (byDocument ? beneficiarioRif : beneficiario).trim();
-    if (!value) return;
+    if (!value) return false;
     try {
       const query = byDocument
         ? `tipo=proveedor&documento=${encodeURIComponent(value)}`
         : `tipo=proveedor&nombre=${encodeURIComponent(value)}`;
       const response = await fetch(`/api/contacts?${query}`);
-      if (!response.ok) return;
+      if (!response.ok) return false;
       const data = await response.json();
       if (data?.contact) {
         setBeneficiario(data.contact.nombre || beneficiario);
         setBeneficiarioRif(data.contact.documento || beneficiarioRif);
+        return true;
       }
     } catch (error) { console.warn('No se pudo consultar el directorio de proveedores:', error); }
+    return false;
+  };
+
+  // Alta/actualización automática al completar el nombre y el RIF/cédula.
+  const saveSupplierContact = async () => {
+    const name = beneficiario.trim();
+    const document = beneficiarioRif.trim();
+    if (!name || !document) return;
+    try {
+      await fetch('/api/contacts', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tipo: 'proveedor', documento: document, nombre: name }),
+      });
+    } catch (error) { console.warn('No se pudo guardar el proveedor:', error); }
   };
 
   // Handle Form Submit
@@ -1060,7 +1075,7 @@ export const ExpensesManager: React.FC = () => {
                     placeholder="Ej: Corpoelec / María Pérez / Tealca"
                     value={beneficiario}
                     onChange={(e) => setBeneficiario(e.target.value)}
-                    onBlur={() => void lookupSupplier(false)}
+                    onBlur={async () => { await lookupSupplier(false); await saveSupplierContact(); }}
                     className="w-full text-xs p-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:border-indigo-500 focus:bg-white"
                   />
                   <input
@@ -1068,7 +1083,7 @@ export const ExpensesManager: React.FC = () => {
                     placeholder="RIF / Cédula del proveedor (opcional)"
                     value={beneficiarioRif}
                     onChange={(e) => setBeneficiarioRif(e.target.value)}
-                    onBlur={() => void lookupSupplier(true)}
+                    onBlur={async () => { const found = await lookupSupplier(true); if (!found) await saveSupplierContact(); }}
                     className="w-full mt-2 text-xs p-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:border-indigo-500 focus:bg-white font-mono"
                   />
                 </div>

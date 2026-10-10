@@ -422,22 +422,37 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
     setIsCasheaSplitOpen(false);
   };
 
-  const lookupCustomerByDocument = async () => {
+  const lookupCustomerByDocument = async (): Promise<boolean> => {
     const document = customerRif.trim();
-    if (!document) return;
+    if (!document) return false;
     try {
       const response = await fetch(`/api/contacts?tipo=cliente&documento=${encodeURIComponent(document)}`);
-      if (!response.ok) return;
+      if (!response.ok) return false;
       const data = await response.json();
       const contact = data?.contact;
       if (contact) {
         setCustomerName(contact.nombre || '');
         setCustomerLastName(contact.apellido || '');
         setCustomerPhone(contact.telefono || '');
+        return true;
       }
     } catch (error) {
       console.warn('No se pudo consultar el directorio de clientes:', error);
     }
+    return false;
+  };
+
+  // Guarda el directorio en cuanto ya hay documento y nombre, no solo al cerrar una venta.
+  const saveCustomerContact = async () => {
+    const document = customerRif.trim();
+    const name = customerName.trim();
+    if (!document || !name || name.toLowerCase() === 'consumidor final') return;
+    try {
+      await fetch('/api/contacts', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tipo: 'cliente', documento: document, nombre: name, apellido: customerLastName.trim(), telefono: customerPhone.trim() }),
+      });
+    } catch (error) { console.warn('No se pudo guardar el cliente en el directorio:', error); }
   };
 
   // Finalize Sale
@@ -1323,6 +1338,7 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
                           id="pos-customer-razon-social"
                           value={customerName}
                           onChange={(e) => setCustomerName(e.target.value)}
+                          onBlur={() => void saveCustomerContact()}
                           placeholder="Razón Social o Nombre Completo (ej. Inversiones Calzados C.A.)"
                           className="w-full pl-10 pr-3.5 py-2.5 sm:py-3 bg-white border border-slate-300 rounded-xl text-sm sm:text-base font-bold text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-600 focus:ring-2 focus:ring-indigo-500/20 shadow-2xs"
                         />
@@ -1340,7 +1356,7 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
                           id="pos-customer-rif"
                           value={customerRif}
                           onChange={(e) => setCustomerRif(e.target.value)}
-                          onBlur={lookupCustomerByDocument}
+                          onBlur={async () => { const found = await lookupCustomerByDocument(); if (!found) await saveCustomerContact(); }}
                           placeholder="V-12345678 / J-12345678-9"
                           className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded-xl text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-600 focus:ring-2 focus:ring-indigo-500/20 font-mono font-bold shadow-2xs"
                         />
@@ -1354,6 +1370,7 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
                           id="pos-customer-phone"
                           value={customerPhone}
                           onChange={(e) => setCustomerPhone(e.target.value)}
+                          onBlur={() => void saveCustomerContact()}
                           placeholder="0414-1234567"
                           className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded-xl text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-600 focus:ring-2 focus:ring-indigo-500/20 font-mono font-bold shadow-2xs"
                         />

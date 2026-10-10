@@ -1,0 +1,24 @@
+MAKD SHOP V26 — Autocompletado de contactos y mejora del inventario por lote
+
+1. CLIENTES
+- Al salir del campo Cédula/RIF se consulta el directorio compartido en la base de datos.
+- Si el documento ya existe, se rellenan nombre/razón social, apellido y teléfono.
+- Cuando se completan documento y nombre, el contacto se guarda/actualiza en el directorio sin esperar a finalizar una venta.
+- La venta continúa guardando los datos del cliente como respaldo.
+
+2. PROVEEDORES
+- Al salir del campo RIF/cédula se busca el proveedor guardado y se completa el nombre cuando existe.
+- Al completar nombre y documento se guarda/actualiza el contacto para reutilizarlo en próximos gastos.
+- El envío al directorio requiere que la API y la base de datos compartida estén configuradas.
+
+3. INVENTARIO POR LOTE CON FOTOS E IA
+- En carga múltiple, nombre y SKU generales dejan de bloquear el guardado: la IA llena los campos visuales y el sistema genera códigos provisionales cuando hace falta.
+- Cada ficha de producto sigue mostrando nombre, SKU, color, talla, stock, costo y precio para revisar antes de guardar.
+- El arrastre de una sola imagen ahora pasa por el mismo proceso de compresión y análisis con IA que la selección de archivos.
+- El SKU provisional se puede editar antes de registrar el producto.
+
+LÍMITES IMPORTANTES
+- La IA puede describir lo visible en una imagen, pero no debe inventar stock real, costo de compra ni precio final. Verifica estos datos antes de vender.
+- La recuperación automática de datos de un documento funciona para contactos previamente guardados en el directorio MAKD. No consulta automáticamente un registro fiscal oficial externo.
+- La persistencia compartida depende de que DATABASE_URL/Neon esté configurado en el despliegue.
+- Se verificó la integridad del ZIP. No se pudo completar npm install/build en este entorno por timeout de descarga de dependencias; probar compilación y flujos en staging antes de producción.
