@@ -34,3 +34,14 @@ View your app in AI Studio: https://ai.studio/apps/b2dcdad4-bbbf-478e-8488-699c9
 
 ## V21 — Gastos en los libros contables
 Los gastos registrados se integran automáticamente en Libro Diario y Libro Mayor conservando la moneda original, la tasa histórica y la cuenta de origen del pago. Consulta `MEJORAS-V21-GASTOS-LIBROS-CONTABLES.txt`. La compilación completa y el despliegue deben validarse en el entorno con dependencias instaladas.
+
+## V22 — Registro reutilizable de clientes y proveedores
+- Directorio persistente en Neon PostgreSQL (`business_contacts`).
+- Autocompletado de clientes por cédula/RIF en facturación y guardado al completar la venta.
+- Registro de proveedor por RIF/cédula o nombre en el módulo de gastos, con autocompletado en usos posteriores.
+- Requiere la base de datos Neon configurada para compartir los registros entre equipos.
+
+## V23 — Persistencia del tipo de producto
+- Se agregó `tipo` a `shoe_products` y una migración `ADD COLUMN IF NOT EXISTS` para bases Neon ya existentes.
+- Los endpoints de guardado individual y masivo ahora insertan y actualizan el tipo elegido en inventario.
+- Se conserva el registro y autocompletado de clientes/proveedores de V22.

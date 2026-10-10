@@ -1,0 +1,8 @@
+MAKD SHOP V23 — Corrección persistencia del tipo de producto y registros reutilizables
+
+1. Inventario: se incorpora la columna `tipo` a la tabla shoe_products, incluyendo migración idempotente para instalaciones Neon existentes.
+2. Edición de producto: el endpoint individual /api/products guarda y actualiza `tipo` explícitamente. La edición ya no depende de un valor de tipo solo en memoria.
+3. Carga masiva: /api/products/bulk también guarda y actualiza `tipo`, evitando que importaciones posteriores borren el tipo elegido.
+4. Contactos: se conserva la funcionalidad de V22 para buscar y guardar clientes por documento (cédula/RIF) desde facturación y proveedores por documento/nombre desde gastos.
+
+Validación: ZIP comprobado con unzip -t. La compilación completa debe ejecutarse en un entorno con dependencias instaladas y probarse contra Neon/Vercel antes de producción.

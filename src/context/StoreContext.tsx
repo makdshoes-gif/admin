@@ -1032,6 +1032,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         motivo: 'Inventario inicial al crear calzado',
         fecha: new Date().toISOString(),
         usuario: userRole === 'admin' ? 'Administrador' : 'Cajera',
+        costo_unitario_usd: Number(newProduct.costo) || 0,
+        costo_unitario_bs: (Number(newProduct.costo) || 0) * (Number(exchangeRate) || 0),
+        tasa_cambio: Number(exchangeRate) || 0,
+        documento: `ENT-${newProduct.id}`,
       };
       setMovements((prev) => [initialMovement, ...prev]);
       fetch('/api/movements', {
@@ -1086,6 +1090,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         motivo: replaceAll ? 'Carga masiva de inventario' : 'Entrada modelo / importación',
         fecha: createdDate,
         usuario: userRole === 'admin' ? 'Administrador' : 'Cajera',
+        costo_unitario_usd: Number(p.costo) || 0,
+        costo_unitario_bs: (Number(p.costo) || 0) * (Number(exchangeRate) || 0),
+        tasa_cambio: Number(exchangeRate) || 0,
+        documento: `ENT-${timestamp}`,
       }));
 
     if (replaceAll) {
@@ -1204,6 +1212,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       motivo: motivo || (actualChange > 0 ? 'Entrada de mercancía' : 'Ajuste de inventario'),
       fecha: new Date().toISOString(),
       usuario: userRole === 'admin' ? 'Administrador' : 'Cajera',
+      costo_unitario_usd: Number(product.costo) || 0,
+      costo_unitario_bs: (Number(product.costo) || 0) * (Number(exchangeRate) || 0),
+      tasa_cambio: Number(exchangeRate) || 0,
     };
 
     setMovements((prev) => [movement, ...prev]);
@@ -1316,6 +1327,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         motivo: `Venta Factura #${saleData.numero_factura}`,
         fecha: timestamp,
         usuario: userRole === 'admin' ? 'Administrador' : 'Cajera',
+        costo_unitario_usd: Number(prod.costo) || 0,
+        costo_unitario_bs: (Number(prod.costo) || 0) * (Number(exchangeRate) || 0),
+        tasa_cambio: Number(exchangeRate) || 0,
+        documento: `Factura ${saleData.numero_factura}`,
       });
 
       if (stockNuevo === 0) {
@@ -1625,12 +1640,16 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       talla: it.talla,
       marca: it.marca,
       tipo: 'salida_ajuste' as const,
-      cantidad: it.cantidad,
+      cantidad: -Math.abs(Number(it.cantidad) || 0),
       stock_anterior: 0,
       stock_nuevo: 0,
       motivo: `Apartado reservado (${codigo_apartado}) - Cliente: ${layawayData.cliente_nombre}`,
       fecha: layawayData.fecha_apartado || timestamp,
       usuario: layawayData.usuario || 'Cajera',
+      costo_unitario_usd: Number(products.find((p) => p.id === it.producto_id)?.costo) || 0,
+      costo_unitario_bs: (Number(products.find((p) => p.id === it.producto_id)?.costo) || 0) * (Number(exchangeRate) || 0),
+      tasa_cambio: Number(exchangeRate) || 0,
+      documento: codigo_apartado,
     }));
     setMovements((prev) => [...movementsToSave, ...prev]);
 
@@ -1798,12 +1817,16 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       talla: it.talla,
       marca: it.marca,
       tipo: 'devolucion' as const,
-      cantidad: it.cantidad,
+      cantidad: Math.abs(Number(it.cantidad) || 0),
       stock_anterior: 0,
       stock_nuevo: 0,
       motivo: `Apartado ${current.codigo_apartado} cancelado${reason ? ` - ${reason}` : ''}`,
       fecha: new Date().toISOString(),
       usuario: 'Administrador',
+      costo_unitario_usd: Number(products.find((p) => p.id === it.producto_id)?.costo) || 0,
+      costo_unitario_bs: (Number(products.find((p) => p.id === it.producto_id)?.costo) || 0) * (Number(exchangeRate) || 0),
+      tasa_cambio: Number(exchangeRate) || 0,
+      documento: current.codigo_apartado,
     }));
     setMovements((prev) => [...restoreMovements, ...prev]);
 

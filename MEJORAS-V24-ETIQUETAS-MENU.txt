@@ -1,0 +1,11 @@
+MAKD SHOP V24 — Ajustes de nombres y navegación
+
+Cambios de interfaz:
+- Botón "Nuevo Calzado" renombrado a "Producto nuevo".
+- Menú "Punto de Venta" renombrado a "Ventas / Inventario / Salida".
+- Título de la vista de ventas actualizado al mismo texto.
+- Menú "Gestión Inventario" renombrado a "Compras / Inventario / Entradas".
+- Título de la vista de inventario actualizado al mismo texto.
+
+Estos cambios son de etiquetas de interfaz y no modifican las funciones de ventas, compras ni los movimientos de inventario.
+Verificación: ZIP validado; compilación completa no verificada en este entorno.

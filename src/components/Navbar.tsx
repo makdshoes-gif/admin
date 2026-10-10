@@ -24,13 +24,14 @@ import {
   LogOut,
   ShieldCheck,
   Lock,
-  BookOpen
+  BookOpen,
+  ClipboardList
 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { MakdLogo } from './common/MakdLogo';
 import { UserWindowModal } from './common/UserWindowModal';
 
-export type NavigationTab = 'pos' | 'inventory' | 'layaways' | 'reports' | 'cash' | 'expenses' | 'conciliacion' | 'contabilidad';
+export type NavigationTab = 'pos' | 'inventory' | 'layaways' | 'reports' | 'cash' | 'expenses' | 'conciliacion' | 'contabilidad' | 'inventoryReport';
 
 interface NavbarProps {
   activeTab: NavigationTab;
@@ -49,10 +50,11 @@ export const Sidebar: React.FC<{
   const activeLayawaysCount = layaways ? layaways.filter((l) => l.estado === 'activo').length : 0;
 
   const navItems = [
-    { id: 'pos' as const, label: 'Punto de Venta', icon: ShoppingCart, count: null },
-    { id: 'inventory' as const, label: 'Gestión Inventario', icon: Boxes, count: criticalStockProducts.length },
+    { id: 'pos' as const, label: 'Ventas / Inventario / Salida', icon: ShoppingCart, count: null },
+    { id: 'inventory' as const, label: 'Compras / Inventario / Entradas', icon: Boxes, count: criticalStockProducts.length },
     { id: 'layaways' as const, label: 'Sistema de Apartados', icon: BookmarkCheck, count: activeLayawaysCount > 0 ? activeLayawaysCount : null },
     { id: 'reports' as const, label: 'Facturas & Reportes', icon: Receipt, count: null },
+    { id: 'inventoryReport' as const, label: 'Movimiento mensual de inventario', icon: ClipboardList, count: null },
     { id: 'cash' as const, label: 'Caja & Arqueo', icon: Wallet, count: null },
     { id: 'expenses' as const, label: 'Gastos & Fin de Mes', icon: TrendingDown, count: null },
     { id: 'conciliacion' as const, label: 'Conciliación Bancaria', icon: Landmark, count: null },
@@ -229,13 +231,15 @@ export const Header: React.FC<{
   const getTabTitle = () => {
     switch (activeTab) {
       case 'pos':
-        return 'Punto de Venta (POS)';
+        return 'Ventas / Inventario / Salida';
       case 'inventory':
-        return 'Gestión de Inventario y Almacén';
+        return 'Compras / Inventario / Entradas';
       case 'layaways':
         return 'Sistema de Apartados y Reservas';
       case 'reports':
         return 'Reportes Automáticos de Ventas';
+      case 'inventoryReport':
+        return 'Movimiento mensual de inventario';
       case 'cash':
         return 'Arqueo y Cierre Diario de Caja';
       case 'expenses':

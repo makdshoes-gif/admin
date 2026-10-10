@@ -75,6 +75,11 @@ export interface StockMovement {
   motivo: string;
   fecha: string;
   usuario: string;
+  /** Historical unit cost captured when the movement is recorded. Older movements may not have it. */
+  costo_unitario_usd?: number;
+  costo_unitario_bs?: number;
+  tasa_cambio?: number;
+  documento?: string;
 }
 
 export interface SaleItem {

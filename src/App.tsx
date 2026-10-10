@@ -11,6 +11,7 @@ import { LoginPage } from './components/auth/LoginPage';
 // Lazy load view components for maximum initial load performance and lightweight bundle
 const PointOfSale = lazy(() => import('./components/pos/PointOfSale').then((m) => ({ default: m.PointOfSale })));
 const InventoryManager = lazy(() => import('./components/inventory/InventoryManager').then((m) => ({ default: m.InventoryManager })));
+const InventoryMovementReport = lazy(() => import('./components/reports/InventoryMovementReport').then((m) => ({ default: m.InventoryMovementReport })));
 import { SalesReports } from './components/reports/SalesReports';
 const CashClosure = lazy(() => import('./components/cash/CashClosure').then((m) => ({ default: m.CashClosure })));
 const ExpensesManager = lazy(() => import('./components/expenses/ExpensesManager').then((m) => ({ default: m.ExpensesManager })));
@@ -62,6 +63,7 @@ function AppContent() {
           <Suspense fallback={<ViewFallback />}>
             {activeTab === 'pos' && <PointOfSale onNavigateToLayaways={() => setActiveTab('layaways')} />}
             {activeTab === 'inventory' && <InventoryManager />}
+            {activeTab === 'inventoryReport' && <InventoryMovementReport />}
             {activeTab === 'layaways' && <LayawaysManager />}
                     {activeTab === 'reports' && <SalesReports />}
             {activeTab === 'cash' && <CashClosure />}

@@ -1,0 +1,11 @@
+MAKD SHOP V22 — Registro reutilizable de clientes y proveedores
+
+- Se agrega directorio persistente business_contacts en Neon PostgreSQL.
+- En facturación, al salir del campo Cédula/RIF se busca al cliente registrado y se completan nombre, apellido y teléfono.
+- Después de una venta exitosa, el cliente identificado se guarda/actualiza por Cédula/RIF para futuros usos.
+- En gastos, se agrega campo RIF/Cédula del proveedor.
+- Al salir del campo del proveedor o su documento, se consulta el directorio y se completan los datos encontrados.
+- Al guardar un gasto, se registra/actualiza el proveedor por RIF/Cédula o por nombre si no tiene documento.
+- El directorio vive en la base de datos compartida Neon, por lo que puede reutilizarse desde otras sesiones/equipos conectados a la misma base.
+
+Importante: requiere que DATABASE_URL/Neon esté configurado y que la versión se despliegue en el servidor. No se declara compilación verificada en este entorno.

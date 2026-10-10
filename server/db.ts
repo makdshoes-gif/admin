@@ -229,6 +229,7 @@ export async function initDatabaseSchema() {
         nombre VARCHAR(255) NOT NULL,
         marca VARCHAR(100) NOT NULL,
         modelo VARCHAR(150),
+        tipo VARCHAR(100),
         color VARCHAR(80),
         genero VARCHAR(50),
         categoria VARCHAR(100),
@@ -330,6 +331,7 @@ export async function initDatabaseSchema() {
     // correo del cliente, notas de la venta, y anular una venta con error
     // (en vez de borrarla, se marca como 'anulada' y se conserva el historial).
     // Marca si el producto es original/auténtico o una réplica.
+    await sql`ALTER TABLE shoe_products ADD COLUMN IF NOT EXISTS tipo VARCHAR(100)`;
     await sql`ALTER TABLE shoe_products ADD COLUMN IF NOT EXISTS es_original BOOLEAN DEFAULT true`;
     // updated_at: para que la app pueda preguntar "¿cambió algo?" con una
     // consulta barata, en vez de tener que volver a descargar todos los
@@ -389,6 +391,24 @@ export async function initDatabaseSchema() {
         created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
       );
     `;
+
+    // 5A. Directorio persistente de clientes y proveedores para autocompletar por cédula/RIF.
+    await sql`
+      CREATE TABLE IF NOT EXISTS business_contacts (
+        id VARCHAR(64) PRIMARY KEY,
+        tipo VARCHAR(20) NOT NULL CHECK (tipo IN ('cliente','proveedor')),
+        documento VARCHAR(80),
+        nombre VARCHAR(180) NOT NULL,
+        apellido VARCHAR(120),
+        telefono VARCHAR(60),
+        correo VARCHAR(180),
+        direccion TEXT,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        UNIQUE (tipo, documento)
+      );
+    `;
+    await sql`CREATE INDEX IF NOT EXISTS business_contacts_name_idx ON business_contacts (tipo, LOWER(nombre))`;
 
     // 6. Table for Bank Reconciliations (Conciliaciones Bancarias)
     await sql`

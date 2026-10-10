@@ -201,11 +201,11 @@ app.post('/api/products', async (req, res) => {
     await initDatabaseSchema();
     await sql`
       INSERT INTO shoe_products (
-        id, nombre, marca, modelo, color, genero, categoria,
+        id, nombre, marca, modelo, tipo, color, genero, categoria,
         talla, sku, precio, costo, stock, stock_minimo, stock_maximo,
         imagen_url, ubicacion, descripcion, es_original
       ) VALUES (
-        ${p.id}, ${p.nombre}, ${p.marca}, ${p.modelo || ''}, ${p.color || ''},
+        ${p.id}, ${p.nombre}, ${p.marca}, ${p.modelo || ''}, ${p.tipo || p.modelo || 'Otros'}, ${p.color || ''},
         ${p.genero || 'Unisex'}, ${p.categoria || 'Casual'}, ${p.talla || 'Única'}, ${p.sku || `SKU-${p.id}`},
         ${Number(p.precio) || 0}, ${Number(p.costo) || 0}, ${Number(p.stock) || 0}, ${p.stock_minimo || 3}, ${p.stock_maximo || 30},
         ${p.imagen_url || p.imagen || null}, ${p.ubicacion || 'Almacén'}, ${p.descripcion || ''},
@@ -215,6 +215,7 @@ app.post('/api/products', async (req, res) => {
         nombre = EXCLUDED.nombre,
         marca = EXCLUDED.marca,
         modelo = EXCLUDED.modelo,
+        tipo = EXCLUDED.tipo,
         color = EXCLUDED.color,
         genero = EXCLUDED.genero,
         categoria = EXCLUDED.categoria,
@@ -274,11 +275,11 @@ app.post('/api/products/bulk', async (req, res) => {
     for (const p of products) {
       await sql`
         INSERT INTO shoe_products (
-          id, nombre, marca, modelo, color, genero, categoria,
+          id, nombre, marca, modelo, tipo, color, genero, categoria,
           talla, sku, precio, costo, stock, stock_minimo, stock_maximo,
           imagen_url, ubicacion, descripcion
         ) VALUES (
-          ${p.id}, ${p.nombre}, ${p.marca}, ${p.modelo || ''}, ${p.color || ''},
+          ${p.id}, ${p.nombre}, ${p.marca}, ${p.modelo || ''}, ${p.tipo || p.modelo || 'Otros'}, ${p.color || ''},
           ${p.genero || 'Unisex'}, ${p.categoria || 'Casual'}, ${p.talla || 'Única'}, ${p.sku || `SKU-${p.id}`},
           ${Number(p.precio) || 0}, ${Number(p.costo) || 0}, ${Number(p.stock) || 0}, ${p.stock_minimo || 3}, ${p.stock_maximo || 30},
           ${p.imagen_url || p.imagen || null}, ${p.ubicacion || 'Almacén'}, ${p.descripcion || ''}
@@ -287,6 +288,7 @@ app.post('/api/products/bulk', async (req, res) => {
           nombre = EXCLUDED.nombre,
           marca = EXCLUDED.marca,
           modelo = EXCLUDED.modelo,
+          tipo = EXCLUDED.tipo,
           color = EXCLUDED.color,
           genero = EXCLUDED.genero,
           categoria = EXCLUDED.categoria,
@@ -447,6 +449,62 @@ app.post('/api/closures', async (req, res) => {
   } catch (err) {
     console.error('Error guardando cierre de caja en Neon:', err);
     res.status(500).json({ saved: false, error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// Directorio de clientes y proveedores: persiste en Neon para reutilizar los datos en todos los equipos.
+app.get('/api/contacts', async (req, res) => {
+  const sql = getNeonSql();
+  if (!sql) return res.status(503).json({ error: 'La base de datos compartida no está configurada.' });
+  try {
+    await initDatabaseSchema();
+    const tipo = String(req.query.tipo || '').toLowerCase();
+    if (!['cliente', 'proveedor'].includes(tipo)) return res.status(400).json({ error: 'Tipo de contacto inválido.' });
+    const documento = String(req.query.documento || '').replace(/\s/g, '').toUpperCase();
+    const nombre = String(req.query.nombre || '').trim();
+    let rows: any[] = [];
+    if (documento) {
+      rows = await sql`SELECT * FROM business_contacts WHERE tipo = ${tipo} AND UPPER(REPLACE(COALESCE(documento,''),' ','')) = ${documento} LIMIT 1` as any[];
+    } else if (nombre) {
+      rows = await sql`SELECT * FROM business_contacts WHERE tipo = ${tipo} AND LOWER(nombre) = LOWER(${nombre}) ORDER BY updated_at DESC LIMIT 1` as any[];
+    }
+    return res.json({ contact: rows[0] || null });
+  } catch (err) {
+    console.error('Error buscando contacto:', err);
+    return res.status(500).json({ error: 'No se pudo buscar el contacto guardado.' });
+  }
+});
+
+app.post('/api/contacts', async (req, res) => {
+  const sql = getNeonSql();
+  if (!sql) return res.status(503).json({ error: 'La base de datos compartida no está configurada.' });
+  try {
+    await initDatabaseSchema();
+    const body = req.body || {};
+    const tipo = String(body.tipo || '').toLowerCase();
+    const documento = String(body.documento || '').replace(/\s/g, '').toUpperCase() || null;
+    const nombre = String(body.nombre || '').trim();
+    if (!['cliente', 'proveedor'].includes(tipo) || !nombre) return res.status(400).json({ error: 'Tipo y nombre del contacto son obligatorios.' });
+    const id = String(body.id || `${tipo}-${documento || nombre.toLowerCase().replace(/[^a-z0-9]+/g,'-')}`);
+    let rows: any[];
+    if (documento) {
+      rows = await sql`
+        INSERT INTO business_contacts (id,tipo,documento,nombre,apellido,telefono,correo,direccion,updated_at)
+        VALUES (${id},${tipo},${documento},${nombre},${String(body.apellido||'').trim() || null},${String(body.telefono||'').trim() || null},${String(body.correo||'').trim() || null},${String(body.direccion||'').trim() || null},NOW())
+        ON CONFLICT (tipo,documento) DO UPDATE SET nombre=EXCLUDED.nombre, apellido=EXCLUDED.apellido, telefono=EXCLUDED.telefono, correo=EXCLUDED.correo, direccion=EXCLUDED.direccion, updated_at=NOW()
+        RETURNING *` as any[];
+    } else {
+      const existing = await sql`SELECT id FROM business_contacts WHERE tipo=${tipo} AND LOWER(nombre)=LOWER(${nombre}) AND documento IS NULL ORDER BY updated_at DESC LIMIT 1` as any[];
+      if (existing[0]) {
+        rows = await sql`UPDATE business_contacts SET apellido=${String(body.apellido||'').trim() || null}, telefono=${String(body.telefono||'').trim() || null}, correo=${String(body.correo||'').trim() || null}, direccion=${String(body.direccion||'').trim() || null}, updated_at=NOW() WHERE id=${existing[0].id} RETURNING *` as any[];
+      } else {
+        rows = await sql`INSERT INTO business_contacts (id,tipo,documento,nombre,apellido,telefono,correo,direccion) VALUES (${id},${tipo},NULL,${nombre},${String(body.apellido||'').trim() || null},${String(body.telefono||'').trim() || null},${String(body.correo||'').trim() || null},${String(body.direccion||'').trim() || null}) RETURNING *` as any[];
+      }
+    }
+    return res.json({ success: true, contact: rows[0] || null });
+  } catch (err) {
+    console.error('Error guardando contacto:', err);
+    return res.status(500).json({ error: 'No se pudo guardar el contacto.' });
   }
 });
 

@@ -422,6 +422,24 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
     setIsCasheaSplitOpen(false);
   };
 
+  const lookupCustomerByDocument = async () => {
+    const document = customerRif.trim();
+    if (!document) return;
+    try {
+      const response = await fetch(`/api/contacts?tipo=cliente&documento=${encodeURIComponent(document)}`);
+      if (!response.ok) return;
+      const data = await response.json();
+      const contact = data?.contact;
+      if (contact) {
+        setCustomerName(contact.nombre || '');
+        setCustomerLastName(contact.apellido || '');
+        setCustomerPhone(contact.telefono || '');
+      }
+    } catch (error) {
+      console.warn('No se pudo consultar el directorio de clientes:', error);
+    }
+  };
+
   // Finalize Sale
   const handleFinalizeSale = async () => {
     if (cart.length === 0) return;
@@ -500,6 +518,16 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
       console.error('Venta rechazada por el servidor:', error);
       alert(error instanceof Error ? error.message : 'No se pudo registrar la venta. Verifica Neon e intenta nuevamente.');
       return;
+    }
+
+    // Guarda/actualiza el cliente por cédula o RIF para autocompletarlo en próximas facturas y equipos.
+    if (customerRif.trim() && customerName.trim() && customerName.trim() !== 'Consumidor Final') {
+      try {
+        await fetch('/api/contacts', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tipo: 'cliente', documento: customerRif.trim(), nombre: customerName.trim(), apellido: customerLastName.trim(), telefono: customerPhone.trim() }),
+        });
+      } catch (error) { console.warn('No se pudo guardar el cliente en el directorio:', error); }
     }
 
     setExchangeRateForDate(invoiceDate, effectiveExchangeRate);
@@ -1312,7 +1340,8 @@ export const PointOfSale: React.FC<{ onNavigateToLayaways?: () => void }> = ({ o
                           id="pos-customer-rif"
                           value={customerRif}
                           onChange={(e) => setCustomerRif(e.target.value)}
-                          placeholder="J-12345678-9 / V-23..."
+                          onBlur={lookupCustomerByDocument}
+                          placeholder="V-12345678 / J-12345678-9"
                           className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded-xl text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-600 focus:ring-2 focus:ring-indigo-500/20 font-mono font-bold shadow-2xs"
                         />
                       </div>

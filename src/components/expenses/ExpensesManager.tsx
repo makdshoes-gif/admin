@@ -80,6 +80,7 @@ export const ExpensesManager: React.FC = () => {
   const [categoria, setCategoria] = useState<ExpenseCategory>('Alquiler de Local');
   const [descripcion, setDescripcion] = useState('');
   const [beneficiario, setBeneficiario] = useState('');
+  const [beneficiarioRif, setBeneficiarioRif] = useState('');
   const [cuentaOrigen, setCuentaOrigen] = useState(accounts[0]?.nombre || 'Efectivo USD');
   const [moneda, setMoneda] = useState<Currency>('USD');
   const [montoInput, setMontoInput] = useState('');
@@ -213,6 +214,23 @@ export const ExpensesManager: React.FC = () => {
       .sort((a, b) => b.monto_usd - a.monto_usd);
   }, [periodExpenses, totalGastosUsd]);
 
+  const lookupSupplier = async (byDocument: boolean) => {
+    const value = (byDocument ? beneficiarioRif : beneficiario).trim();
+    if (!value) return;
+    try {
+      const query = byDocument
+        ? `tipo=proveedor&documento=${encodeURIComponent(value)}`
+        : `tipo=proveedor&nombre=${encodeURIComponent(value)}`;
+      const response = await fetch(`/api/contacts?${query}`);
+      if (!response.ok) return;
+      const data = await response.json();
+      if (data?.contact) {
+        setBeneficiario(data.contact.nombre || beneficiario);
+        setBeneficiarioRif(data.contact.documento || beneficiarioRif);
+      }
+    } catch (error) { console.warn('No se pudo consultar el directorio de proveedores:', error); }
+  };
+
   // Handle Form Submit
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -258,11 +276,20 @@ export const ExpensesManager: React.FC = () => {
       notas: notas.trim() || undefined,
     });
 
+    // Guarda el proveedor por RIF o nombre para reutilizarlo en próximos gastos.
+    if (beneficiario.trim()) {
+      void fetch('/api/contacts', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tipo: 'proveedor', documento: beneficiarioRif.trim(), nombre: beneficiario.trim() }),
+      }).catch((error) => console.warn('No se pudo guardar el proveedor:', error));
+    }
+
     setExchangeRateForDate(fecha, effectiveTasa);
 
     // Reset Form
     setDescripcion('');
     setBeneficiario('');
+    setBeneficiarioRif('');
     setMontoInput('');
     setComprobanteRef('');
     setNotas('');
@@ -1033,7 +1060,16 @@ export const ExpensesManager: React.FC = () => {
                     placeholder="Ej: Corpoelec / María Pérez / Tealca"
                     value={beneficiario}
                     onChange={(e) => setBeneficiario(e.target.value)}
+                    onBlur={() => void lookupSupplier(false)}
                     className="w-full text-xs p-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:border-indigo-500 focus:bg-white"
+                  />
+                  <input
+                    type="text"
+                    placeholder="RIF / Cédula del proveedor (opcional)"
+                    value={beneficiarioRif}
+                    onChange={(e) => setBeneficiarioRif(e.target.value)}
+                    onBlur={() => void lookupSupplier(true)}
+                    className="w-full mt-2 text-xs p-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:border-indigo-500 focus:bg-white font-mono"
                   />
                 </div>
 

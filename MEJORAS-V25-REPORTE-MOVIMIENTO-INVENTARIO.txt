@@ -1,0 +1,15 @@
+MAKD SHOP V25 — REPORTE MENSUAL DE MOVIMIENTO DE INVENTARIO
+
+Cambios incluidos:
+- Nuevo módulo "Reporte mensual de inventario" en el menú lateral.
+- Filtro por mes y año, búsqueda por nombre, SKU, marca y talla.
+- Resumen por producto de existencias iniciales y finales, entradas, retiros, autoconsumo, salidas y devoluciones.
+- Cálculo de montos en bolívares a partir del costo/tasa guardados en los movimientos; si falta costo histórico, se muestra una estimación usando la información disponible.
+- Exportación Excel con hojas "Movimiento inventario", "Detalle movimientos" e "Información".
+- Impresión del reporte desde el navegador para guardarlo como PDF.
+- Los gastos generales permanecen en contabilidad y no se mezclan con las salidas físicas de mercancía.
+
+Importante:
+- El reporte depende de que los movimientos históricos estén completos y tengan costos/tasas guardados para reconstrucciones históricas exactas.
+- La función se alimenta del historial de movimientos existente. No se ha publicado en GitHub ni desplegado en Vercel.
+- No se pudo completar la compilación porque el entorno no tiene instaladas las dependencias del proyecto; la verificación de TypeScript se limita a detectar sintaxis mientras faltan paquetes.
